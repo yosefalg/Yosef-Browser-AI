@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "RAID Browser",
+    "slug": "raid-browser",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "raidbrowser",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.yosef.raidbrowser",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#070B14"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

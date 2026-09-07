@@ -1,5 +1,12 @@
 import * as SQLite from 'expo-sqlite';
 
+export type StoredPageContext = {
+  url: string;
+  title: string;
+  text: string;
+  captured_at: number;
+};
+
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 async function db() {
@@ -24,6 +31,20 @@ async function db() {
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS page_context (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      url TEXT NOT NULL,
+      title TEXT,
+      text TEXT NOT NULL,
+      captured_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS browser_memory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      value TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_browser_memory_created_at ON browser_memory(created_at DESC);
   `);
   return d;
 }
@@ -67,4 +88,34 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
+}
+
+export async function setPageContext(url: string, title: string, text: string) {
+  const d = await db();
+  await d.runAsync(
+    'INSERT OR REPLACE INTO page_context (id,url,title,text,captured_at) VALUES (1,?,?,?,?)',
+    url,
+    title,
+    text.slice(0, 16000),
+    Date.now(),
+  );
+}
+
+export async function getLatestPageContext(): Promise<StoredPageContext | null> {
+  const d = await db();
+  return d.getFirstAsync<StoredPageContext>('SELECT url,title,text,captured_at FROM page_context WHERE id=1');
+}
+
+export async function remember(kind: string, value: string) {
+  const cleanKind = kind.trim().slice(0, 40) || 'note';
+  const cleanValue = value.trim().slice(0, 1000);
+  if (!cleanValue) return;
+  const d = await db();
+  await d.runAsync('INSERT INTO browser_memory (kind,value,created_at) VALUES (?,?,?)', cleanKind, cleanValue, Date.now());
+  await d.runAsync('DELETE FROM browser_memory WHERE id NOT IN (SELECT id FROM browser_memory ORDER BY created_at DESC LIMIT 200)');
+}
+
+export async function getMemories(limit = 12) {
+  const d = await db();
+  return d.getAllAsync<{ id:number; kind:string; value:string; created_at:number }>('SELECT * FROM browser_memory ORDER BY created_at DESC LIMIT ?', limit);
 }

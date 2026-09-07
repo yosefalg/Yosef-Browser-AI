@@ -10,6 +10,8 @@ export default function SettingsScreen(){
   useEffect(()=>{getSetting<ThemeName>('theme','cinematic').then(setTheme)},[]);
   const choose=async(t:ThemeName)=>{setTheme(t);await setSetting('theme',t)};
   return <SafeAreaView style={s.root}><View style={s.head}><Pressable onPress={()=>router.back()}><Text style={s.back}>‹</Text></Pressable><Text style={s.title}>Settings</Text><View style={{width:30}}/></View><ScrollView contentContainerStyle={s.content}>
+    <Text style={s.section}>التصفح والبيانات</Text>
+    <Row title="المكتبة: المفضلة والسجل" onPress={()=>router.push('/library')}/>
     <Text style={s.section}>الحساب والذكاء الاصطناعي</Text>
     <Row title="تسجيل الدخول / إنشاء حساب" onPress={()=>router.push('/login')}/>
     <Row title="RAID AI Agent" onPress={()=>router.push('/ai')}/>

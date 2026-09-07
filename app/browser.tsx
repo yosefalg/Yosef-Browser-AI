@@ -3,9 +3,10 @@ import { Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, Te
 import { useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
-import { addBookmark, addHistory } from '@/lib/db';
+import { addBookmark, addHistory, setPageContext } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
+import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
 
 export default function BrowserScreen() {
   const params = useLocalSearchParams<{ url?: string; privateMode?: string }>();
@@ -37,8 +38,17 @@ export default function BrowserScreen() {
   };
 
   const openReader = () => web.current?.injectJavaScript(READER_EXTRACT_JS);
+  const captureContext = () => {
+    if (!privateMode) web.current?.injectJavaScript(PAGE_CONTEXT_JS);
+  };
   const onMessage = (event: WebViewMessageEvent) => {
-    const payload = parseReaderMessage(event.nativeEvent.data);
+    const raw = event.nativeEvent.data;
+    const page = parsePageContext(raw);
+    if (page && !privateMode) {
+      setPageContext(page.url, page.title, page.text).catch(() => {});
+      return;
+    }
+    const payload = parseReaderMessage(raw);
     if (payload) setReader(payload);
   };
   const speakReader = () => {
@@ -48,6 +58,10 @@ export default function BrowserScreen() {
   };
   const stopSpeech = () => Speech.stop();
   const shareCurrent = () => Share.share({ title, message: `${title}\n${input}`, url: input }).catch(() => {});
+  const openAI = () => {
+    captureContext();
+    router.push({ pathname: '/ai', params: { url: input, title } });
+  };
 
   return (
     <SafeAreaView style={styles.root}>
@@ -59,7 +73,7 @@ export default function BrowserScreen() {
         <Pressable onPress={() => addBookmark(input, title).catch(()=>{})} style={styles.icon}><Text style={styles.iconText}>★</Text></Pressable>
       </View>
 
-      {privateMode && <View style={styles.private}><Text style={styles.privateText}>PRIVATE MODE — history is not persisted</Text></View>}
+      {privateMode && <View style={styles.private}><Text style={styles.privateText}>PRIVATE MODE — history and AI page context are not persisted</Text></View>}
       {loading && <View style={styles.progress} />}
 
       <WebView
@@ -77,7 +91,7 @@ export default function BrowserScreen() {
         setSupportMultipleWindows={false}
         onNavigationStateChange={changed}
         onLoadStart={() => setLoading(true)}
-        onLoadEnd={() => setLoading(false)}
+        onLoadEnd={() => { setLoading(false); captureContext(); }}
         onShouldStartLoadWithRequest={(request) => safeExternalUrl(request.url)}
         onMessage={onMessage}
       />
@@ -88,7 +102,7 @@ export default function BrowserScreen() {
         <Pressable onPress={() => web.current?.reload()} style={styles.nav}><Text style={styles.navText}>↻</Text></Pressable>
         <Pressable onPress={openReader} style={styles.nav}><Text style={styles.smallNav}>Aa</Text></Pressable>
         <Pressable onPress={shareCurrent} style={styles.nav}><Text style={styles.smallNav}>↗</Text></Pressable>
-        <Pressable onPress={() => router.push('/ai')} style={styles.ai}><Text style={styles.aiText}>AI</Text></Pressable>
+        <Pressable onPress={openAI} style={styles.ai}><Text style={styles.aiText}>AI</Text></Pressable>
       </View>
 
       <Modal visible={Boolean(reader)} animationType="slide" onRequestClose={() => { stopSpeech(); setReader(null); }}>

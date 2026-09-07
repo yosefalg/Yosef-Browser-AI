@@ -7,7 +7,7 @@ import { getLatestPageContext, getMemories } from '@/lib/db';
 
 export default function AIScreen() {
   const params = useLocalSearchParams<{ prompt?: string; url?: string; title?: string }>();
-  const [messages, setMessages] = useState<AgentMessage[]>([{ role: 'assistant', content: 'مرحباً، أنا RAID AI. أستطيع فهم الصفحة الحالية وتنفيذ أوامر محلية آمنة مثل: افتح، ابحث عن، وتذكّر.' }]);
+  const [messages, setMessages] = useState<AgentMessage[]>([{ role: 'assistant', content: 'مرحباً، أنا RAID AI. أستطيع فهم الصفحة الحالية، تلخيص سياق التبويبات، إنشاء مهام، وتنفيذ أوامر محلية آمنة.' }]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const autoSent = useRef(false);
@@ -33,7 +33,10 @@ export default function AIScreen() {
         ? `Current page: ${page.title}\nURL: ${page.url}\n\n${page.text}${memoryText}`
         : memoryText || undefined;
 
-      const answer = await askAgent(next, pageText);
+      const aiMessages = local.aiPrompt
+        ? [...messages, { role: 'user', content: local.aiPrompt } as AgentMessage]
+        : next;
+      const answer = await askAgent(aiMessages, pageText);
       setMessages([...next, { role:'assistant', content:answer }]);
     } catch (e) {
       setMessages([...next, { role:'assistant', content:e instanceof Error ? e.message : 'AI error' }]);
@@ -54,7 +57,7 @@ export default function AIScreen() {
       <View style={styles.header}><Pressable onPress={()=>router.back()}><Text style={styles.back}>‹</Text></Pressable><View style={styles.headerText}><Text style={styles.title}>RAID AI Agent</Text>{params.title ? <Text style={styles.context} numberOfLines={1}>السياق: {params.title}</Text> : null}</View><View style={{width:32}}/></View>
       <FlatList data={messages} keyExtractor={(_,i)=>String(i)} contentContainerStyle={styles.list} renderItem={({item})=><View style={[styles.msg,item.role==='user'?styles.user:styles.ai]}><Text style={styles.msgText}>{item.content}</Text></View>} />
       <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined}>
-        <View style={styles.hints}><Text style={styles.hint}>جرّب: «افتح wikipedia.org» • «ابحث عن أخبار التقنية» • «تذكّر أنني أفضل الوضع الداكن»</Text></View>
+        <View style={styles.hints}><Text style={styles.hint}>جرّب: «لخص كل التبويبات» • «قارن بين هذه الصفحات» • «ذكرني باجر أقرأ هذه الصفحة» • «نفّذ مهمة: راجع المصادر»</Text></View>
         <View style={styles.composer}><TextInput value={text} onChangeText={setText} onSubmitEditing={send} placeholder="اكتب طلبك أو أمرك..." placeholderTextColor="#64748B" style={styles.input} multiline/><Pressable onPress={send} style={styles.send}><Text style={styles.sendText}>{busy?'…':'↑'}</Text></Pressable></View>
       </KeyboardAvoidingView>
     </SafeAreaView>

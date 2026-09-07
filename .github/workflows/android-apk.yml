@@ -1,0 +1,81 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: TypeScript
+        run: pnpm typecheck
+
+      - name: Expo Doctor
+        run: npx expo-doctor
+
+      - name: Prebuild Android
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build arm64 release APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --stacktrace
+
+      - name: Prepare artifact report
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          mkdir -p release
+          cp "$APK" release/RAID-Browser-arm64.apk
+          SHA=$(sha256sum "$APK" | awk '{print $1}')
+          SIZE=$(stat -c%s "$APK")
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          {
+            echo "RAID Browser Android APK"
+            echo "sha256=$SHA"
+            echo "size_bytes=$SIZE"
+            echo "expected_abi=arm64-v8a"
+            echo "commit=${GITHUB_SHA}"
+            echo
+            "$AAPT" dump badging "$APK" || true
+          } > release/APKANALYZER.txt
+          if command -v unzip >/dev/null; then
+            unzip -l "$APK" | grep -E 'lib/arm64-v8a|lib/x86|lib/armeabi' >> release/APKANALYZER.txt || true
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RAID-BROWSER-APK
+          path: |
+            release/RAID-Browser-arm64.apk
+            release/APKANALYZER.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -14,6 +14,7 @@ export default function SettingsScreen(){
     <Row title="تسجيل الدخول / إنشاء حساب" onPress={()=>router.push('/login')}/>
     <Row title="RAID AI Agent" onPress={()=>router.push('/ai')}/>
     <Row title="مركز الخصوصية" onPress={()=>router.push('/privacy')}/>
+    <Row title="مدير كلمات المرور الآمن" onPress={()=>router.push('/passwords')}/>
     <Text style={s.section}>المظهر</Text>
     <View style={s.card}>{themeNames.map(t=><Pressable key={t} onPress={()=>choose(t)} style={[s.theme,theme===t&&s.active]}><Text style={s.themeText}>{t.toUpperCase()}</Text></Pressable>)}</View>
     <Text style={s.section}>قدرات تحتاج مكوّناً أصلياً</Text>

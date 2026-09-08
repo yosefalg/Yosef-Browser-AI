@@ -11,6 +11,8 @@ import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
 import { isVpnConnected } from '@/lib/vpn';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+const RENDERER_RECOVERY_WINDOW_MS = 30_000;
+const MAX_RENDERER_RECOVERIES = 2;
 
 function hostOf(value: string) {
   try { return new URL(value).hostname.replace(/^www\./, ''); } catch { return value; }
@@ -29,6 +31,9 @@ export default function BrowserScreen() {
   });
 
   const web = useRef<WebView>(null);
+  const rendererFailures = useRef<number[]>([]);
+  const rendererNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [webKey, setWebKey] = useState(0);
   const [url, setUrl] = useState(startUrl);
   const [loadedUrl, setLoadedUrl] = useState(startUrl);
   const [input, setInput] = useState(startUrl);
@@ -39,6 +44,7 @@ export default function BrowserScreen() {
   const [loading, setLoading] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [rendererNotice, setRendererNotice] = useState('');
   const [reader, setReader] = useState<ReaderPayload | null>(null);
   const [fontSize, setFontSize] = useState(19);
   const [readerDark, setReaderDark] = useState(true);
@@ -49,7 +55,44 @@ export default function BrowserScreen() {
 
   useEffect(() => {
     isVpnConnected().then(setVpnConnected).catch(() => setVpnConnected(false));
+    return () => {
+      if (rendererNoticeTimer.current) clearTimeout(rendererNoticeTimer.current);
+      Speech.stop();
+    };
   }, []);
+
+  const showRendererNotice = (message: string) => {
+    if (rendererNoticeTimer.current) clearTimeout(rendererNoticeTimer.current);
+    setRendererNotice(message);
+    rendererNoticeTimer.current = setTimeout(() => {
+      rendererNoticeTimer.current = null;
+      setRendererNotice('');
+    }, 5000);
+  };
+
+  const recoverRenderer = (didCrash: boolean) => {
+    const now = Date.now();
+    const recent = rendererFailures.current.filter((time) => now - time < RENDERER_RECOVERY_WINDOW_MS);
+    if (recent.length >= MAX_RENDERER_RECOVERIES) {
+      rendererFailures.current = recent;
+      setLoading(false);
+      setLoadError('توقف محرك عرض الصفحة عدة مرات. أعد المحاولة أو افتح صفحة أخرى.');
+      showRendererNotice('تم إيقاف الاستعادة التلقائية مؤقتًا لحماية استقرار المتصفح.');
+      return;
+    }
+
+    rendererFailures.current = [...recent, now];
+    setLoading(false);
+    setLoadError('');
+    setCanBack(false);
+    setCanForward(false);
+    setReader(null);
+    Speech.stop();
+    showRendererNotice(didCrash
+      ? 'تعطّل محرك عرض الصفحة وتمت استعادته تلقائيًا.'
+      : 'أوقف Android محرك عرض الصفحة وتمت استعادته تلقائيًا.');
+    setWebKey((value) => value + 1);
+  };
 
   const go = () => {
     try {
@@ -201,10 +244,12 @@ export default function BrowserScreen() {
       </View>
 
       {privateMode && <View style={styles.private}><Text style={styles.privateText}>وضع خاص • لا سجل • لا سياق للذكاء الاصطناعي</Text></View>}
+      {!!rendererNotice && <View style={styles.rendererNotice} accessibilityRole="alert"><Text style={styles.rendererNoticeText}>{rendererNotice}</Text></View>}
       {loading && <View style={styles.progress} accessibilityLabel="جار تحميل الصفحة" />}
 
       <View style={styles.webWrap}>
         <WebView
+          key={webKey}
           ref={web}
           source={{ uri: url }}
           style={styles.web}
@@ -232,6 +277,7 @@ export default function BrowserScreen() {
           onHttpError={(event) => {
             if (event.nativeEvent.statusCode >= 400) setLoadError(`خطأ HTTP ${event.nativeEvent.statusCode}`);
           }}
+          onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
           onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}
           onMessage={onMessage}
         />
@@ -241,7 +287,7 @@ export default function BrowserScreen() {
             <Text style={styles.errorHost}>{host}</Text>
             <Text style={styles.errorText} numberOfLines={3}>{loadError}</Text>
             <View style={styles.errorActions}>
-              <Pressable onPress={() => { setLoadError(''); web.current?.reload(); }} style={styles.retryBtn} accessibilityRole="button"><Text style={styles.retryText}>إعادة المحاولة</Text></Pressable>
+              <Pressable onPress={() => { rendererFailures.current = []; setLoadError(''); setWebKey((value) => value + 1); }} style={styles.retryBtn} accessibilityRole="button"><Text style={styles.retryText}>إعادة المحاولة</Text></Pressable>
               <Pressable onPress={goHome} style={styles.errorSecondary}><Text style={styles.errorSecondaryText}>الرئيسية</Text></Pressable>
             </View>
           </View>
@@ -324,7 +370,7 @@ const styles = StyleSheet.create({
   security:{fontSize:11,color:'#22C55E',fontWeight:'900'},
   insecure:{color:'#F59E0B'},
   input:{flex:1,minWidth:0,color:'#F8FAFC',paddingHorizontal:8,fontSize:14,textAlign:'left',paddingVertical:0},
-  private:{backgroundColor:'#2E1065',paddingVertical:5,alignItems:'center'},privateText:{color:'#DDD6FE',fontSize:11,fontWeight:'800',letterSpacing:.2},progress:{height:2,backgroundColor:'#8B5CF6'},
+  private:{backgroundColor:'#2E1065',paddingVertical:5,alignItems:'center'},privateText:{color:'#DDD6FE',fontSize:11,fontWeight:'800',letterSpacing:.2},rendererNotice:{backgroundColor:'#0F2A22',paddingHorizontal:14,paddingVertical:7,borderBottomWidth:1,borderBottomColor:'#166534'},rendererNoticeText:{color:'#BBF7D0',fontSize:11,fontWeight:'800',textAlign:'center'},progress:{height:2,backgroundColor:'#8B5CF6'},
   webWrap:{flex:1,position:'relative'},web:{flex:1,backgroundColor:'#fff'},errorCard:{position:'absolute',left:18,right:18,top:24,padding:20,borderRadius:22,backgroundColor:'#0F172A',borderWidth:1,borderColor:'#334155'},errorTitle:{color:'#F8FAFC',fontSize:19,fontWeight:'900',textAlign:'right'},errorHost:{marginTop:5,color:'#C4B5FD',fontWeight:'800',textAlign:'right'},errorText:{marginTop:8,color:'#94A3B8',lineHeight:20,textAlign:'right'},errorActions:{flexDirection:'row-reverse',gap:9,marginTop:15},retryBtn:{flex:1,height:44,borderRadius:14,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,height:44,borderRadius:14,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},errorSecondaryText:{color:'#E2E8F0',fontWeight:'800'},
   bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:6,backgroundColor:'#0A101C',borderTopWidth:1,borderTopColor:'#172033'},nav:{width:40,height:42,alignItems:'center',justifyContent:'center',borderRadius:13},navPrimary:{width:44,height:44,alignItems:'center',justifyContent:'center',borderRadius:14,backgroundColor:'#172033',borderWidth:1,borderColor:'#27324A'},navText:{fontSize:28,color:'#F8FAFC'},navPrimaryText:{fontSize:24,color:'#F8FAFC',fontWeight:'700'},star:{fontSize:23,color:'#E2E8F0'},starOn:{color:'#FDE68A'},disabled:{color:'#475569'},
   vpn:{height:40,minWidth:48,paddingHorizontal:9,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#334155'},vpnOn:{backgroundColor:'#052E1A',borderColor:'#166534'},vpnText:{color:'#E2E8F0',fontSize:11,fontWeight:'900'},

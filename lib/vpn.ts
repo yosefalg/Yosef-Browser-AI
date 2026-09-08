@@ -47,24 +47,61 @@ function native(): RaidVpnNative {
   return module;
 }
 
+function normalizeWireGuardConfig(configText: string) {
+  return configText.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+}
+
 function validateConfig(configText: string) {
-  const value = configText.trim();
+  const value = normalizeWireGuardConfig(configText);
   if (!value) throw new Error('ملف WireGuard فارغ.');
   if (value.length > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
   if (value.includes('\0')) throw new Error('ملف WireGuard يحتوي على بيانات غير صالحة.');
-
-  const requiredPatterns = [
-    /^\s*\[Interface\]\s*$/mi,
-    /^\s*PrivateKey\s*=\s*\S+\s*$/mi,
-    /^\s*\[Peer\]\s*$/mi,
-    /^\s*PublicKey\s*=\s*\S+\s*$/mi,
-    /^\s*Endpoint\s*=\s*\S+\s*$/mi,
-    /^\s*AllowedIPs\s*=\s*\S+\s*$/mi,
-  ];
-
-  if (!requiredPatterns.every((pattern) => pattern.test(value))) {
-    throw new Error('إعداد WireGuard غير صالح أو غير مكتمل. تأكد من وجود Interface وPeer والمفاتيح وEndpoint وAllowedIPs.');
+  if (/^\s*</.test(value) || /^\s*[\[{]/.test(value)) {
+    throw new Error('الملف المختار ليس إعداد WireGuard نصيًا صالحًا. اختر ملف .conf الحقيقي حتى لو كان اسمه ينتهي بـ .txt.');
   }
+
+  let section: 'interface' | 'peer' | null = null;
+  const interfaceFields = new Map<string, string>();
+  const peers: Array<Map<string, string>> = [];
+  let currentPeer: Map<string, string> | null = null;
+
+  for (const rawLine of value.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+
+    if (/^\[Interface\]$/i.test(line)) {
+      section = 'interface';
+      currentPeer = null;
+      continue;
+    }
+    if (/^\[Peer\]$/i.test(line)) {
+      section = 'peer';
+      currentPeer = new Map<string, string>();
+      peers.push(currentPeer);
+      continue;
+    }
+
+    const equalAt = line.indexOf('=');
+    if (equalAt <= 0 || !section) continue;
+    const key = line.slice(0, equalAt).trim().toLowerCase();
+    const fieldValue = line.slice(equalAt + 1).trim();
+    if (!fieldValue) continue;
+
+    if (section === 'interface') interfaceFields.set(key, fieldValue);
+    else currentPeer?.set(key, fieldValue);
+  }
+
+  const privateKey = interfaceFields.get('privatekey');
+  const validPeer = peers.some((peer) =>
+    Boolean(peer.get('publickey')?.trim()) &&
+    Boolean(peer.get('endpoint')?.trim()) &&
+    Boolean(peer.get('allowedips')?.trim())
+  );
+
+  if (!privateKey || !validPeer) {
+    throw new Error('إعداد WireGuard غير صالح أو غير مكتمل. تأكد من وجود PrivateKey داخل Interface وPublicKey وEndpoint وAllowedIPs داخل Peer.');
+  }
+
   return value;
 }
 

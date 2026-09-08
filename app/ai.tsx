@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { AgentMessage, askAgent } from '@/lib/ai';
 import { executeLocalAgentCommand } from '@/lib/agent';
 import { getLatestPageContext, getMemories } from '@/lib/db';
@@ -13,10 +13,25 @@ export default function AIScreen() {
   const [busy, setBusy] = useState(false);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const autoSent = useRef(false);
+  const listRef = useRef<FlatList<AgentMessage>>(null);
+
+  const refreshAccountState = useCallback(async () => {
+    try {
+      const session = await getCurrentSession();
+      setSignedIn(Boolean(session));
+    } catch {
+      setSignedIn(false);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    void refreshAccountState();
+  }, [refreshAccountState]));
 
   useEffect(() => {
-    getCurrentSession().then((session) => setSignedIn(Boolean(session))).catch(() => setSignedIn(false));
-  }, []);
+    const id = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 40);
+    return () => clearTimeout(id);
+  }, [messages.length, busy]);
 
   const sendValue = async (raw: string) => {
     const value = raw.trim();
@@ -54,6 +69,7 @@ export default function AIScreen() {
       setMessages([...next, { role:'assistant', content:answer }]);
     } catch (e) {
       setMessages([...next, { role:'assistant', content:e instanceof Error ? e.message : 'تعذر تشغيل RAID AI الآن.' }]);
+      void refreshAccountState();
     } finally { setBusy(false); }
   };
 
@@ -86,9 +102,11 @@ export default function AIScreen() {
       )}
 
       <FlatList
+        ref={listRef}
         data={messages}
         keyExtractor={(_,i)=>String(i)}
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
         renderItem={({item})=><View style={[styles.msg,item.role==='user'?styles.user:styles.ai]}><Text style={styles.msgText}>{item.content}</Text></View>}
       />
 

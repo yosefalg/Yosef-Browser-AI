@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { normalizeInput } from '@/lib/url';
@@ -17,6 +18,7 @@ function hostname(url: string) {
 }
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<RecentSite[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -65,10 +67,10 @@ export default function HomeScreen() {
 
   return (
     <LinearGradient colors={['#05070C', '#0A0F19', '#0D1220']} style={styles.fill}>
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safe}>
         <View style={styles.topbar}>
           <View style={styles.brandMini}><View style={styles.brandDot} /><Text style={styles.brandMiniText}>RAID</Text></View>
-          <Pressable onPress={() => setMenuOpen(true)} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="قائمة المتصفح">
+          <Pressable onPress={() => setMenuOpen(true)} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="قائمة المتصفح" hitSlop={8}>
             <Text style={styles.menuGlyph}>☰</Text>
           </Pressable>
         </View>
@@ -121,7 +123,7 @@ export default function HomeScreen() {
         </ScrollView>
 
         <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-          <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
+          <Pressable style={[styles.overlay, { paddingTop: insets.top + 58 }]} onPress={() => setMenuOpen(false)}>
             <Pressable style={styles.menuCard} onPress={() => {}}>
               <View style={styles.menuHeader}><Text style={styles.menuTitle}>RAID</Text><Text style={styles.menuCaption}>المتصفح والإعدادات</Text></View>
               {menuItems.map(([label, path]) => (
@@ -138,9 +140,9 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  fill:{flex:1},safe:{flex:1},topbar:{height:60,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:16},brandMini:{flexDirection:'row',alignItems:'center',gap:8},brandDot:{width:9,height:9,borderRadius:5,backgroundColor:'#8B5CF6'},brandMiniText:{color:'#E5E7EB',fontSize:14,fontWeight:'900',letterSpacing:2},menuButton:{width:44,height:44,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(15,23,42,.72)',borderWidth:1,borderColor:'#1F2937'},menuGlyph:{color:'#F8FAFC',fontSize:23,fontWeight:'900'},
-  content:{paddingHorizontal:18,paddingTop:34,paddingBottom:34},hero:{alignItems:'center',marginBottom:34},logoOrb:{width:76,height:76,borderRadius:24,alignItems:'center',justifyContent:'center',shadowColor:'#7C3AED',shadowOpacity:.32,shadowRadius:22,shadowOffset:{width:0,height:8},elevation:8},logoLetter:{fontSize:36,fontWeight:'900',color:'#fff'},brand:{marginTop:18,fontSize:31,fontWeight:'900',color:'#F8FAFC',letterSpacing:.3},sub:{marginTop:7,fontSize:13,color:'#8B98AD'},
+  fill:{flex:1},safe:{flex:1},topbar:{height:58,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:18},brandMini:{flexDirection:'row',alignItems:'center',gap:8},brandDot:{width:9,height:9,borderRadius:5,backgroundColor:'#8B5CF6'},brandMiniText:{color:'#E5E7EB',fontSize:14,fontWeight:'900',letterSpacing:2},menuButton:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(15,23,42,.78)',borderWidth:1,borderColor:'#263247'},menuGlyph:{color:'#F8FAFC',fontSize:21,fontWeight:'800',lineHeight:23},
+  content:{paddingHorizontal:18,paddingTop:28,paddingBottom:34},hero:{alignItems:'center',marginBottom:34},logoOrb:{width:76,height:76,borderRadius:24,alignItems:'center',justifyContent:'center',shadowColor:'#7C3AED',shadowOpacity:.32,shadowRadius:22,shadowOffset:{width:0,height:8},elevation:8},logoLetter:{fontSize:36,fontWeight:'900',color:'#fff'},brand:{marginTop:18,fontSize:31,fontWeight:'900',color:'#F8FAFC',letterSpacing:.3},sub:{marginTop:7,fontSize:13,color:'#8B98AD'},
   searchWrap:{gap:12},omni:{height:58,borderRadius:21,backgroundColor:'rgba(15,23,42,.92)',borderWidth:1,borderColor:'#263247',flexDirection:'row',alignItems:'center',padding:6},input:{flex:1,color:'#fff',paddingHorizontal:14,fontSize:16,textAlign:'right'},go:{width:46,height:46,borderRadius:16,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},goText:{color:'#fff',fontSize:22,fontWeight:'900',marginTop:-2},quickRow:{flexDirection:'row-reverse',gap:8},quick:{height:39,paddingHorizontal:16,borderRadius:14,backgroundColor:'rgba(17,24,39,.82)',borderWidth:1,borderColor:'#222D3E',alignItems:'center',justifyContent:'center'},quickText:{color:'#CBD5E1',fontSize:12,fontWeight:'800'},
   section:{marginTop:30},sectionTitle:{color:'#E5E7EB',fontSize:14,fontWeight:'900',textAlign:'right',marginBottom:12},recentRow:{gap:10,paddingRight:2},recentCard:{width:142,minHeight:112,borderRadius:18,padding:13,backgroundColor:'rgba(15,23,42,.76)',borderWidth:1,borderColor:'#202A3A'},faviconFallback:{width:34,height:34,borderRadius:11,backgroundColor:'#252B46',alignItems:'center',justifyContent:'center',marginBottom:11},faviconText:{color:'#DDD6FE',fontSize:15,fontWeight:'900'},recentTitle:{color:'#F8FAFC',fontSize:13,fontWeight:'800',textAlign:'right'},recentHost:{marginTop:4,color:'#64748B',fontSize:10,textAlign:'right'},
-  overlay:{flex:1,backgroundColor:'rgba(0,0,0,.58)',alignItems:'flex-end',paddingTop:62,paddingRight:12},menuCard:{width:282,borderRadius:24,padding:10,backgroundColor:'#0D1421',borderWidth:1,borderColor:'#253044'},menuHeader:{paddingHorizontal:12,paddingTop:8,paddingBottom:12},menuTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'right'},menuCaption:{marginTop:3,color:'#64748B',fontSize:11,textAlign:'right'},menuItem:{minHeight:50,borderRadius:14,paddingHorizontal:12,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},menuItemText:{color:'#F8FAFC',fontSize:14,fontWeight:'800'},chev:{color:'#64748B',fontSize:25}
+  overlay:{flex:1,backgroundColor:'rgba(0,0,0,.58)',alignItems:'flex-end',paddingRight:12},menuCard:{width:282,borderRadius:24,padding:10,backgroundColor:'#0D1421',borderWidth:1,borderColor:'#253044'},menuHeader:{paddingHorizontal:12,paddingTop:8,paddingBottom:12},menuTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'right'},menuCaption:{marginTop:3,color:'#64748B',fontSize:11,textAlign:'right'},menuItem:{minHeight:50,borderRadius:14,paddingHorizontal:12,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},menuItemText:{color:'#F8FAFC',fontSize:14,fontWeight:'800'},chev:{color:'#64748B',fontSize:25}
 });

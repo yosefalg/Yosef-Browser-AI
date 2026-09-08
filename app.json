@@ -18,7 +18,8 @@
       "expo-router",
       "expo-secure-store",
       "expo-local-authentication",
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withRaidWireGuard"
     ],
     "experiments": {
       "typedRoutes": true

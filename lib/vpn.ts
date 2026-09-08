@@ -59,16 +59,16 @@ export async function clearWireGuardConfig() {
 export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState> {
   const supabase = getSupabase();
   if (!supabase) {
-    const cached = await loadWireGuardConfig();
-    return { configured: !!cached, source: cached ? 'cache' : 'none' };
+    await clearWireGuardConfig();
+    return { configured: false, source: 'none' };
   }
 
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
   const user = sessionData.session?.user;
   if (!user) {
-    const cached = await loadWireGuardConfig();
-    return { configured: !!cached, source: cached ? 'cache' : 'none' };
+    await clearWireGuardConfig();
+    return { configured: false, source: 'none' };
   }
 
   const { data, error } = await supabase
@@ -98,9 +98,7 @@ export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
 
 export async function connectVpn(configText?: string) {
   if (configText?.trim()) await cacheConfig(configText);
-  try {
-    await syncVpnProfileFromAccount();
-  } catch {}
+  await syncVpnProfileFromAccount();
   const config = await loadWireGuardConfig();
   if (!config) throw new Error('لا يوجد ملف RAID VPN مرتبط بهذا الحساب.');
   return native().connect(validateConfig(config));

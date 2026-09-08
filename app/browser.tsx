@@ -3,7 +3,7 @@ import { Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, Te
 import { useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
-import { addBookmark, addHistory, setPageContext } from '@/lib/db';
+import { addBookmark, addHistory, isBookmarked, removeBookmark, setPageContext } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -22,19 +22,42 @@ export default function BrowserScreen() {
   const [canBack, setCanBack] = useState(false);
   const [canForward, setCanForward] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [reader, setReader] = useState<ReaderPayload | null>(null);
   const [fontSize, setFontSize] = useState(19);
   const [readerDark, setReaderDark] = useState(true);
 
   const go = () => {
-    try { const next = normalizeInput(input); setUrl(next); } catch {}
+    try {
+      const next = normalizeInput(input);
+      setLoadError('');
+      setUrl(next);
+    } catch {}
   };
 
   const changed = async (nav: WebViewNavigation) => {
-    setCanBack(nav.canGoBack); setCanForward(nav.canGoForward); setTitle(nav.title || nav.url); setInput(nav.url);
+    setCanBack(nav.canGoBack);
+    setCanForward(nav.canGoForward);
+    setTitle(nav.title || nav.url);
+    setInput(nav.url);
+    try { setBookmarked(await isBookmarked(nav.url)); } catch { setBookmarked(false); }
     if (!privateMode && safeExternalUrl(nav.url) && !nav.loading) {
       try { await addHistory(nav.url, nav.title); } catch {}
     }
+  };
+
+  const toggleBookmark = async () => {
+    if (!safeExternalUrl(input)) return;
+    try {
+      if (bookmarked) {
+        await removeBookmark(input);
+        setBookmarked(false);
+      } else {
+        await addBookmark(input, title);
+        setBookmarked(true);
+      }
+    } catch {}
   };
 
   const openReader = () => web.current?.injectJavaScript(READER_EXTRACT_JS);
@@ -68,33 +91,52 @@ export default function BrowserScreen() {
       <View style={styles.top}>
         <Pressable onPress={() => router.back()} style={styles.icon}><Text style={styles.iconText}>×</Text></Pressable>
         <View style={styles.omni}>
+          <Text style={styles.security}>{input.startsWith('https://') ? '🔒' : '◌'}</Text>
           <TextInput value={input} onChangeText={setInput} onSubmitEditing={go} autoCapitalize="none" autoCorrect={false} style={styles.input} selectTextOnFocus />
         </View>
-        <Pressable onPress={() => addBookmark(input, title).catch(()=>{})} style={styles.icon}><Text style={styles.iconText}>★</Text></Pressable>
+        <Pressable onPress={toggleBookmark} style={[styles.icon, bookmarked && styles.bookmarkedIcon]} accessibilityLabel={bookmarked ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}>
+          <Text style={[styles.iconText, bookmarked && styles.bookmarkedText]}>{bookmarked ? '★' : '☆'}</Text>
+        </Pressable>
       </View>
 
       {privateMode && <View style={styles.private}><Text style={styles.privateText}>PRIVATE MODE — history and AI page context are not persisted</Text></View>}
       {loading && <View style={styles.progress} />}
 
-      <WebView
-        ref={web}
-        source={{ uri: url }}
-        style={styles.web}
-        javaScriptEnabled
-        domStorageEnabled={!privateMode}
-        cacheEnabled={!privateMode}
-        incognito={privateMode}
-        sharedCookiesEnabled={!privateMode}
-        thirdPartyCookiesEnabled={!privateMode}
-        allowsFullscreenVideo
-        pullToRefreshEnabled
-        setSupportMultipleWindows={false}
-        onNavigationStateChange={changed}
-        onLoadStart={() => setLoading(true)}
-        onLoadEnd={() => { setLoading(false); captureContext(); }}
-        onShouldStartLoadWithRequest={(request) => safeExternalUrl(request.url)}
-        onMessage={onMessage}
-      />
+      <View style={styles.webWrap}>
+        <WebView
+          ref={web}
+          source={{ uri: url }}
+          style={styles.web}
+          javaScriptEnabled
+          domStorageEnabled={!privateMode}
+          cacheEnabled={!privateMode}
+          incognito={privateMode}
+          sharedCookiesEnabled={!privateMode}
+          thirdPartyCookiesEnabled={!privateMode}
+          allowsFullscreenVideo
+          pullToRefreshEnabled
+          setSupportMultipleWindows={false}
+          onNavigationStateChange={changed}
+          onLoadStart={() => { setLoading(true); setLoadError(''); }}
+          onLoadEnd={() => { setLoading(false); captureContext(); }}
+          onError={(event) => {
+            setLoading(false);
+            setLoadError(event.nativeEvent.description || 'تعذر تحميل الصفحة');
+          }}
+          onHttpError={(event) => {
+            if (event.nativeEvent.statusCode >= 400) setLoadError(`خطأ HTTP ${event.nativeEvent.statusCode}`);
+          }}
+          onShouldStartLoadWithRequest={(request) => safeExternalUrl(request.url)}
+          onMessage={onMessage}
+        />
+        {loadError ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorTitle}>تعذر فتح الصفحة</Text>
+            <Text style={styles.errorText} numberOfLines={3}>{loadError}</Text>
+            <Pressable onPress={() => { setLoadError(''); web.current?.reload(); }} style={styles.retryBtn}><Text style={styles.retryText}>إعادة المحاولة</Text></Pressable>
+          </View>
+        ) : null}
+      </View>
 
       <View style={styles.bottom}>
         <Pressable disabled={!canBack} onPress={() => web.current?.goBack()} style={styles.nav}><Text style={[styles.navText,!canBack&&styles.disabled]}>‹</Text></Pressable>
@@ -128,5 +170,12 @@ export default function BrowserScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:{flex:1,backgroundColor:'#070B14'},top:{height:62,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:10,backgroundColor:'#0B1220',borderBottomWidth:1,borderBottomColor:'#1E293B'},icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#111827'},iconText:{color:'#fff',fontSize:22,fontWeight:'700'},omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#111827',justifyContent:'center'},input:{color:'#F8FAFC',paddingHorizontal:14,fontSize:14},private:{backgroundColor:'#3B0764',paddingVertical:6,alignItems:'center'},privateText:{color:'#E9D5FF',fontSize:12,fontWeight:'700'},progress:{height:2,backgroundColor:'#8B5CF6'},web:{flex:1,backgroundColor:'#fff'},bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',backgroundColor:'#0B1220',borderTopWidth:1,borderTopColor:'#1E293B'},nav:{width:42,height:44,alignItems:'center',justifyContent:'center'},navText:{fontSize:30,color:'#F8FAFC'},smallNav:{fontSize:18,color:'#F8FAFC',fontWeight:'900'},disabled:{color:'#475569'},ai:{height:40,minWidth:50,paddingHorizontal:12,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiText:{color:'#fff',fontWeight:'900'},readerRoot:{flex:1,backgroundColor:'#090D14'},readerLight:{backgroundColor:'#F8F5EE'},readerHead:{height:60,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:14,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTitle:{flex:1,color:'#F8FAFC',fontWeight:'900',textAlign:'right'},readerTextLight:{color:'#1F2937'},readerBtn:{paddingHorizontal:12,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerBtnText:{color:'#F8FAFC',fontWeight:'900'},readerTools:{flexDirection:'row',justifyContent:'center',gap:8,padding:10,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTool:{minWidth:48,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerContent:{paddingHorizontal:22,paddingVertical:24},readerArticle:{color:'#E5E7EB',textAlign:'right'}
+  root:{flex:1,backgroundColor:'#070B14'},
+  top:{height:62,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:10,backgroundColor:'#0B1220',borderBottomWidth:1,borderBottomColor:'#1E293B'},
+  icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#111827'},iconText:{color:'#fff',fontSize:22,fontWeight:'700'},bookmarkedIcon:{backgroundColor:'#3B2F12'},bookmarkedText:{color:'#FDE68A'},
+  omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#111827',alignItems:'center',flexDirection:'row',paddingLeft:10},security:{fontSize:12,color:'#94A3B8'},input:{flex:1,color:'#F8FAFC',paddingHorizontal:10,fontSize:14},
+  private:{backgroundColor:'#3B0764',paddingVertical:6,alignItems:'center'},privateText:{color:'#E9D5FF',fontSize:12,fontWeight:'700'},progress:{height:2,backgroundColor:'#8B5CF6'},
+  webWrap:{flex:1,position:'relative'},web:{flex:1,backgroundColor:'#fff'},errorCard:{position:'absolute',left:18,right:18,top:24,padding:18,borderRadius:18,backgroundColor:'#111827',borderWidth:1,borderColor:'#334155'},errorTitle:{color:'#F8FAFC',fontSize:18,fontWeight:'900',textAlign:'right'},errorText:{marginTop:7,color:'#94A3B8',lineHeight:20,textAlign:'right'},retryBtn:{marginTop:14,height:42,borderRadius:13,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},retryText:{color:'#fff',fontWeight:'900'},
+  bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',backgroundColor:'#0B1220',borderTopWidth:1,borderTopColor:'#1E293B'},nav:{width:42,height:44,alignItems:'center',justifyContent:'center'},navText:{fontSize:30,color:'#F8FAFC'},smallNav:{fontSize:18,color:'#F8FAFC',fontWeight:'900'},disabled:{color:'#475569'},ai:{height:40,minWidth:50,paddingHorizontal:12,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiText:{color:'#fff',fontWeight:'900'},
+  readerRoot:{flex:1,backgroundColor:'#090D14'},readerLight:{backgroundColor:'#F8F5EE'},readerHead:{height:60,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:14,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTitle:{flex:1,color:'#F8FAFC',fontWeight:'900',textAlign:'right'},readerTextLight:{color:'#1F2937'},readerBtn:{paddingHorizontal:12,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerBtnText:{color:'#F8FAFC',fontWeight:'900'},readerTools:{flexDirection:'row',justifyContent:'center',gap:8,padding:10,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTool:{minWidth:48,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerContent:{paddingHorizontal:22,paddingVertical:24},readerArticle:{color:'#E5E7EB',textAlign:'right'}
 });

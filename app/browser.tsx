@@ -17,6 +17,7 @@ export default function BrowserScreen() {
 
   const web = useRef<WebView>(null);
   const [url, setUrl] = useState(startUrl);
+  const [loadedUrl, setLoadedUrl] = useState(startUrl);
   const [input, setInput] = useState(startUrl);
   const [title, setTitle] = useState('RAID Browser');
   const [canBack, setCanBack] = useState(false);
@@ -40,6 +41,7 @@ export default function BrowserScreen() {
     setCanBack(nav.canGoBack);
     setCanForward(nav.canGoForward);
     setTitle(nav.title || nav.url);
+    setLoadedUrl(nav.url);
     setInput(nav.url);
     try { setBookmarked(await isBookmarked(nav.url)); } catch { setBookmarked(false); }
     if (!privateMode && safeExternalUrl(nav.url) && !nav.loading) {
@@ -48,13 +50,13 @@ export default function BrowserScreen() {
   };
 
   const toggleBookmark = async () => {
-    if (!safeExternalUrl(input)) return;
+    if (!safeExternalUrl(loadedUrl)) return;
     try {
       if (bookmarked) {
-        await removeBookmark(input);
+        await removeBookmark(loadedUrl);
         setBookmarked(false);
       } else {
-        await addBookmark(input, title);
+        await addBookmark(loadedUrl, title);
         setBookmarked(true);
       }
     } catch {}
@@ -90,18 +92,24 @@ export default function BrowserScreen() {
     Speech.speak(reader.text.slice(0, 12000), { language: 'ar', rate: 0.92, pitch: 1 });
   };
   const stopSpeech = () => Speech.stop();
-  const shareCurrent = () => Share.share({ title, message: `${title}\n${input}`, url: input }).catch(() => {});
+  const shareCurrent = () => Share.share({ title, message: `${title}\n${loadedUrl}`, url: loadedUrl }).catch(() => {});
   const openAI = () => {
     captureContext();
-    router.push({ pathname: '/ai', params: { url: input, title } });
+    router.push({ pathname: '/ai', params: { url: loadedUrl, title } });
   };
+
+  const secure = loadedUrl.startsWith('https://');
+  const insecureHttp = loadedUrl.startsWith('http://');
 
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.top}>
         <Pressable onPress={() => router.back()} style={styles.icon} accessibilityRole="button" accessibilityLabel="إغلاق المتصفح"><Text style={styles.iconText}>×</Text></Pressable>
         <View style={styles.omni}>
-          <Text style={styles.security} accessibilityLabel={input.startsWith('https://') ? 'اتصال HTTPS آمن' : 'اتصال غير مشفر'}>{input.startsWith('https://') ? '🔒' : '◌'}</Text>
+          <Text
+            style={[styles.security, insecureHttp && styles.insecure]}
+            accessibilityLabel={secure ? 'اتصال HTTPS آمن' : insecureHttp ? 'اتصال HTTP غير مشفر' : 'حالة الاتصال غير معروفة'}
+          >{secure ? '🔒' : insecureHttp ? '⚠' : '◌'}</Text>
           <TextInput value={input} onChangeText={setInput} onSubmitEditing={go} autoCapitalize="none" autoCorrect={false} style={styles.input} selectTextOnFocus accessibilityLabel="شريط العنوان والبحث" returnKeyType="go" />
         </View>
         <Pressable onPress={toggleBookmark} style={[styles.icon, bookmarked && styles.bookmarkedIcon]} accessibilityRole="button" accessibilityLabel={bookmarked ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'} accessibilityState={{ selected: bookmarked }}>
@@ -183,7 +191,7 @@ const styles = StyleSheet.create({
   root:{flex:1,backgroundColor:'#070B14'},
   top:{height:62,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:10,backgroundColor:'#0B1220',borderBottomWidth:1,borderBottomColor:'#1E293B'},
   icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#111827'},iconText:{color:'#fff',fontSize:22,fontWeight:'700'},bookmarkedIcon:{backgroundColor:'#3B2F12'},bookmarkedText:{color:'#FDE68A'},
-  omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#111827',alignItems:'center',flexDirection:'row',paddingLeft:10},security:{fontSize:12,color:'#94A3B8'},input:{flex:1,color:'#F8FAFC',paddingHorizontal:10,fontSize:14},
+  omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#111827',alignItems:'center',flexDirection:'row',paddingLeft:10},security:{fontSize:12,color:'#94A3B8'},insecure:{color:'#F59E0B'},input:{flex:1,color:'#F8FAFC',paddingHorizontal:10,fontSize:14},
   private:{backgroundColor:'#3B0764',paddingVertical:6,alignItems:'center'},privateText:{color:'#E9D5FF',fontSize:12,fontWeight:'700'},progress:{height:2,backgroundColor:'#8B5CF6'},
   webWrap:{flex:1,position:'relative'},web:{flex:1,backgroundColor:'#fff'},errorCard:{position:'absolute',left:18,right:18,top:24,padding:18,borderRadius:18,backgroundColor:'#111827',borderWidth:1,borderColor:'#334155'},errorTitle:{color:'#F8FAFC',fontSize:18,fontWeight:'900',textAlign:'right'},errorText:{marginTop:7,color:'#94A3B8',lineHeight:20,textAlign:'right'},retryBtn:{marginTop:14,height:42,borderRadius:13,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},retryText:{color:'#fff',fontWeight:'900'},
   bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',backgroundColor:'#0B1220',borderTopWidth:1,borderTopColor:'#1E293B'},nav:{width:42,height:44,alignItems:'center',justifyContent:'center'},navText:{fontSize:30,color:'#F8FAFC'},stopText:{fontSize:28,color:'#F8FAFC',fontWeight:'400'},smallNav:{fontSize:18,color:'#F8FAFC',fontWeight:'900'},disabled:{color:'#475569'},ai:{height:40,minWidth:50,paddingHorizontal:12,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiText:{color:'#fff',fontWeight:'900'},

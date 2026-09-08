@@ -42,14 +42,21 @@ export async function getCurrentSession() {
 
 async function ensureProfile(userId: string, displayName?: string) {
   const supabase = getSupabase();
+  const { data: existing, error: readError } = await supabase
+    .from('raid_user_profiles')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle<{ user_id: string }>();
+  if (readError) throw readError;
+  if (existing) return;
+
   const cleanName = (displayName || '').trim().slice(0, 80);
-  const payload = {
+  const { error } = await supabase.from('raid_user_profiles').insert({
     user_id: userId,
     display_name: cleanName,
     locale: 'ar-IQ',
     updated_at: new Date().toISOString(),
-  };
-  const { error } = await supabase.from('raid_user_profiles').upsert(payload, { onConflict: 'user_id' });
+  });
   if (error) throw error;
 }
 
@@ -69,6 +76,11 @@ export async function updateCurrentProfile(displayName: string) {
   const session = await getCurrentSession();
   if (!session?.user) throw new Error('يجب تسجيل الدخول أولًا.');
   await ensureProfile(session.user.id, displayName);
+  const { error } = await getSupabase()
+    .from('raid_user_profiles')
+    .update({ display_name: displayName.trim().slice(0, 80), locale: 'ar-IQ', updated_at: new Date().toISOString() })
+    .eq('user_id', session.user.id);
+  if (error) throw error;
   return getCurrentProfile();
 }
 

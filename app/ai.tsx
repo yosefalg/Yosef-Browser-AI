@@ -14,7 +14,7 @@ export default function AIScreen() {
   const [busy, setBusy] = useState(false);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [lastFailedText, setLastFailedText] = useState('');
-  const autoSent = useRef(false);
+  const lastAutoPrompt = useRef('');
   const listRef = useRef<FlatList<AgentMessage>>(null);
 
   const refreshAccountState = useCallback(async () => {
@@ -63,10 +63,10 @@ export default function AIScreen() {
       const page = await getLatestPageContext().catch(() => null);
       const memories = await getMemories(10).catch(() => []);
       const memoryText = memories.length
-        ? `\n\nذاكرة المتصفح المحلية:\n${memories.map((m) => `- ${m.kind}: ${m.value}`).join('\n')}`
+        ? `ذاكرة المتصفح المحلية:\n${memories.map((m) => `- ${m.kind}: ${m.value}`).join('\n')}`.slice(0, 3000)
         : '';
       const pageText = page
-        ? `الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text}${memoryText}`
+        ? `${memoryText ? `${memoryText}\n\n` : ''}الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text.slice(0, 14000)}`
         : memoryText || undefined;
 
       const aiMessages = local.aiPrompt
@@ -86,10 +86,11 @@ export default function AIScreen() {
   const send = () => void sendValue(text);
 
   useEffect(() => {
-    if (!autoSent.current && typeof params.prompt === 'string' && params.prompt.trim()) {
-      autoSent.current = true;
-      setTimeout(() => void sendValue(params.prompt as string), 0);
-    }
+    const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
+    if (!prompt || lastAutoPrompt.current === prompt) return;
+    lastAutoPrompt.current = prompt;
+    const id = setTimeout(() => void sendValue(prompt), 0);
+    return () => clearTimeout(id);
   }, [params.prompt]);
 
   return (
@@ -131,8 +132,8 @@ export default function AIScreen() {
       <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined}>
         <View style={styles.hints}><Text style={styles.hint}>جرّب: «لخّص الصفحة» • «اشرح ببساطة» • «قارن بين التبويبات»</Text></View>
         <View style={styles.composer}>
-          <TextInput value={text} onChangeText={setText} onSubmitEditing={send} placeholder="اكتب سؤالك أو طلبك..." placeholderTextColor="#64748B" style={styles.input} multiline textAlign="right" />
-          <Pressable onPress={send} disabled={busy || !text.trim()} style={[styles.send, (busy || !text.trim()) && styles.sendDisabled]}><Text style={styles.sendText}>{busy?'…':'↑'}</Text></Pressable>
+          <TextInput value={text} onChangeText={setText} onSubmitEditing={send} placeholder="اكتب سؤالك أو طلبك..." placeholderTextColor="#64748B" style={styles.input} multiline textAlign="right" maxLength={6000} accessibilityLabel="رسالة RAID AI" />
+          <Pressable onPress={send} disabled={busy || !text.trim()} style={[styles.send, (busy || !text.trim()) && styles.sendDisabled]} accessibilityRole="button" accessibilityLabel="إرسال إلى RAID AI"><Text style={styles.sendText}>{busy?'…':'↑'}</Text></Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

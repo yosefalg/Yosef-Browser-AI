@@ -94,6 +94,7 @@ export default function BrowserScreen() {
   const stopSpeech = () => Speech.stop();
   const shareCurrent = () => Share.share({ title, message: `${title}\n${loadedUrl}`, url: loadedUrl }).catch(() => {});
   const openAI = () => {
+    if (privateMode) return;
     captureContext();
     router.push({ pathname: '/ai', params: { url: loadedUrl, title } });
   };
@@ -117,7 +118,7 @@ export default function BrowserScreen() {
         </Pressable>
       </View>
 
-      {privateMode && <View style={styles.private}><Text style={styles.privateText}>PRIVATE MODE — history and AI page context are not persisted</Text></View>}
+      {privateMode && <View style={styles.private}><Text style={styles.privateText}>الوضع الخاص — لا يتم حفظ السجل أو سياق AI، وAI معطّل</Text></View>}
       {loading && <View style={styles.progress} accessibilityLabel="جار تحميل الصفحة" />}
 
       <View style={styles.webWrap}>
@@ -162,7 +163,7 @@ export default function BrowserScreen() {
         <Pressable onPress={reloadOrStop} style={styles.nav} accessibilityRole="button" accessibilityLabel={loading ? 'إيقاف تحميل الصفحة' : 'تحديث الصفحة'}><Text style={loading ? styles.stopText : styles.navText}>{loading ? '×' : '↻'}</Text></Pressable>
         <Pressable onPress={openReader} style={styles.nav} accessibilityRole="button" accessibilityLabel="وضع القراءة"><Text style={styles.smallNav}>Aa</Text></Pressable>
         <Pressable onPress={shareCurrent} style={styles.nav} accessibilityRole="button" accessibilityLabel="مشاركة الصفحة"><Text style={styles.smallNav}>↗</Text></Pressable>
-        <Pressable onPress={openAI} style={styles.ai} accessibilityRole="button" accessibilityLabel="فتح مساعد RAID AI"><Text style={styles.aiText}>AI</Text></Pressable>
+        <Pressable disabled={privateMode} onPress={openAI} style={[styles.ai, privateMode && styles.aiDisabled]} accessibilityRole="button" accessibilityLabel={privateMode ? 'مساعد RAID AI معطّل في الوضع الخاص' : 'فتح مساعد RAID AI'} accessibilityState={{ disabled: privateMode }}><Text style={styles.aiText}>AI</Text></Pressable>
       </View>
 
       <Modal visible={Boolean(reader)} animationType="slide" onRequestClose={() => { stopSpeech(); setReader(null); }}>
@@ -194,6 +195,6 @@ const styles = StyleSheet.create({
   omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#111827',alignItems:'center',flexDirection:'row',paddingLeft:10},security:{fontSize:12,color:'#94A3B8'},insecure:{color:'#F59E0B'},input:{flex:1,color:'#F8FAFC',paddingHorizontal:10,fontSize:14},
   private:{backgroundColor:'#3B0764',paddingVertical:6,alignItems:'center'},privateText:{color:'#E9D5FF',fontSize:12,fontWeight:'700'},progress:{height:2,backgroundColor:'#8B5CF6'},
   webWrap:{flex:1,position:'relative'},web:{flex:1,backgroundColor:'#fff'},errorCard:{position:'absolute',left:18,right:18,top:24,padding:18,borderRadius:18,backgroundColor:'#111827',borderWidth:1,borderColor:'#334155'},errorTitle:{color:'#F8FAFC',fontSize:18,fontWeight:'900',textAlign:'right'},errorText:{marginTop:7,color:'#94A3B8',lineHeight:20,textAlign:'right'},retryBtn:{marginTop:14,height:42,borderRadius:13,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},retryText:{color:'#fff',fontWeight:'900'},
-  bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',backgroundColor:'#0B1220',borderTopWidth:1,borderTopColor:'#1E293B'},nav:{width:42,height:44,alignItems:'center',justifyContent:'center'},navText:{fontSize:30,color:'#F8FAFC'},stopText:{fontSize:28,color:'#F8FAFC',fontWeight:'400'},smallNav:{fontSize:18,color:'#F8FAFC',fontWeight:'900'},disabled:{color:'#475569'},ai:{height:40,minWidth:50,paddingHorizontal:12,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiText:{color:'#fff',fontWeight:'900'},
+  bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',backgroundColor:'#0B1220',borderTopWidth:1,borderTopColor:'#1E293B'},nav:{width:42,height:44,alignItems:'center',justifyContent:'center'},navText:{fontSize:30,color:'#F8FAFC'},stopText:{fontSize:28,color:'#F8FAFC',fontWeight:'400'},smallNav:{fontSize:18,color:'#F8FAFC',fontWeight:'900'},disabled:{color:'#475569'},ai:{height:40,minWidth:50,paddingHorizontal:12,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiDisabled:{opacity:0.38},aiText:{color:'#fff',fontWeight:'900'},
   readerRoot:{flex:1,backgroundColor:'#090D14'},readerLight:{backgroundColor:'#F8F5EE'},readerHead:{height:60,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:14,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTitle:{flex:1,color:'#F8FAFC',fontWeight:'900',textAlign:'right'},readerTextLight:{color:'#1F2937'},readerBtn:{paddingHorizontal:12,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerBtnText:{color:'#F8FAFC',fontWeight:'900'},readerTools:{flexDirection:'row',justifyContent:'center',gap:8,padding:10,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTool:{minWidth:48,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerContent:{paddingHorizontal:22,paddingVertical:24},readerArticle:{color:'#E5E7EB',textAlign:'right'}
 });

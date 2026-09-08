@@ -36,12 +36,19 @@ export async function pullMemoriesFromCloud() {
     .order('created_at_ms', { ascending: false })
     .limit(200);
   if (error) throw error;
+
+  const existing = await getMemories(200);
+  const known = new Set(existing.map((m) => `${m.kind}\u0000${m.value}`));
+  let imported = 0;
   for (const item of data ?? []) {
-    if (typeof item.kind === 'string' && typeof item.value === 'string') {
-      await remember(item.kind, item.value);
-    }
+    if (typeof item.kind !== 'string' || typeof item.value !== 'string') continue;
+    const key = `${item.kind}\u0000${item.value}`;
+    if (known.has(key)) continue;
+    await remember(item.kind, item.value);
+    known.add(key);
+    imported += 1;
   }
-  return data?.length ?? 0;
+  return imported;
 }
 
 export async function pushBookmarksToCloud() {

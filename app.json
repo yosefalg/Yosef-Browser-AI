@@ -10,6 +10,7 @@
     "android": {
       "package": "com.yosef.raidbrowser",
       "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"

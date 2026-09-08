@@ -98,9 +98,25 @@ class RaidVpnModule(private val reactContext: ReactApplicationContext) : ReactCo
         }
         val permissionIntent = VpnService.prepare(reactContext)
         if (permissionIntent != null) {
-            pendingPromise = promise
-            pendingConfigText = configText
-            activity.startActivityForResult(permissionIntent, REQUEST_VPN_PERMISSION)
+            synchronized(this) {
+                if (pendingPromise != null) {
+                    promise.reject("VPN_REQUEST_IN_PROGRESS", "طلب إذن VPN قيد التنفيذ بالفعل. أكمل نافذة Android الحالية ثم حاول مجددًا.")
+                    return
+                }
+                pendingPromise = promise
+                pendingConfigText = configText
+            }
+            try {
+                activity.startActivityForResult(permissionIntent, REQUEST_VPN_PERMISSION)
+            } catch (e: Exception) {
+                synchronized(this) {
+                    if (pendingPromise === promise) {
+                        pendingPromise = null
+                        pendingConfigText = null
+                    }
+                }
+                promise.reject("VPN_PERMISSION_FAILED", "تعذر فتح نافذة إذن VPN في Android.", e)
+            }
         } else {
             startTunnel(configText, promise)
         }
@@ -132,10 +148,13 @@ class RaidVpnModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode != REQUEST_VPN_PERMISSION) return
-        val promise = pendingPromise
-        val text = pendingConfigText
-        pendingPromise = null
-        pendingConfigText = null
+        val (promise, text) = synchronized(this) {
+            val currentPromise = pendingPromise
+            val currentText = pendingConfigText
+            pendingPromise = null
+            pendingConfigText = null
+            Pair(currentPromise, currentText)
+        }
         if (promise == null) return
         if (resultCode != Activity.RESULT_OK || text == null) {
             promise.reject("VPN_PERMISSION_DENIED", "Android VPN permission was denied")

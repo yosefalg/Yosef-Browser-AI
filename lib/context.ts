@@ -1,3 +1,5 @@
+import { safeExternalUrl } from './url';
+
 export type PageContextPayload = {
   type: 'RAID_PAGE_CONTEXT';
   url: string;
@@ -27,12 +29,24 @@ export const PAGE_CONTEXT_JS = `
 export function parsePageContext(raw: string): PageContextPayload | null {
   try {
     const value = JSON.parse(raw) as Partial<PageContextPayload>;
-    if (value.type !== 'RAID_PAGE_CONTEXT' || typeof value.url !== 'string' || typeof value.text !== 'string') return null;
+    if (
+      value.type !== 'RAID_PAGE_CONTEXT' ||
+      typeof value.url !== 'string' ||
+      typeof value.text !== 'string'
+    ) return null;
+
+    const url = value.url.trim();
+    const text = value.text.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!safeExternalUrl(url) || !text) return null;
+
+    const rawTitle = typeof value.title === 'string' ? value.title : url;
+    const title = rawTitle.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+
     return {
       type: 'RAID_PAGE_CONTEXT',
-      url: value.url,
-      title: typeof value.title === 'string' ? value.title : value.url,
-      text: value.text.slice(0, 16000),
+      url: url.slice(0, 4096),
+      title: title.slice(0, 300) || url.slice(0, 300),
+      text: text.slice(0, 16000),
     };
   } catch {
     return null;

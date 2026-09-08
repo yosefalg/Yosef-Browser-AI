@@ -3,6 +3,7 @@ import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, SafeAreaVi
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { signIn, signUp } from '@/lib/auth';
+import { signInWithGoogle } from '@/lib/google-auth';
 
 export default function LoginScreen(){
   const [email,setEmail]=useState('');
@@ -60,6 +61,26 @@ export default function LoginScreen(){
     }finally{setBusy(false)}
   };
 
+  const googleSubmit=async()=>{
+    if (busy) return;
+    setBusy(true); setMsg('');
+    try {
+      const data=await signInWithGoogle();
+      if (!data.session) throw new Error('تعذر إنشاء جلسة Google صالحة.');
+      router.replace('/');
+    } catch (e) {
+      const raw=e instanceof Error?e.message:'';
+      const lower=raw.toLowerCase();
+      if (lower.includes('provider') && lower.includes('enabled')) {
+        setMsg('تسجيل Google يحتاج تفعيل Google Provider في إعدادات Supabase أولًا.');
+      } else if (lower.includes('cancel') || lower.includes('إلغاء')) {
+        setMsg('تم إلغاء تسجيل الدخول بواسطة Google.');
+      } else {
+        setMsg(raw || 'تعذر تسجيل الدخول بواسطة Google.');
+      }
+    } finally { setBusy(false); }
+  };
+
   return <LinearGradient colors={['#040609','#0A0F19','#101628']} style={s.fill}>
     <SafeAreaView style={s.root}>
       <KeyboardAvoidingView style={s.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
@@ -68,8 +89,15 @@ export default function LoginScreen(){
             <View style={s.hero}>
               <LinearGradient colors={['#7C3AED','#4F46E5']} style={s.logo}><Text style={s.logoText}>R</Text></LinearGradient>
               <Text style={s.brand}>مرحبًا بك في RAID</Text>
-              <Text style={s.desc}>دخول سريع وآمن. جلسة واحدة لتفعيل خدمات الحساب والذكاء الاصطناعي.</Text>
+              <Text style={s.desc}>دخول سريع وآمن. جلسة واحدة لتفعيل خدمات الحساب والذكاء الاصطناعي وVPN.</Text>
             </View>
+
+            <Pressable onPress={googleSubmit} disabled={busy} style={[s.google,busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="تسجيل الدخول بواسطة Google">
+              <View style={s.googleMark}><Text style={s.googleMarkText}>G</Text></View>
+              <Text style={s.googleText}>المتابعة باستخدام Google</Text>
+            </Pressable>
+
+            <View style={s.divider}><View style={s.line}/><Text style={s.or}>أو</Text><View style={s.line}/></View>
 
             <View style={s.tabs}>
               <Pressable onPress={()=>choose('signin')} style={[s.tab,mode==='signin'&&s.tabOn]}><Text style={[s.tabText,mode==='signin'&&s.tabTextOn]}>دخول</Text></Pressable>
@@ -96,7 +124,8 @@ export default function LoginScreen(){
 }
 
 const s=StyleSheet.create({
-  fill:{flex:1},root:{flex:1},flex:{flex:1},content:{flexGrow:1,justifyContent:'center',padding:20},shell:{width:'100%',maxWidth:520,alignSelf:'center'},hero:{alignItems:'center',marginBottom:24},logo:{width:72,height:72,borderRadius:24,alignItems:'center',justifyContent:'center',shadowColor:'#7C3AED',shadowOpacity:.3,shadowRadius:20,shadowOffset:{width:0,height:8},elevation:8},logoText:{color:'#fff',fontSize:34,fontWeight:'900'},brand:{marginTop:18,fontSize:28,fontWeight:'900',color:'#F8FAFC',textAlign:'center'},desc:{marginTop:8,maxWidth:330,color:'#8B98AD',lineHeight:20,textAlign:'center'},
+  fill:{flex:1},root:{flex:1},flex:{flex:1},content:{flexGrow:1,justifyContent:'center',padding:20},shell:{width:'100%',maxWidth:520,alignSelf:'center'},hero:{alignItems:'center',marginBottom:24},logo:{width:72,height:72,borderRadius:24,alignItems:'center',justifyContent:'center',shadowColor:'#7C3AED',shadowOpacity:.3,shadowRadius:20,shadowOffset:{width:0,height:8},elevation:8},logoText:{color:'#fff',fontSize:34,fontWeight:'900'},brand:{marginTop:18,fontSize:28,fontWeight:'900',color:'#F8FAFC',textAlign:'center'},desc:{marginTop:8,maxWidth:350,color:'#8B98AD',lineHeight:20,textAlign:'center'},
+  google:{height:56,borderRadius:18,backgroundColor:'#fff',flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:12,paddingHorizontal:18},googleMark:{width:28,height:28,borderRadius:14,borderWidth:1,borderColor:'#D1D5DB',alignItems:'center',justifyContent:'center'},googleMarkText:{fontSize:17,fontWeight:'900',color:'#4285F4'},googleText:{color:'#111827',fontWeight:'900',fontSize:15},divider:{flexDirection:'row',alignItems:'center',gap:10,marginVertical:16},line:{flex:1,height:1,backgroundColor:'#263247'},or:{color:'#64748B',fontWeight:'800'},
   tabs:{flexDirection:'row-reverse',gap:8,padding:5,borderRadius:18,backgroundColor:'rgba(15,23,42,.86)',borderWidth:1,borderColor:'#202B3D'},tab:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center'},tabOn:{backgroundColor:'#20283A'},tabText:{color:'#7C889C',fontWeight:'800'},tabTextOn:{color:'#fff'},form:{gap:11,marginTop:14},input:{height:54,borderRadius:17,backgroundColor:'rgba(15,23,42,.9)',borderWidth:1,borderColor:'#263247',paddingHorizontal:15,color:'#fff',textAlign:'right',fontSize:16},
   primary:{height:56,borderRadius:18,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED',marginTop:16,shadowColor:'#7C3AED',shadowOpacity:.2,shadowRadius:16,shadowOffset:{width:0,height:6},elevation:5},disabled:{opacity:.5},primaryText:{color:'#fff',fontWeight:'900',fontSize:16},messageBox:{marginTop:12,padding:12,borderRadius:14,backgroundColor:'rgba(15,23,42,.8)',borderWidth:1,borderColor:'#263247'},msg:{color:'#CBD5E1',textAlign:'center',lineHeight:20},backButton:{height:44,alignItems:'center',justifyContent:'center',marginTop:6},back:{color:'#7C889C',fontWeight:'800'}
 });

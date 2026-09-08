@@ -21,6 +21,17 @@ function hostOnly(value: string) {
   return authority.split(':')[0].toLowerCase();
 }
 
+function validIpv4(host: string) {
+  if (!/^\d+(?:\.\d+){3}$/.test(host)) return true;
+  const parts = host.split('.');
+  return parts.length === 4 && parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    if (part.length > 1 && part.startsWith('0')) return false;
+    const value = Number(part);
+    return Number.isInteger(value) && value >= 0 && value <= 255;
+  });
+}
+
 function isLocalDevelopmentHost(value: string) {
   const host = hostOnly(value);
   if (host === 'localhost' || host === '::1') return true;
@@ -44,7 +55,12 @@ export function safeExternalUrl(url: string) {
 
   try {
     const parsed = new URL(value);
-    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && Boolean(parsed.hostname);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (!parsed.hostname || !validIpv4(parsed.hostname)) return false;
+    // Credentials embedded in URLs are easy to disguise in the omnibox and can
+    // make a malicious destination look trusted. RAID never navigates to them.
+    if (parsed.username || parsed.password) return false;
+    return true;
   } catch {
     return false;
   }
@@ -64,6 +80,8 @@ export function normalizeInput(input: string) {
   // syntactically similar to a URI scheme. Resolve valid web hosts first so
   // development servers and explicit web ports are not rejected as schemes.
   if (looksLikeHost(value)) {
+    const rawHost = hostOnly(value);
+    if (!validIpv4(rawHost)) throw new Error('Invalid IP address');
     // Local/private development services commonly do not provide TLS. Public hosts
     // still default to HTTPS, while loopback/RFC1918/link-local addresses use HTTP.
     const scheme = isLocalDevelopmentHost(value) ? 'http' : 'https';

@@ -64,11 +64,12 @@ export default function VpnScreen() {
       setReady(profile.configured);
       setSource(profile.source);
       setStatusMessage('تم حفظ ملف WireGuard محليًا بشكل آمن. جارٍ تشغيل النفق…');
-      const active = await connectVpn();
-      setConnected(Boolean(active));
+      await connectVpn();
+      const active = await isVpnConnected();
+      setConnected(active);
       setStatusMessage(active
         ? 'RAID VPN يعمل الآن باستخدام ملف WireGuard المجاني المحفوظ محليًا.'
-        : 'تم استيراد الملف بنجاح. اضغط تشغيل VPN للمحاولة مرة أخرى.');
+        : 'تم استيراد الملف، لكن Android لم يؤكد تشغيل النفق. اضغط تشغيل VPN للمحاولة مرة أخرى.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'تعذر استيراد ملف WireGuard.';
       if (/cancel|canceled|cancelled|ألغ/i.test(message)) return;
@@ -94,16 +95,24 @@ export default function VpnScreen() {
     try {
       if (connected) {
         await disconnectVpn();
-        setConnected(false);
-        setStatusMessage('تم قطع اتصال VPN.');
+        const active = await isVpnConnected();
+        setConnected(active);
+        setStatusMessage(active
+          ? 'طلب Android قطع الاتصال، لكن النفق ما زال فعالًا. حاول مرة أخرى.'
+          : 'تم قطع اتصال VPN.');
       } else {
         await connectVpn();
-        setConnected(true);
-        setStatusMessage(source === 'local'
-          ? 'متصل عبر WireGuard المجاني المحفوظ محليًا.'
-          : 'متصل عبر RAID WireGuard.');
+        const active = await isVpnConnected();
+        setConnected(active);
+        setStatusMessage(active
+          ? source === 'local'
+            ? 'متصل عبر WireGuard المجاني المحفوظ محليًا.'
+            : 'متصل عبر RAID WireGuard.'
+          : 'لم يؤكد Android تشغيل النفق. تحقق من إذن VPN والإعداد ثم حاول مجددًا.');
       }
     } catch (error) {
+      const active = await isVpnConnected().catch(() => connected);
+      setConnected(active);
       Alert.alert('RAID VPN', error instanceof Error ? error.message : 'تعذر تنفيذ العملية.');
     } finally {
       setBusy(false);

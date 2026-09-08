@@ -29,7 +29,8 @@ export default function SettingsScreen(){
       <Row title="التبويبات المفتوحة" onPress={()=>router.push('/tabs')}/>
 
       <Text style={s.section}>الحساب والخدمات الذكية</Text>
-      <Row title="تسجيل الدخول أو إنشاء حساب" onPress={()=>router.push('/login')}/>
+      <Row title="حسابي" onPress={()=>router.push('/account')}/>
+      <Row title="تسجيل الدخول أو إنشاء حساب جديد" onPress={()=>router.push('/login')}/>
       <Row title="RAID AI" onPress={()=>router.push('/ai')}/>
       <Row title="RAID VPN" onPress={()=>router.push('/vpn')}/>
       <Row title="مركز الخصوصية" onPress={()=>router.push('/privacy')}/>
@@ -40,7 +41,7 @@ export default function SettingsScreen(){
 
       <Text style={s.section}>حالة الخدمات</Text>
       <View style={s.card}>
-        <Text style={s.note}>VPN مدمج فعليًا عبر خدمة Android الأصلية ويعمل من الحساب المرتبط عند توفر ملف VPN للحساب. RAID AI مدمج بخدمة خلفية محمية بحساب المستخدم ولا يحتاج إدخال مفتاح API داخل التطبيق.</Text>
+        <Text style={s.note}>RAID AI وVPN مرتبطان بهوية حساب المستخدم بعد تسجيل الدخول. بيانات الملف الشخصي تُحفظ في قاعدة البيانات مع سياسات وصول تمنع كل مستخدم من قراءة أو تعديل ملف مستخدم آخر.</Text>
       </View>
     </ScrollView>
   </SafeAreaView>

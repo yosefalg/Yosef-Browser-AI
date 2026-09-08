@@ -88,10 +88,23 @@ export async function askAgent(messages: AgentMessage[], pageText?: string) {
 
   if (!cleanMessages.length) throw new Error('اكتب رسالة أولاً.');
 
-  const { data, error } = await supabase.functions.invoke('raid-ai', {
-    body: { messages: cleanMessages, pageText: pageText?.slice(0, 18000) },
-    headers: { Authorization: `Bearer ${session.access_token}` },
+  const body = { messages: cleanMessages, pageText: pageText?.slice(0, 18000) };
+  const invoke = (accessToken: string) => supabase.functions.invoke('raid-ai', {
+    body,
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
+
+  let { data, error } = await invoke(session.access_token);
+
+  // A token can be revoked or expire between getSession() and the Edge Function call.
+  // Refresh once and retry only for HTTP 401; never retry provider/server failures.
+  if (error && (error as FunctionErrorLike).context?.status === 401) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    const refreshedToken = refreshed.session?.access_token;
+    if (!refreshError && refreshedToken) {
+      ({ data, error } = await invoke(refreshedToken));
+    }
+  }
 
   if (error) {
     throw new Error(await getFunctionErrorMessage(error as FunctionErrorLike));

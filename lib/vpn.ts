@@ -44,6 +44,10 @@ async function cacheConfig(configText: string) {
   return value;
 }
 
+export async function saveWireGuardConfig(configText: string) {
+  return cacheConfig(configText);
+}
+
 export async function loadWireGuardConfig() {
   return SecureStore.getItemAsync(CONFIG_KEY);
 }
@@ -92,7 +96,8 @@ export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
   }
 }
 
-export async function connectVpn() {
+export async function connectVpn(configText?: string) {
+  if (configText?.trim()) await cacheConfig(configText);
   try {
     await syncVpnProfileFromAccount();
   } catch {}

@@ -10,6 +10,10 @@
     "android": {
       "package": "com.yosef.raidbrowser",
       "versionCode": 1,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#070B14"
       }
@@ -19,6 +23,12 @@
       "expo-secure-store",
       "expo-local-authentication",
       "expo-sqlite",
+      [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": true
+        }
+      ],
       "./plugins/withRaidWireGuard"
     ],
     "experiments": {

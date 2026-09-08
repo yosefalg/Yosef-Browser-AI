@@ -60,10 +60,9 @@ export function normalizeInput(input: string) {
     return value;
   }
 
-  // Never pass non-web schemes (javascript:, data:, file:, intent:, custom apps, etc.)
-  // into the WebView. This also protects future schemes without maintaining a blocklist.
-  if (EXPLICIT_SCHEME.test(value)) throw new Error('Unsupported URL scheme');
-
+  // Host:port input (for example localhost:3000 or example.com:8443) is
+  // syntactically similar to a URI scheme. Resolve valid web hosts first so
+  // development servers and explicit web ports are not rejected as schemes.
   if (looksLikeHost(value)) {
     // Local/private development services commonly do not provide TLS. Public hosts
     // still default to HTTPS, while loopback/RFC1918/link-local addresses use HTTP.
@@ -71,6 +70,10 @@ export function normalizeInput(input: string) {
     const candidate = `${scheme}://${value}`;
     if (safeExternalUrl(candidate)) return candidate;
   }
+
+  // Never pass non-web schemes (javascript:, data:, file:, intent:, custom apps, etc.)
+  // into the WebView. This also protects future schemes without maintaining a blocklist.
+  if (EXPLICIT_SCHEME.test(value)) throw new Error('Unsupported URL scheme');
 
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
 }

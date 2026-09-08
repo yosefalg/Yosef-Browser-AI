@@ -25,6 +25,12 @@ class ServiceError extends Error {
   }
 }
 
+class ProviderError extends Error {
+  constructor(public provider: string, public status?: number, message?: string) {
+    super(message || provider);
+  }
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 
@@ -87,18 +93,28 @@ async function callOpenAI(apiKey: string, messages: AgentMessage[], pageText?: s
   });
 
   const payload = await response.json().catch(() => null) as any;
-  if (!response.ok) throw new Error(payload?.error?.message || `OpenAI HTTP ${response.status}`);
+  if (!response.ok) throw new ProviderError('openai', response.status, payload?.error?.message || `OpenAI HTTP ${response.status}`);
   const text = extractResponsesText(payload);
-  if (!text) throw new Error('EMPTY_RESPONSE');
+  if (!text) throw new ProviderError('openai', response.status, 'EMPTY_RESPONSE');
   return { text, provider: 'openai', model };
 }
 
-async function callGemini(apiKey: string, messages: AgentMessage[], pageText?: string): Promise<ProviderResult> {
-  const model = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+function geminiModels() {
+  const configured = Deno.env.get('GEMINI_MODEL')?.trim();
+  return [...new Set([
+    configured,
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+  ].filter((value): value is string => Boolean(value)))];
+}
+
+async function callGeminiModel(apiKey: string, model: string, messages: AgentMessage[], pageText?: string): Promise<ProviderResult> {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const response = await fetchWithTimeout(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt(pageText) }] },
       contents: messages.map((message) => ({
@@ -109,13 +125,28 @@ async function callGemini(apiKey: string, messages: AgentMessage[], pageText?: s
     }),
   });
   const payload = await response.json().catch(() => null) as any;
-  if (!response.ok) throw new Error(payload?.error?.message || `Gemini HTTP ${response.status}`);
+  if (!response.ok) throw new ProviderError('gemini', response.status, payload?.error?.message || `Gemini HTTP ${response.status}`);
   const text = payload?.candidates?.[0]?.content?.parts
     ?.map((part: any) => typeof part?.text === 'string' ? part.text : '')
     .join('')
     .trim();
-  if (!text) throw new Error('EMPTY_RESPONSE');
+  if (!text) throw new ProviderError('gemini', response.status, 'EMPTY_RESPONSE');
   return { text, provider: 'gemini', model };
+}
+
+async function callGemini(apiKey: string, messages: AgentMessage[], pageText?: string): Promise<ProviderResult> {
+  const failures: string[] = [];
+  for (const model of geminiModels()) {
+    try {
+      return await callGeminiModel(apiKey, model, messages, pageText);
+    } catch (error) {
+      const status = error instanceof ProviderError ? error.status : undefined;
+      const message = error instanceof Error ? error.message : 'unknown';
+      failures.push(`${model}:${status ?? 'network'}:${message}`);
+      console.error(`RAID AI gemini model failure ${model}`, status ?? 'network');
+    }
+  }
+  throw new ProviderError('gemini', undefined, failures.join(' | '));
 }
 
 async function callOpenAICompatible(
@@ -137,21 +168,21 @@ async function callOpenAICompatible(
     }),
   });
   const payload = await response.json().catch(() => null) as any;
-  if (!response.ok) throw new Error(payload?.error?.message || `${provider} HTTP ${response.status}`);
+  if (!response.ok) throw new ProviderError(provider, response.status, payload?.error?.message || `${provider} HTTP ${response.status}`);
   const text = payload?.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error('EMPTY_RESPONSE');
+  if (!text) throw new ProviderError(provider, response.status, 'EMPTY_RESPONSE');
   return { text, provider, model };
 }
 
 async function runProviders(messages: AgentMessage[], pageText?: string): Promise<ProviderResult> {
   const attempts: Array<{ name: string; run: () => Promise<ProviderResult> }> = [];
+  const geminiKey = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('GOOGLE_GENERATIVE_AI_API_KEY');
   const openAIKey = Deno.env.get('OPENAI_API_KEY');
-  const geminiKey = Deno.env.get('GEMINI_API_KEY');
   const deepSeekKey = Deno.env.get('DEEPSEEK_API_KEY');
   const customKey = Deno.env.get('AI_API_KEY');
 
-  if (openAIKey) attempts.push({ name: 'openai', run: () => callOpenAI(openAIKey, messages, pageText) });
   if (geminiKey) attempts.push({ name: 'gemini', run: () => callGemini(geminiKey, messages, pageText) });
+  if (openAIKey) attempts.push({ name: 'openai', run: () => callOpenAI(openAIKey, messages, pageText) });
   if (deepSeekKey) attempts.push({
     name: 'deepseek',
     run: () => callOpenAICompatible(
@@ -175,17 +206,20 @@ async function runProviders(messages: AgentMessage[], pageText?: string): Promis
   if (!attempts.length) throw new ServiceError('AI_NOT_CONFIGURED', 503);
 
   const failures: string[] = [];
+  let quotaFailure = false;
   for (const attempt of attempts) {
     try {
       return await attempt.run();
     } catch (error) {
+      const status = error instanceof ProviderError ? error.status : undefined;
       const message = error instanceof Error ? error.message : 'unknown';
-      failures.push(`${attempt.name}: ${message}`);
-      console.error(`RAID AI ${attempt.name} failure`, message);
+      if (status === 429 || /quota|rate limit|insufficient_quota|resource_exhausted/i.test(message)) quotaFailure = true;
+      failures.push(`${attempt.name}:${status ?? 'network'}`);
+      console.error(`RAID AI ${attempt.name} failure`, status ?? message);
     }
   }
   console.error('RAID AI all providers failed', failures.join(' | '));
-  throw new ServiceError('AI_UPSTREAM_ERROR', 502);
+  throw new ServiceError(quotaFailure ? 'AI_QUOTA_EXHAUSTED' : 'AI_UPSTREAM_ERROR', quotaFailure ? 429 : 502);
 }
 
 Deno.serve(async (req: Request) => {

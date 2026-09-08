@@ -1,155 +1,94 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { clearWireGuardConfig, connectVpn, disconnectVpn, isVpnConnected, loadWireGuardConfig, saveWireGuardConfig } from '@/lib/vpn';
+import { connectVpn, disconnectVpn, getVpnProvisioningState, isVpnConnected } from '@/lib/vpn';
 
 export default function VpnScreen() {
-  const [config, setConfig] = useState('');
-  const [hasSavedConfig, setHasSavedConfig] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('غير متصل');
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(true);
 
   const refresh = async () => {
+    setBusy(true);
     try {
-      const active = await isVpnConnected();
+      const active = await isVpnConnected().catch(() => false);
+      const profile = await getVpnProvisioningState();
       setConnected(active);
-      setStatus(active ? 'متصل عبر WireGuard' : 'غير متصل');
-    } catch {
-      setConnected(false);
-      setStatus('يتطلب إعادة بناء APK لدعم VPN');
+      setReady(profile.configured);
+    } finally {
+      setBusy(false);
     }
   };
 
-  useEffect(() => {
-    loadWireGuardConfig().then((value) => {
-      if (value) {
-        setConfig(value);
-        setHasSavedConfig(true);
+  useEffect(() => { refresh(); }, []);
+
+  const toggle = async () => {
+    if (!ready && !connected) {
+      Alert.alert('RAID VPN', 'سجّل الدخول بالحساب المرتبط بخدمة VPN ثم حدّث الحالة.', [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'تسجيل الدخول', onPress: () => router.push('/login') },
+      ]);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      if (connected) {
+        await disconnectVpn();
+        setConnected(false);
       } else {
-        setEditing(true);
+        await connectVpn();
+        setConnected(true);
       }
-    }).catch(() => setEditing(true));
-    refresh();
-  }, []);
-
-  const save = async () => {
-    try {
-      await saveWireGuardConfig(config);
-      setHasSavedConfig(true);
-      setEditing(false);
-      Alert.alert('RAID VPN', 'تم حفظ إعداد WireGuard بأمان. من الآن يكفي الضغط على اتصال VPN.');
     } catch (e) {
-      Alert.alert('خطأ', e instanceof Error ? e.message : 'تعذر حفظ الإعداد.');
-    }
-  };
-
-  const connect = async () => {
-    setBusy(true);
-    setStatus('جارٍ الاتصال...');
-    try {
-      if (editing || !hasSavedConfig) {
-        await saveWireGuardConfig(config);
-        setHasSavedConfig(true);
-        setEditing(false);
-      }
-      await connectVpn();
-      setConnected(true);
-      setStatus('متصل عبر WireGuard');
-    } catch (e) {
-      setConnected(false);
-      setStatus('فشل الاتصال');
-      Alert.alert('VPN', e instanceof Error ? e.message : 'تعذر الاتصال بالخادم.');
+      Alert.alert('RAID VPN', e instanceof Error ? e.message : 'تعذر تنفيذ العملية.');
     } finally {
       setBusy(false);
     }
   };
-
-  const disconnect = async () => {
-    setBusy(true);
-    try {
-      await disconnectVpn();
-      setConnected(false);
-      setStatus('غير متصل');
-    } catch (e) {
-      Alert.alert('VPN', e instanceof Error ? e.message : 'تعذر قطع الاتصال.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const clear = async () => {
-    if (connected) await disconnectVpn().catch(() => {});
-    await clearWireGuardConfig();
-    setConfig('');
-    setHasSavedConfig(false);
-    setEditing(true);
-    setConnected(false);
-    setStatus('غير متصل');
-  };
-
-  const canConnect = hasSavedConfig || !!config.trim();
 
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>RAID VPN</Text>
-          <Text style={styles.subtitle}>WireGuard Native Tunnel</Text>
-        </View>
-        <View style={[styles.dot, connected && styles.dotOn]} />
+    <SafeAreaView style={s.root}>
+      <View style={s.header}>
+        <Pressable onPress={() => router.back()} style={s.back}><Text style={s.backText}>‹</Text></Pressable>
+        <View style={s.headText}><Text style={s.title}>RAID VPN</Text><Text style={s.sub}>WireGuard</Text></View>
+        <View style={[s.dot, connected && s.dotOn]} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.statusCard}>
-          <Text style={styles.statusLabel}>الحالة</Text>
-          <Text style={[styles.statusValue, connected && styles.connected]}>{status}</Text>
-          <Text style={styles.info}>{hasSavedConfig ? 'الإعداد محفوظ بأمان على هذا الجهاز. اضغط الزر أدناه للاتصال أو قطع الاتصال.' : 'أدخل إعداد WireGuard الحقيقي مرة واحدة فقط. بعد حفظه سيصبح الاتصال بنقرة واحدة.'}</Text>
+      <View style={s.body}>
+        <View style={[s.hero, connected && s.heroOn]}>
+          <Text style={s.state}>{connected ? 'متصل ومحمي' : ready ? 'جاهز للاتصال' : 'الحساب غير مرتبط'}</Text>
+          <View style={[s.circle, connected && s.circleOn]}><Text style={s.symbol}>{connected ? '◆' : '◇'}</Text></View>
+          <Text style={s.mainTitle}>{connected ? 'RAID VPN يعمل الآن' : ready ? 'اتصال بنقرة واحدة' : 'اربط حسابك أولًا'}</Text>
+          <Text style={s.desc}>{connected ? 'الاتصال يعمل عبر نفق WireGuard.' : ready ? 'لا توجد إعدادات يدوية. اضغط تشغيل VPN فقط.' : 'بعد تسجيل الدخول بالحساب المرتبط ستصبح الخدمة جاهزة.'}</Text>
+          <Pressable disabled={busy} onPress={toggle} style={[s.primary, connected && s.stop, busy && s.disabled]}>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryText}>{connected ? 'قطع الاتصال' : 'تشغيل VPN'}</Text>}
+          </Pressable>
         </View>
 
-        {editing ? (
-          <>
-            <Text style={styles.section}>إعداد WireGuard</Text>
-            <TextInput
-              value={config}
-              onChangeText={setConfig}
-              multiline
-              autoCapitalize="none"
-              autoCorrect={false}
-              textAlignVertical="top"
-              placeholder={'[Interface]\nPrivateKey = ...\nAddress = ...\nDNS = ...\n\n[Peer]\nPublicKey = ...\nEndpoint = host:port\nAllowedIPs = 0.0.0.0/0, ::/0'}
-              placeholderTextColor="#475569"
-              style={styles.editor}
-            />
-            <Pressable disabled={busy || !config.trim()} onPress={save} style={[styles.secondaryWide, (busy || !config.trim()) && styles.disabled]}>
-              <Text style={styles.secondaryText}>حفظ الإعداد على هذا الجهاز</Text>
-            </Pressable>
-          </>
-        ) : (
-          <View style={styles.savedCard}>
-            <Text style={styles.savedTitle}>✓ إعداد VPN محفوظ</Text>
-            <Text style={styles.savedText}>المفتاح الخاص مخفي ولا يظهر في الشاشة.</Text>
-            <Pressable disabled={busy || connected} onPress={() => setEditing(true)} style={styles.editButton}><Text style={styles.editText}>تغيير الإعداد</Text></Pressable>
-          </View>
-        )}
+        <View style={s.row}>
+          <View style={s.card}><Text style={s.cardLabel}>البروتوكول</Text><Text style={s.cardValue}>WireGuard</Text></View>
+          <View style={s.card}><Text style={s.cardLabel}>الحالة</Text><Text style={s.cardValue}>{ready ? 'مرتبط' : 'غير مرتبط'}</Text></View>
+        </View>
 
-        <Pressable disabled={busy || (!connected && !canConnect)} onPress={connected ? disconnect : connect} style={[styles.primary, (busy || (!connected && !canConnect)) && styles.disabled, connected && styles.stop]}>
-          <Text style={styles.primaryText}>{busy ? 'انتظر...' : connected ? 'قطع الاتصال' : 'اتصال VPN'}</Text>
+        <Pressable onPress={ready ? refresh : () => router.push('/login')} style={s.secondary}>
+          <Text style={s.secondaryText}>{ready ? 'تحديث الحالة' : 'تسجيل الدخول'}</Text>
         </Pressable>
-
-        {hasSavedConfig && <Pressable disabled={busy} onPress={clear} style={styles.clear}><Text style={styles.clearText}>حذف إعداد VPN من الجهاز</Text></Pressable>}
-
-        <View style={styles.note}>
-          <Text style={styles.noteTitle}>الأمان</Text>
-          <Text style={styles.noteText}>يُحفظ إعداد WireGuard محليًا عبر SecureStore ولا تتم إضافته إلى GitHub أو تضمينه داخل APK.</Text>
-        </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  root:{flex:1,backgroundColor:'#070B14'},header:{height:68,flexDirection:'row',alignItems:'center',paddingHorizontal:14,borderBottomWidth:1,borderBottomColor:'#1E293B',gap:12},back:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#111827'},backText:{fontSize:32,color:'#fff',marginTop:-3},headerText:{flex:1},title:{color:'#fff',fontWeight:'900',fontSize:21},subtitle:{color:'#8B5CF6',fontWeight:'700',fontSize:12,marginTop:2},dot:{width:13,height:13,borderRadius:8,backgroundColor:'#475569'},dotOn:{backgroundColor:'#22C55E'},content:{padding:18,paddingBottom:40},statusCard:{padding:18,borderRadius:22,backgroundColor:'#101827',borderWidth:1,borderColor:'#27324A'},statusLabel:{color:'#64748B',fontSize:12,fontWeight:'700'},statusValue:{color:'#E2E8F0',fontSize:25,fontWeight:'900',marginTop:5},connected:{color:'#4ADE80'},info:{color:'#94A3B8',lineHeight:21,marginTop:12,textAlign:'right'},section:{color:'#F8FAFC',fontWeight:'900',fontSize:17,marginTop:24,marginBottom:10,textAlign:'right'},editor:{minHeight:280,borderRadius:20,borderWidth:1,borderColor:'#27324A',backgroundColor:'#0B1220',color:'#E2E8F0',padding:15,fontFamily:'monospace',fontSize:12,lineHeight:18},primary:{marginTop:18,minHeight:58,borderRadius:18,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},primaryText:{color:'#fff',fontWeight:'900',fontSize:17},stop:{backgroundColor:'#B91C1C'},secondaryWide:{marginTop:12,minHeight:50,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},secondaryText:{color:'#fff',fontWeight:'800'},disabled:{opacity:.45},savedCard:{marginTop:20,padding:18,borderRadius:20,backgroundColor:'#0D1726',borderWidth:1,borderColor:'#1F3A2D'},savedTitle:{color:'#4ADE80',fontSize:17,fontWeight:'900',textAlign:'right'},savedText:{color:'#94A3B8',marginTop:6,textAlign:'right'},editButton:{marginTop:12,minHeight:42,alignItems:'center',justifyContent:'center',borderRadius:13,backgroundColor:'#172033'},editText:{color:'#C4B5FD',fontWeight:'800'},clear:{marginTop:12,minHeight:48,alignItems:'center',justifyContent:'center'},clearText:{color:'#F87171',fontWeight:'800'},note:{marginTop:20,padding:16,borderRadius:18,backgroundColor:'#0D1726'},noteTitle:{color:'#C4B5FD',fontWeight:'900',marginBottom:6,textAlign:'right'},noteText:{color:'#94A3B8',lineHeight:20,textAlign:'right'}
+const s = StyleSheet.create({
+  root:{flex:1,backgroundColor:'#070A12'},
+  header:{height:68,flexDirection:'row',alignItems:'center',paddingHorizontal:16,borderBottomWidth:1,borderBottomColor:'#182033'},
+  back:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#111827'},
+  backText:{fontSize:32,color:'#fff',marginTop:-4},headText:{flex:1,alignItems:'center'},title:{color:'#fff',fontSize:20,fontWeight:'900'},sub:{color:'#8B5CF6',fontSize:11,fontWeight:'800',marginTop:2},
+  dot:{width:11,height:11,borderRadius:6,backgroundColor:'#475569'},dotOn:{backgroundColor:'#34D399'},body:{padding:18},
+  hero:{padding:24,borderRadius:28,alignItems:'center',backgroundColor:'#0E1524',borderWidth:1,borderColor:'#202A3D'},heroOn:{backgroundColor:'#0B1818',borderColor:'#225C4D'},
+  state:{color:'#A78BFA',fontSize:12,fontWeight:'900'},circle:{width:116,height:116,borderRadius:58,alignItems:'center',justifyContent:'center',marginTop:24,backgroundColor:'#181D35',borderWidth:8,borderColor:'#101626'},circleOn:{backgroundColor:'#123B33',borderColor:'#0E2924'},symbol:{fontSize:50,color:'#C4B5FD'},
+  mainTitle:{fontSize:26,fontWeight:'900',color:'#fff',marginTop:20,textAlign:'center'},desc:{color:'#94A3B8',lineHeight:21,marginTop:8,textAlign:'center'},
+  primary:{width:'100%',height:58,borderRadius:18,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED',marginTop:24},stop:{backgroundColor:'#B4233D'},disabled:{opacity:.55},primaryText:{color:'#fff',fontSize:17,fontWeight:'900'},
+  row:{flexDirection:'row',gap:12,marginTop:14},card:{flex:1,padding:16,borderRadius:18,backgroundColor:'#0E1524',borderWidth:1,borderColor:'#1E293B'},cardLabel:{color:'#64748B',fontSize:11,fontWeight:'800',textAlign:'right'},cardValue:{color:'#F8FAFC',fontSize:15,fontWeight:'900',textAlign:'right',marginTop:8},
+  secondary:{height:50,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:'#151E2E',marginTop:14},secondaryText:{color:'#C4B5FD',fontWeight:'900'}
 });

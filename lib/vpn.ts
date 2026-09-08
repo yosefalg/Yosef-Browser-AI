@@ -1,10 +1,12 @@
 import { NativeModules, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { File } from 'expo-file-system';
 import { getSupabase } from '@/lib/auth';
 
 const LEGACY_CONFIG_KEY = 'raid_wireguard_config_v2';
 const OWNER_KEY = 'raid_wireguard_owner_v3';
 const configKeyFor = (userId: string) => `raid_wireguard_config_v3_${userId}`;
+const localMarkerFor = (userId: string) => `raid_wireguard_local_v4_${userId}`;
 
 type RaidVpnNative = {
   connect(configText: string): Promise<boolean>;
@@ -24,7 +26,7 @@ type FunctionErrorLike = Error & { context?: Response };
 
 export type VpnProvisioningState = {
   configured: boolean;
-  source: 'service' | 'cache' | 'none';
+  source: 'service' | 'local' | 'cache' | 'none';
 };
 
 function native(): RaidVpnNative {
@@ -36,13 +38,15 @@ function native(): RaidVpnNative {
 
 function validateConfig(configText: string) {
   const value = configText.trim();
-  if (!value.includes('[Interface]') || !value.includes('[Peer]') || !value.includes('Endpoint')) {
+  const required = ['[Interface]', 'PrivateKey', '[Peer]', 'PublicKey', 'Endpoint', 'AllowedIPs'];
+  if (!required.every((part) => value.includes(part))) {
     throw new Error('إعداد WireGuard غير صالح أو غير مكتمل.');
   }
+  if (value.length > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
   return value;
 }
 
-async function cacheConfigForUser(userId: string, configText: string) {
+async function cacheConfigForUser(userId: string, configText: string, source: 'service' | 'local' = 'service') {
   const value = validateConfig(configText);
   await SecureStore.setItemAsync(configKeyFor(userId), value, {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -50,6 +54,13 @@ async function cacheConfigForUser(userId: string, configText: string) {
   await SecureStore.setItemAsync(OWNER_KEY, userId, {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
+  if (source === 'local') {
+    await SecureStore.setItemAsync(localMarkerFor(userId), '1', {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } else {
+    await SecureStore.deleteItemAsync(localMarkerFor(userId)).catch(() => {});
+  }
   await SecureStore.deleteItemAsync(LEGACY_CONFIG_KEY).catch(() => {});
   return value;
 }
@@ -60,8 +71,16 @@ async function loadConfigForUser(userId: string) {
   return SecureStore.getItemAsync(configKeyFor(userId));
 }
 
+async function isLocalConfigForUser(userId: string) {
+  return (await SecureStore.getItemAsync(localMarkerFor(userId))) === '1';
+}
+
 async function clearConfigForUser(userId?: string) {
-  if (userId) await SecureStore.deleteItemAsync(configKeyFor(userId)).catch(() => {});
+  const resolvedUserId = userId ?? await SecureStore.getItemAsync(OWNER_KEY);
+  if (resolvedUserId) {
+    await SecureStore.deleteItemAsync(configKeyFor(resolvedUserId)).catch(() => {});
+    await SecureStore.deleteItemAsync(localMarkerFor(resolvedUserId)).catch(() => {});
+  }
   await SecureStore.deleteItemAsync(OWNER_KEY).catch(() => {});
   await SecureStore.deleteItemAsync(LEGACY_CONFIG_KEY).catch(() => {});
 }
@@ -116,6 +135,21 @@ export async function clearWireGuardConfig() {
   await clearConfigForUser(userId ?? undefined);
 }
 
+export async function importLocalWireGuardConfig(): Promise<VpnProvisioningState> {
+  const userId = await currentUserId();
+  if (!userId) throw new Error('سجّل الدخول أولًا لربط ملف VPN بحساب RAID.');
+  if (Platform.OS !== 'android') throw new Error('استيراد WireGuard متاح حاليًا على Android فقط.');
+
+  const picked = await File.pickFileAsync();
+  const file = Array.isArray(picked) ? picked[0] : picked;
+  if (!file) throw new Error('لم يتم اختيار ملف WireGuard.');
+  if (typeof file.size === 'number' && file.size > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
+
+  const configText = await file.text();
+  await cacheConfigForUser(userId, configText, 'local');
+  return { configured: true, source: 'local' };
+}
+
 export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState> {
   const supabase = getSupabase();
   const session = await getValidSession();
@@ -138,12 +172,17 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
   if (error) throw new Error(await readFunctionError(error));
   const payload = data as VpnFunctionPayload | null;
   if (payload?.error) throw new Error(payload.error);
+
   if (!payload?.configured || !payload.configText) {
+    const cached = await loadConfigForUser(user.id);
+    if (cached && await isLocalConfigForUser(user.id)) {
+      return { configured: true, source: 'local' };
+    }
     await clearConfigForUser(user.id);
     return { configured: false, source: 'none' };
   }
 
-  await cacheConfigForUser(user.id, payload.configText);
+  await cacheConfigForUser(user.id, payload.configText, 'service');
   return { configured: true, source: 'service' };
 }
 
@@ -158,7 +197,9 @@ export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
     return await syncVpnProfileFromAccount();
   } catch {
     const cached = await loadConfigForUser(userId);
-    return { configured: !!cached, source: cached ? 'cache' : 'none' };
+    if (!cached) return { configured: false, source: 'none' };
+    const local = await isLocalConfigForUser(userId);
+    return { configured: true, source: local ? 'local' : 'cache' };
   }
 }
 
@@ -174,7 +215,7 @@ export async function connectVpn() {
   }
 
   const config = await loadConfigForUser(userId);
-  if (!config) throw new Error('لا يوجد خادم RAID VPN مخصص لهذا الحساب حتى الآن.');
+  if (!config) throw new Error('لا يوجد إعداد WireGuard. استورد ملف VPN مجاني أو اربط خادم RAID VPN.');
   return native().connect(validateConfig(config));
 }
 

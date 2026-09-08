@@ -13,23 +13,21 @@ export const READER_EXTRACT_JS = `
     const clone = document.body.cloneNode(true);
     selectors.forEach((s) => clone.querySelectorAll(s).forEach((n) => n.remove()));
     const candidates = Array.from(clone.querySelectorAll('article, main, [role="main"], section, div'));
-    const score = (el) => {
-      const text = (el.innerText || '').replace(/\\s+/g, ' ').trim();
-      const p = el.querySelectorAll('p').length;
-      const links = el.querySelectorAll('a').length;
-      return text.length + p * 120 - links * 20;
-    };
     let best = clone;
     let bestScore = -Infinity;
     for (const candidate of candidates) {
-      const candidateScore = score(candidate);
+      const text = (candidate.innerText || '').replace(/\\s+/g, ' ').trim();
+      if (text.length < 240) continue;
+      const paragraphs = candidate.querySelectorAll('p').length;
+      const links = candidate.querySelectorAll('a').length;
+      const candidateScore = text.length + paragraphs * 120 - links * 20;
       if (candidateScore > bestScore) {
         best = candidate;
         bestScore = candidateScore;
       }
     }
     let text = (best.innerText || '').replace(/\\n{3,}/g, '\\n\\n').replace(/[ \\t]+/g, ' ').trim();
-    if (text.length < 240) text = (clone.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
+    if (text.length < 240) text = (clone.innerText || '').replace(/\\n{3,}/g, '\\n\\n').replace(/[ \\t]+/g, ' ').trim();
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'RAID_READER',
       payload: { title: document.title || location.hostname, text: text.slice(0, 120000), url: location.href }

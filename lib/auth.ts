@@ -35,9 +35,17 @@ export function getSupabase() {
 }
 
 export async function getCurrentSession() {
-  const { data, error } = await getSupabase().auth.getSession();
+  const supabase = getSupabase();
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  return data.session;
+
+  let session = data.session;
+  const expiresSoon = session?.expires_at ? session.expires_at * 1000 - Date.now() < 60_000 : false;
+  if (session && expiresSoon) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (!refreshError && refreshed.session) session = refreshed.session;
+  }
+  return session;
 }
 
 async function ensureProfile(userId: string, displayName?: string) {
@@ -58,6 +66,14 @@ async function ensureProfile(userId: string, displayName?: string) {
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;
+}
+
+async function syncProfileBestEffort(userId: string, displayName?: string) {
+  try {
+    await ensureProfile(userId, displayName);
+  } catch (error) {
+    console.warn('RAID profile sync deferred', error);
+  }
 }
 
 export async function getCurrentProfile(): Promise<RaidUserProfile | null> {
@@ -89,7 +105,7 @@ export async function signIn(email: string, password: string) {
   if (error) throw error;
   if (data.user) {
     const name = String(data.user.user_metadata?.display_name || '').trim();
-    await ensureProfile(data.user.id, name);
+    await syncProfileBestEffort(data.user.id, name);
   }
   return data;
 }
@@ -101,7 +117,7 @@ export async function signUp(email: string, password: string, displayName: strin
     options: { data: { display_name: displayName.trim().slice(0, 80), locale: 'ar-IQ' } },
   });
   if (error) throw error;
-  if (data.user && data.session) await ensureProfile(data.user.id, displayName);
+  if (data.user && data.session) await syncProfileBestEffort(data.user.id, displayName);
   return data;
 }
 

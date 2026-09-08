@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { normalizeInput } from '@/lib/url';
@@ -19,15 +19,25 @@ function hostname(url: string) {
 export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<RecentSite[]>([]);
-  const quick = useMemo(() => [
-    ['التبويبات', '/tabs'],
-    ['الذكاء الاصطناعي', '/ai'],
-    ['الشبكة الخاصة VPN', '/vpn'],
-    ['المكتبة', '/library'],
-    ['التصفح الخاص', '/browser?privateMode=1'],
+  const [menuOpen, setMenuOpen] = useState(false);
+  const enter = useRef(new Animated.Value(0)).current;
+  const lift = useRef(new Animated.Value(18)).current;
+
+  const menuItems = useMemo(() => [
+    ['الحساب', '/account'],
+    ['RAID AI', '/ai'],
+    ['RAID VPN', '/vpn'],
+    ['المكتبة والسجل', '/library'],
     ['الخصوصية', '/privacy'],
     ['الإعدادات', '/settings'],
   ] as const, []);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(enter, { toValue: 1, duration: 330, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(lift, { toValue: 0, duration: 390, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, [enter, lift]);
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -38,52 +48,65 @@ export default function HomeScreen() {
   }, []));
 
   const openUrl = (value: string) => {
+    const clean = value.trim();
+    if (!clean) return;
     try {
-      const url = normalizeInput(value);
+      const url = normalizeInput(clean);
       router.push({ pathname: '/browser', params: { url } });
     } catch {}
   };
 
-  const openWeb = () => openUrl(query);
   const askAI = () => {
     const prompt = query.trim();
     router.push(prompt ? { pathname: '/ai', params: { prompt } } : '/ai');
   };
-  const submit = () => looksLikeAIQuery(query) ? askAI() : openWeb();
+  const submit = () => looksLikeAIQuery(query) ? askAI() : openUrl(query);
+  const navigate = (path: string) => { setMenuOpen(false); router.push(path as never); };
 
   return (
-    <LinearGradient colors={['#070B14', '#111827', '#140B2D']} style={styles.fill}>
+    <LinearGradient colors={['#05070C', '#0A0F19', '#0D1220']} style={styles.fill}>
       <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <View style={styles.hero}>
-            <Text style={styles.brand}>RAID</Text>
-            <Text style={styles.sub}>متصفح ذكي وآمن</Text>
-            <Text style={styles.tag}>تصفّح • اسأل • نفّذ • تذكّر</Text>
-          </View>
+        <View style={styles.topbar}>
+          <View style={styles.brandMini}><View style={styles.brandDot} /><Text style={styles.brandMiniText}>RAID</Text></View>
+          <Pressable onPress={() => setMenuOpen(true)} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="قائمة المتصفح">
+            <Text style={styles.menuGlyph}>☰</Text>
+          </Pressable>
+        </View>
 
-          <View style={styles.omni}>
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={submit}
-              returnKeyType="go"
-              placeholder="ابحث، افتح موقعًا، أو اسأل RAID"
-              placeholderTextColor="#718096"
-              style={styles.input}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Pressable onPress={askAI} style={styles.aiBtn}><Text style={styles.aiBtnText}>AI</Text></Pressable>
-            <Pressable onPress={openWeb} style={styles.go}><Text style={styles.goText}>فتح</Text></Pressable>
-          </View>
-          <Text style={styles.omniHint}>السؤال يذهب إلى RAID AI، والرابط أو عبارة البحث تفتح مباشرةً في المتصفح.</Text>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <Animated.View style={[styles.hero, { opacity: enter, transform: [{ translateY: lift }] }]}>
+            <LinearGradient colors={['#7C3AED', '#4F46E5']} style={styles.logoOrb}>
+              <Text style={styles.logoLetter}>R</Text>
+            </LinearGradient>
+            <Text style={styles.brand}>RAID Browser</Text>
+            <Text style={styles.sub}>سريع، هادئ، ومصمم للتركيز</Text>
+          </Animated.View>
+
+          <Animated.View style={[styles.searchWrap, { opacity: enter, transform: [{ translateY: lift }] }]}>
+            <View style={styles.omni}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                onSubmitEditing={submit}
+                returnKeyType="go"
+                placeholder="ابحث أو اكتب عنوان موقع"
+                placeholderTextColor="#67738A"
+                style={styles.input}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Pressable onPress={submit} style={styles.go} accessibilityRole="button"><Text style={styles.goText}>←</Text></Pressable>
+            </View>
+            <View style={styles.quickRow}>
+              <Pressable onPress={askAI} style={styles.quick}><Text style={styles.quickText}>AI</Text></Pressable>
+              <Pressable onPress={() => router.push('/browser?privateMode=1' as never)} style={styles.quick}><Text style={styles.quickText}>خاص</Text></Pressable>
+              <Pressable onPress={() => router.push('/tabs')} style={styles.quick}><Text style={styles.quickText}>التبويبات</Text></Pressable>
+            </View>
+          </Animated.View>
 
           {recent.length > 0 && (
             <View style={styles.section}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionMeta}>{recent.length}</Text>
-                <Text style={styles.sectionTitle}>المواقع الأخيرة</Text>
-              </View>
+              <Text style={styles.sectionTitle}>الأخيرة</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentRow}>
                 {recent.map((site) => (
                   <Pressable key={site.url} onPress={() => openUrl(site.url)} style={styles.recentCard}>
@@ -95,25 +118,29 @@ export default function HomeScreen() {
               </ScrollView>
             </View>
           )}
-
-          <View style={styles.grid}>
-            {quick.map(([label, path]) => (
-              <Pressable key={label} onPress={() => router.push(path as never)} style={styles.card}>
-                <Text style={styles.cardTitle}>{label}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={styles.statusCard}>
-            <Text style={styles.statusTitle}>RAID جاهز للعمل</Text>
-            <Text style={styles.statusText}>يحفظ السجل والمفضلة والتبويبات محليًا، ويعمل RAID AI من خلال حسابك. الوضع الخاص لا يحفظ السجل أو سياق الذكاء الاصطناعي.</Text>
-          </View>
         </ScrollView>
+
+        <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+          <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
+            <Pressable style={styles.menuCard} onPress={() => {}}>
+              <View style={styles.menuHeader}><Text style={styles.menuTitle}>RAID</Text><Text style={styles.menuCaption}>المتصفح والإعدادات</Text></View>
+              {menuItems.map(([label, path]) => (
+                <Pressable key={label} style={styles.menuItem} onPress={() => navigate(path)}>
+                  <Text style={styles.menuItemText}>{label}</Text><Text style={styles.chev}>‹</Text>
+                </Pressable>
+              ))}
+            </Pressable>
+          </Pressable>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  fill:{flex:1},safe:{flex:1},content:{padding:20,paddingBottom:38},hero:{marginTop:20,marginBottom:28,alignItems:'flex-end'},brand:{fontSize:52,fontWeight:'900',letterSpacing:7,color:'#fff'},sub:{fontSize:23,fontWeight:'700',color:'#A78BFA',textAlign:'right'},tag:{marginTop:8,color:'#94A3B8',textAlign:'right'},omni:{flexDirection:'row',backgroundColor:'rgba(17,24,39,.92)',borderRadius:22,padding:7,borderWidth:1,borderColor:'#27324A',gap:6},input:{flex:1,color:'#fff',paddingHorizontal:14,fontSize:16,textAlign:'right'},aiBtn:{width:48,backgroundColor:'#312E81',borderRadius:16,alignItems:'center',justifyContent:'center'},aiBtnText:{color:'#EDE9FE',fontWeight:'900'},go:{backgroundColor:'#7C3AED',borderRadius:16,paddingHorizontal:18,justifyContent:'center'},goText:{color:'#fff',fontWeight:'800'},omniHint:{marginTop:8,color:'#64748B',fontSize:11,textAlign:'right'},section:{marginTop:22},sectionHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:10},sectionTitle:{color:'#F8FAFC',fontSize:16,fontWeight:'900'},sectionMeta:{color:'#7C3AED',fontWeight:'900'},recentRow:{gap:10,paddingRight:2},recentCard:{width:142,minHeight:118,borderRadius:20,padding:13,backgroundColor:'rgba(17,24,39,.88)',borderWidth:1,borderColor:'#27324A'},faviconFallback:{width:36,height:36,borderRadius:12,backgroundColor:'#312E81',alignItems:'center',justifyContent:'center',marginBottom:12},faviconText:{color:'#EDE9FE',fontSize:17,fontWeight:'900'},recentTitle:{color:'#F8FAFC',fontSize:13,fontWeight:'800',textAlign:'right'},recentHost:{marginTop:4,color:'#64748B',fontSize:10,textAlign:'right'},grid:{flexDirection:'row',flexWrap:'wrap',gap:12,marginTop:24},card:{width:'48%',minHeight:96,borderRadius:22,padding:18,justifyContent:'flex-end',backgroundColor:'rgba(23,32,51,.88)',borderWidth:1,borderColor:'#27324A'},cardTitle:{color:'#F8FAFC',fontSize:16,fontWeight:'800',textAlign:'right'},statusCard:{marginTop:18,padding:18,borderRadius:22,backgroundColor:'rgba(17,24,39,.7)',borderWidth:1,borderColor:'#27324A'},statusTitle:{color:'#fff',fontWeight:'800',marginBottom:6,textAlign:'right'},statusText:{color:'#94A3B8',lineHeight:20,textAlign:'right'}
+  fill:{flex:1},safe:{flex:1},topbar:{height:60,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:16},brandMini:{flexDirection:'row',alignItems:'center',gap:8},brandDot:{width:9,height:9,borderRadius:5,backgroundColor:'#8B5CF6'},brandMiniText:{color:'#E5E7EB',fontSize:14,fontWeight:'900',letterSpacing:2},menuButton:{width:44,height:44,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(15,23,42,.72)',borderWidth:1,borderColor:'#1F2937'},menuGlyph:{color:'#F8FAFC',fontSize:23,fontWeight:'900'},
+  content:{paddingHorizontal:18,paddingTop:34,paddingBottom:34},hero:{alignItems:'center',marginBottom:34},logoOrb:{width:76,height:76,borderRadius:24,alignItems:'center',justifyContent:'center',shadowColor:'#7C3AED',shadowOpacity:.32,shadowRadius:22,shadowOffset:{width:0,height:8},elevation:8},logoLetter:{fontSize:36,fontWeight:'900',color:'#fff'},brand:{marginTop:18,fontSize:31,fontWeight:'900',color:'#F8FAFC',letterSpacing:.3},sub:{marginTop:7,fontSize:13,color:'#8B98AD'},
+  searchWrap:{gap:12},omni:{height:58,borderRadius:21,backgroundColor:'rgba(15,23,42,.92)',borderWidth:1,borderColor:'#263247',flexDirection:'row',alignItems:'center',padding:6},input:{flex:1,color:'#fff',paddingHorizontal:14,fontSize:16,textAlign:'right'},go:{width:46,height:46,borderRadius:16,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},goText:{color:'#fff',fontSize:22,fontWeight:'900',marginTop:-2},quickRow:{flexDirection:'row-reverse',gap:8},quick:{height:39,paddingHorizontal:16,borderRadius:14,backgroundColor:'rgba(17,24,39,.82)',borderWidth:1,borderColor:'#222D3E',alignItems:'center',justifyContent:'center'},quickText:{color:'#CBD5E1',fontSize:12,fontWeight:'800'},
+  section:{marginTop:30},sectionTitle:{color:'#E5E7EB',fontSize:14,fontWeight:'900',textAlign:'right',marginBottom:12},recentRow:{gap:10,paddingRight:2},recentCard:{width:142,minHeight:112,borderRadius:18,padding:13,backgroundColor:'rgba(15,23,42,.76)',borderWidth:1,borderColor:'#202A3A'},faviconFallback:{width:34,height:34,borderRadius:11,backgroundColor:'#252B46',alignItems:'center',justifyContent:'center',marginBottom:11},faviconText:{color:'#DDD6FE',fontSize:15,fontWeight:'900'},recentTitle:{color:'#F8FAFC',fontSize:13,fontWeight:'800',textAlign:'right'},recentHost:{marginTop:4,color:'#64748B',fontSize:10,textAlign:'right'},
+  overlay:{flex:1,backgroundColor:'rgba(0,0,0,.58)',alignItems:'flex-end',paddingTop:62,paddingRight:12},menuCard:{width:282,borderRadius:24,padding:10,backgroundColor:'#0D1421',borderWidth:1,borderColor:'#253044'},menuHeader:{paddingHorizontal:12,paddingTop:8,paddingBottom:12},menuTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'right'},menuCaption:{marginTop:3,color:'#64748B',fontSize:11,textAlign:'right'},menuItem:{minHeight:50,borderRadius:14,paddingHorizontal:12,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},menuItemText:{color:'#F8FAFC',fontSize:14,fontWeight:'800'},chev:{color:'#64748B',fontSize:25}
 });

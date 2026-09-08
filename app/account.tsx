@@ -3,6 +3,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View 
 import { router, useFocusEffect } from 'expo-router';
 import { getCurrentProfile, getCurrentSession, signOut, updateCurrentProfile } from '@/lib/auth';
 import { syncAccountData } from '@/lib/sync';
+import { clearWireGuardConfig, disconnectVpn } from '@/lib/vpn';
 
 export default function AccountScreen(){
   const [email,setEmail]=useState('');
@@ -47,7 +48,16 @@ export default function AccountScreen(){
     finally{setSyncing(false);}
   };
 
-  const logout=async()=>{setBusy(true);try{await signOut();router.replace('/login');}finally{setBusy(false);}};
+  const logout=async()=>{
+    setBusy(true);setMsg('');
+    try{
+      await disconnectVpn().catch(()=>false);
+      await clearWireGuardConfig().catch(()=>{});
+      await signOut();
+      router.replace('/login');
+    }catch(e){setMsg(e instanceof Error?e.message:'تعذر تسجيل الخروج الآن.');}
+    finally{setBusy(false);}
+  };
 
   return <SafeAreaView style={s.root}>
     <View style={s.header}><Pressable onPress={()=>router.back()} style={s.back}><Text style={s.backText}>‹</Text></Pressable><Text style={s.title}>حسابي</Text><View style={{width:42}}/></View>
@@ -80,9 +90,9 @@ export default function AccountScreen(){
       </View>
 
       {!!msg&&<Text style={s.msg}>{msg}</Text>}
-      <Pressable onPress={logout} disabled={busy} style={s.logout}><Text style={s.logoutText}>تسجيل الخروج</Text></Pressable>
+      <Pressable onPress={logout} disabled={busy} style={s.logout}><Text style={s.logoutText}>{busy?'جارٍ التنفيذ...':'تسجيل الخروج'}</Text></Pressable>
     </ScrollView>
-  </SafeAreaView>
+  </SafeAreaView>;
 }
 
 const s=StyleSheet.create({

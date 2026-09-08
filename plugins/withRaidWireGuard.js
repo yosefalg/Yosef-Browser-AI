@@ -91,7 +91,7 @@ class RaidVpnModule(private val reactContext: ReactApplicationContext) : ReactCo
             promise.reject("VPN_CONFIG_EMPTY", "WireGuard configuration is empty")
             return
         }
-        val activity = currentActivity
+        val activity = reactContext.currentActivity
         if (activity == null) {
             promise.reject("VPN_NO_ACTIVITY", "No foreground activity available")
             return

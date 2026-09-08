@@ -35,7 +35,6 @@
     "react-native-webview": "13.15.0"
   },
   "devDependencies": {
-    "@expo/config-plugins": "54.0.5",
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   }

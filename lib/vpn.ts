@@ -1,7 +1,8 @@
 import { NativeModules, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { getSupabase } from '@/lib/auth';
 
-const CONFIG_KEY = 'raid_wireguard_config_v1';
+const CONFIG_KEY = 'raid_wireguard_config_v2';
 
 type RaidVpnNative = {
   connect(configText: string): Promise<boolean>;
@@ -9,21 +10,38 @@ type RaidVpnNative = {
   getStatus(): Promise<boolean>;
 };
 
+type VpnProfileRow = {
+  config_text: string;
+  enabled: boolean;
+  updated_at: string;
+};
+
+export type VpnProvisioningState = {
+  configured: boolean;
+  source: 'account' | 'cache' | 'none';
+};
+
 function native(): RaidVpnNative {
-  if (Platform.OS !== 'android') throw new Error('RAID VPN is currently available on Android only.');
+  if (Platform.OS !== 'android') throw new Error('RAID VPN متاح حاليًا على Android فقط.');
   const module = NativeModules.RaidVpn as RaidVpnNative | undefined;
-  if (!module) throw new Error('RAID VPN native module is not available in this build. Rebuild the APK.');
+  if (!module) throw new Error('وحدة RAID VPN غير موجودة في هذا الإصدار. أعد بناء APK.');
   return module;
 }
 
-export async function saveWireGuardConfig(configText: string) {
+function validateConfig(configText: string) {
   const value = configText.trim();
-  if (!value.includes('[Interface]') || !value.includes('[Peer]')) {
-    throw new Error('ملف WireGuard غير صالح: يجب أن يحتوي [Interface] و [Peer].');
+  if (!value.includes('[Interface]') || !value.includes('[Peer]') || !value.includes('Endpoint')) {
+    throw new Error('إعداد WireGuard غير صالح أو غير مكتمل.');
   }
+  return value;
+}
+
+async function cacheConfig(configText: string) {
+  const value = validateConfig(configText);
   await SecureStore.setItemAsync(CONFIG_KEY, value, {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
+  return value;
 }
 
 export async function loadWireGuardConfig() {
@@ -34,10 +52,53 @@ export async function clearWireGuardConfig() {
   await SecureStore.deleteItemAsync(CONFIG_KEY);
 }
 
-export async function connectVpn(configText?: string) {
-  const config = (configText ?? await loadWireGuardConfig())?.trim();
-  if (!config) throw new Error('لا يوجد إعداد WireGuard محفوظ.');
-  return native().connect(config);
+export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    const cached = await loadWireGuardConfig();
+    return { configured: !!cached, source: cached ? 'cache' : 'none' };
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const user = sessionData.session?.user;
+  if (!user) {
+    const cached = await loadWireGuardConfig();
+    return { configured: !!cached, source: cached ? 'cache' : 'none' };
+  }
+
+  const { data, error } = await supabase
+    .from('raid_vpn_profiles')
+    .select('config_text,enabled,updated_at')
+    .eq('user_id', user.id)
+    .maybeSingle<VpnProfileRow>();
+
+  if (error) throw error;
+  if (!data || !data.enabled) {
+    await clearWireGuardConfig();
+    return { configured: false, source: 'none' };
+  }
+
+  await cacheConfig(data.config_text);
+  return { configured: true, source: 'account' };
+}
+
+export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
+  try {
+    return await syncVpnProfileFromAccount();
+  } catch {
+    const cached = await loadWireGuardConfig();
+    return { configured: !!cached, source: cached ? 'cache' : 'none' };
+  }
+}
+
+export async function connectVpn() {
+  try {
+    await syncVpnProfileFromAccount();
+  } catch {}
+  const config = await loadWireGuardConfig();
+  if (!config) throw new Error('لا يوجد ملف RAID VPN مرتبط بهذا الحساب.');
+  return native().connect(validateConfig(config));
 }
 
 export async function disconnectVpn() {

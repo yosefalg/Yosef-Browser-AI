@@ -20,6 +20,7 @@ export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<RecentSite[]>([]);
   const quick = useMemo(() => [
+    ['التبويبات', '/tabs'],
     ['AI Agent', '/ai'],
     ['VPN', '/vpn'],
     ['المكتبة', '/library'],

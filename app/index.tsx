@@ -21,6 +21,7 @@ export default function HomeScreen() {
   const [recent, setRecent] = useState<RecentSite[]>([]);
   const quick = useMemo(() => [
     ['AI Agent', '/ai'],
+    ['VPN', '/vpn'],
     ['المكتبة', '/library'],
     ['Private', '/browser?privateMode=1'],
     ['Privacy', '/privacy'],

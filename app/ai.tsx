@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { AgentMessage, askAgent } from '@/lib/ai';
 import { executeLocalAgentCommand } from '@/lib/agent';
@@ -12,6 +13,7 @@ export default function AIScreen() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [lastFailedText, setLastFailedText] = useState('');
   const autoSent = useRef(false);
   const listRef = useRef<FlatList<AgentMessage>>(null);
 
@@ -26,6 +28,7 @@ export default function AIScreen() {
 
   useFocusEffect(useCallback(() => {
     void refreshAccountState();
+    return () => {};
   }, [refreshAccountState]));
 
   useEffect(() => {
@@ -37,11 +40,15 @@ export default function AIScreen() {
     const value = raw.trim();
     if (!value || busy) return;
     const next = [...messages, { role:'user', content:value } as AgentMessage];
-    setMessages(next); setText(''); setBusy(true);
+    setMessages(next);
+    setText('');
+    setLastFailedText('');
+    setBusy(true);
     try {
       const session = await getCurrentSession();
       if (!session) {
         setSignedIn(false);
+        setLastFailedText(value);
         setMessages([...next, { role:'assistant', content:'يلزم تسجيل الدخول مرة واحدة حتى يعمل RAID AI بشكل مباشر وآمن على حسابك.' }]);
         return;
       }
@@ -67,28 +74,31 @@ export default function AIScreen() {
         : next;
       const answer = await askAgent(aiMessages, pageText);
       setMessages([...next, { role:'assistant', content:answer }]);
-    } catch (e) {
-      setMessages([...next, { role:'assistant', content:e instanceof Error ? e.message : 'تعذر تشغيل RAID AI الآن.' }]);
+    } catch (error) {
+      setLastFailedText(value);
+      setMessages([...next, { role:'assistant', content:error instanceof Error ? error.message : 'تعذر تشغيل RAID AI الآن.' }]);
       void refreshAccountState();
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const send = () => sendValue(text);
+  const send = () => void sendValue(text);
 
   useEffect(() => {
     if (!autoSent.current && typeof params.prompt === 'string' && params.prompt.trim()) {
       autoSent.current = true;
-      setTimeout(() => sendValue(params.prompt as string), 0);
+      setTimeout(() => void sendValue(params.prompt as string), 0);
     }
   }, [params.prompt]);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView edges={['top', 'bottom']} style={styles.root}>
       <View style={styles.header}>
         <Pressable onPress={()=>router.back()} style={styles.backButton}><Text style={styles.back}>‹</Text></Pressable>
         <View style={styles.headerText}>
           <Text style={styles.title}>RAID AI</Text>
-          <Text style={[styles.accountState, signedIn === false && styles.accountOff]}>{signedIn === null ? 'جارٍ التحقق من الحساب...' : signedIn ? 'متصل بحسابك وجاهز' : 'يلزم تسجيل الدخول'}</Text>
+          <Text style={[styles.accountState, signedIn === false && styles.accountOff]}>{signedIn === null ? 'جارٍ التحقق من الحساب...' : signedIn ? 'متصل بحسابك' : 'يلزم تسجيل الدخول'}</Text>
           {params.title ? <Text style={styles.context} numberOfLines={1}>السياق: {params.title}</Text> : null}
         </View>
         <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI</Text></View>
@@ -96,7 +106,7 @@ export default function AIScreen() {
 
       {signedIn === false && (
         <View style={styles.loginBanner}>
-          <Text style={styles.loginText}>سجّل الدخول مرة واحدة، وبعدها يعمل RAID AI مباشرةً مع حسابك.</Text>
+          <Text style={styles.loginText}>سجّل الدخول إلى حساب RAID نفسه المستخدم في بقية الخدمات.</Text>
           <Pressable onPress={() => router.push('/login')} style={styles.loginButton}><Text style={styles.loginButtonText}>تسجيل الدخول</Text></Pressable>
         </View>
       )}
@@ -110,8 +120,16 @@ export default function AIScreen() {
         renderItem={({item})=><View style={[styles.msg,item.role==='user'?styles.user:styles.ai]}><Text style={styles.msgText}>{item.content}</Text></View>}
       />
 
+      {!!lastFailedText && !busy && signedIn !== false && (
+        <View style={styles.retryWrap}>
+          <Pressable onPress={() => void sendValue(lastFailedText)} style={styles.retryButton}>
+            <Text style={styles.retryText}>إعادة إرسال آخر طلب</Text>
+          </Pressable>
+        </View>
+      )}
+
       <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined}>
-        <View style={styles.hints}><Text style={styles.hint}>جرّب: «لخّص الصفحة» • «اشرح هذا بشكل أبسط» • «قارن بين التبويبات» • «ابحث لي عن الفكرة الأساسية»</Text></View>
+        <View style={styles.hints}><Text style={styles.hint}>جرّب: «لخّص الصفحة» • «اشرح ببساطة» • «قارن بين التبويبات»</Text></View>
         <View style={styles.composer}>
           <TextInput value={text} onChangeText={setText} onSubmitEditing={send} placeholder="اكتب سؤالك أو طلبك..." placeholderTextColor="#64748B" style={styles.input} multiline textAlign="right" />
           <Pressable onPress={send} disabled={busy || !text.trim()} style={[styles.send, (busy || !text.trim()) && styles.sendDisabled]}><Text style={styles.sendText}>{busy?'…':'↑'}</Text></Pressable>
@@ -128,6 +146,7 @@ const styles=StyleSheet.create({
   headerText:{flex:1,alignItems:'flex-end'},title:{fontSize:19,fontWeight:'900',color:'#fff'},accountState:{marginTop:2,fontSize:11,color:'#4ADE80',fontWeight:'800'},accountOff:{color:'#F59E0B'},context:{marginTop:2,maxWidth:'95%',fontSize:11,color:'#94A3B8',textAlign:'right'},
   aiBadge:{width:42,height:42,borderRadius:14,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},aiBadgeText:{color:'#fff',fontWeight:'900'},
   loginBanner:{margin:12,padding:14,borderRadius:18,backgroundColor:'#151026',borderWidth:1,borderColor:'#5B21B6',gap:10},loginText:{color:'#DDD6FE',textAlign:'right',lineHeight:20},loginButton:{height:42,borderRadius:13,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},loginButtonText:{color:'#fff',fontWeight:'900'},
-  list:{padding:16,gap:10},msg:{maxWidth:'88%',padding:14,borderRadius:18},user:{alignSelf:'flex-end',backgroundColor:'#7C3AED'},ai:{alignSelf:'flex-start',backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A'},msgText:{color:'#F8FAFC',lineHeight:21,textAlign:'right'},
+  list:{padding:16,gap:10,paddingBottom:20},msg:{maxWidth:'88%',padding:14,borderRadius:18},user:{alignSelf:'flex-end',backgroundColor:'#7C3AED'},ai:{alignSelf:'flex-start',backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A'},msgText:{color:'#F8FAFC',lineHeight:21,textAlign:'right'},
+  retryWrap:{paddingHorizontal:12,paddingBottom:8,backgroundColor:'#0B1220'},retryButton:{height:42,borderRadius:13,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#2B3952'},retryText:{color:'#C4B5FD',fontWeight:'900'},
   hints:{paddingHorizontal:14,paddingTop:8,backgroundColor:'#0B1220'},hint:{color:'#64748B',fontSize:11,textAlign:'right'},composer:{flexDirection:'row',alignItems:'flex-end',gap:10,padding:12,borderTopWidth:1,borderTopColor:'#1E293B',backgroundColor:'#0B1220'},input:{flex:1,maxHeight:130,minHeight:48,borderRadius:17,backgroundColor:'#111827',color:'#fff',padding:12,borderWidth:1,borderColor:'#1F2937'},send:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},sendDisabled:{opacity:.4},sendText:{color:'#fff',fontSize:24,fontWeight:'900'}
 });

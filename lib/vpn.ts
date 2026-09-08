@@ -12,15 +12,19 @@ type RaidVpnNative = {
   getStatus(): Promise<boolean>;
 };
 
-type VpnProfileRow = {
-  config_text: string;
-  enabled: boolean;
-  updated_at: string;
+type VpnFunctionPayload = {
+  configured?: boolean;
+  configText?: string;
+  updatedAt?: string | null;
+  reason?: string;
+  error?: string;
 };
+
+type FunctionErrorLike = Error & { context?: Response };
 
 export type VpnProvisioningState = {
   configured: boolean;
-  source: 'account' | 'cache' | 'none';
+  source: 'service' | 'cache' | 'none';
 };
 
 function native(): RaidVpnNative {
@@ -62,10 +66,49 @@ async function clearConfigForUser(userId?: string) {
   await SecureStore.deleteItemAsync(LEGACY_CONFIG_KEY).catch(() => {});
 }
 
-async function currentUserId() {
-  const { data, error } = await getSupabase().auth.getSession();
+async function getValidSession() {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  return data.session?.user.id ?? null;
+  let session = data.session;
+  if (!session) return null;
+
+  const expiresSoon = session.expires_at ? session.expires_at * 1000 - Date.now() < 60_000 : false;
+  if (expiresSoon) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (!refreshError && refreshed.session) session = refreshed.session;
+  }
+  return session;
+}
+
+async function currentUserId() {
+  const session = await getValidSession();
+  return session?.user.id ?? null;
+}
+
+async function invokeVpnConfig(accessToken: string) {
+  return getSupabase().functions.invoke('raid-vpn-config', {
+    body: {},
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+function functionStatus(error: unknown) {
+  return (error as FunctionErrorLike | null)?.context?.status;
+}
+
+async function readFunctionError(error: unknown) {
+  const response = (error as FunctionErrorLike | null)?.context;
+  if (!response) return error instanceof Error ? error.message : 'تعذر الاتصال بخدمة RAID VPN.';
+  try {
+    const payload = await response.clone().json() as VpnFunctionPayload;
+    if (payload.error === 'UNAUTHORIZED') return 'انتهت جلسة الحساب. سجّل الدخول مجددًا.';
+    if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') return 'خدمة RAID VPN غير مهيأة على الخادم.';
+    if (payload.error === 'VPN_PROFILE_INVALID') return 'ملف VPN المرتبط بالحساب غير صالح.';
+    return 'تعذر مزامنة إعداد VPN من الخادم.';
+  } catch {
+    return 'تعذر مزامنة إعداد VPN من الخادم.';
+  }
 }
 
 export async function clearWireGuardConfig() {
@@ -75,10 +118,9 @@ export async function clearWireGuardConfig() {
 
 export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState> {
   const supabase = getSupabase();
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-  const user = sessionData.session?.user;
-  if (!user) {
+  const session = await getValidSession();
+  const user = session?.user;
+  if (!session?.access_token || !user) {
     await clearConfigForUser();
     return { configured: false, source: 'none' };
   }
@@ -86,20 +128,23 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
   const owner = await SecureStore.getItemAsync(OWNER_KEY);
   if (owner && owner !== user.id) await clearConfigForUser(owner);
 
-  const { data, error } = await supabase
-    .from('raid_vpn_profiles')
-    .select('config_text,enabled,updated_at')
-    .eq('user_id', user.id)
-    .maybeSingle<VpnProfileRow>();
+  let { data, error } = await invokeVpnConfig(session.access_token);
+  if (error && functionStatus(error) === 401) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    const token = refreshed.session?.access_token;
+    if (!refreshError && token) ({ data, error } = await invokeVpnConfig(token));
+  }
 
-  if (error) throw error;
-  if (!data || !data.enabled) {
+  if (error) throw new Error(await readFunctionError(error));
+  const payload = data as VpnFunctionPayload | null;
+  if (payload?.error) throw new Error(payload.error);
+  if (!payload?.configured || !payload.configText) {
     await clearConfigForUser(user.id);
     return { configured: false, source: 'none' };
   }
 
-  await cacheConfigForUser(user.id, data.config_text);
-  return { configured: true, source: 'account' };
+  await cacheConfigForUser(user.id, payload.configText);
+  return { configured: true, source: 'service' };
 }
 
 export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
@@ -123,13 +168,13 @@ export async function connectVpn() {
 
   try {
     await syncVpnProfileFromAccount();
-  } catch {
+  } catch (error) {
     const cached = await loadConfigForUser(userId);
-    if (!cached) throw new Error('تعذر مزامنة إعداد VPN لهذا الحساب. تحقق من الاتصال وحاول مجددًا.');
+    if (!cached) throw error;
   }
 
   const config = await loadConfigForUser(userId);
-  if (!config) throw new Error('لا يوجد ملف RAID VPN مرتبط بهذا الحساب.');
+  if (!config) throw new Error('لا يوجد خادم RAID VPN مخصص لهذا الحساب حتى الآن.');
   return native().connect(validateConfig(config));
 }
 

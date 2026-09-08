@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Linking, Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Linking, Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
@@ -7,6 +7,7 @@ import { addBookmark, addHistory, createBrowserTab, isBookmarked, removeBookmark
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
+import { connectVpn, disconnectVpn, isVpnConnected } from '@/lib/vpn';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
@@ -41,13 +42,21 @@ export default function BrowserScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [siteInfoOpen, setSiteInfoOpen] = useState(false);
   const [desktopMode, setDesktopMode] = useState(false);
+  const [vpnConnected, setVpnConnected] = useState(false);
+  const [vpnBusy, setVpnBusy] = useState(false);
+
+  useEffect(() => {
+    isVpnConnected().then(setVpnConnected).catch(() => setVpnConnected(false));
+  }, []);
 
   const go = () => {
     try {
       const next = normalizeInput(input);
       setLoadError('');
       setUrl(next);
-    } catch {}
+    } catch {
+      Alert.alert('RAID', 'تعذر فهم العنوان أو عبارة البحث.');
+    }
   };
 
   const changed = async (nav: WebViewNavigation) => {
@@ -90,6 +99,28 @@ export default function BrowserScreen() {
     }
     setLoadError('');
     web.current?.reload();
+  };
+
+  const toggleVpn = async () => {
+    if (vpnBusy) return;
+    setVpnBusy(true);
+    try {
+      if (vpnConnected) {
+        await disconnectVpn();
+        setVpnConnected(false);
+      } else {
+        await connectVpn();
+        setVpnConnected(true);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'تعذر تشغيل VPN الآن.';
+      Alert.alert('RAID VPN', message, [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'فتح VPN', onPress: () => router.push('/vpn') },
+      ]);
+    } finally {
+      setVpnBusy(false);
+    }
   };
 
   const toggleDesktop = () => {
@@ -155,13 +186,13 @@ export default function BrowserScreen() {
           <Pressable onPress={() => setSiteInfoOpen(true)} accessibilityRole="button" accessibilityLabel="معلومات الموقع" style={styles.securityButton}>
             <Text style={[styles.security, insecureHttp && styles.insecure]}>{secure ? '●' : insecureHttp ? '!' : '○'}</Text>
           </Pressable>
-          <TextInput value={input} onChangeText={setInput} onSubmitEditing={go} autoCapitalize="none" autoCorrect={false} style={styles.input} selectTextOnFocus accessibilityLabel="شريط العنوان والبحث" returnKeyType="go" />
+          <TextInput value={input} onChangeText={setInput} onSubmitEditing={go} autoCapitalize="none" autoCorrect={false} style={styles.input} selectTextOnFocus accessibilityLabel="شريط العنوان والبحث" returnKeyType="go" placeholder="ابحث أو اكتب عنوان موقع" placeholderTextColor="#64748B" />
         </View>
         <Pressable onPress={() => router.push('/tabs')} style={styles.icon} accessibilityRole="button" accessibilityLabel="التبويبات"><Text style={styles.tabGlyph}>▣</Text></Pressable>
         <Pressable onPress={() => setMenuOpen(true)} style={styles.icon} accessibilityRole="button" accessibilityLabel="قائمة المتصفح"><Text style={styles.menuDots}>⋮</Text></Pressable>
       </View>
 
-      {privateMode && <View style={styles.private}><Text style={styles.privateText}>خاص • لا سجل • لا سياق AI</Text></View>}
+      {privateMode && <View style={styles.private}><Text style={styles.privateText}>وضع خاص • لا سجل • لا سياق للذكاء الاصطناعي</Text></View>}
       {loading && <View style={styles.progress} accessibilityLabel="جار تحميل الصفحة" />}
 
       <View style={styles.webWrap}>
@@ -214,7 +245,8 @@ export default function BrowserScreen() {
         <Pressable disabled={!canForward} onPress={() => web.current?.goForward()} style={styles.nav} accessibilityRole="button" accessibilityLabel="تقدم"><Text style={[styles.navText,!canForward&&styles.disabled]}>›</Text></Pressable>
         <Pressable onPress={reloadOrStop} style={styles.navPrimary} accessibilityRole="button" accessibilityLabel={loading ? 'إيقاف التحميل' : 'تحديث'}><Text style={styles.navPrimaryText}>{loading ? '×' : '↻'}</Text></Pressable>
         <Pressable onPress={toggleBookmark} style={styles.nav} accessibilityRole="button" accessibilityLabel={bookmarked ? 'إزالة المفضلة' : 'إضافة للمفضلة'}><Text style={[styles.star, bookmarked && styles.starOn]}>{bookmarked ? '★' : '☆'}</Text></Pressable>
-        <Pressable disabled={privateMode} onPress={openAI} style={[styles.ai, privateMode && styles.aiDisabled]} accessibilityRole="button"><Text style={styles.aiText}>AI</Text></Pressable>
+        <Pressable onPress={toggleVpn} disabled={vpnBusy} style={[styles.vpn, vpnConnected && styles.vpnOn, vpnBusy && styles.controlBusy]} accessibilityRole="button" accessibilityLabel={vpnConnected ? 'إيقاف VPN' : 'تشغيل VPN'}><Text style={styles.vpnText}>{vpnBusy ? '…' : 'VPN'}</Text></Pressable>
+        <Pressable disabled={privateMode} onPress={openAI} style={[styles.ai, privateMode && styles.aiDisabled]} accessibilityRole="button" accessibilityLabel="RAID AI"><Text style={styles.aiText}>AI</Text></Pressable>
       </View>
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
@@ -227,7 +259,7 @@ export default function BrowserScreen() {
             <Pressable style={styles.menuItem} onPress={shareCurrent}><Text style={styles.menuItemText}>مشاركة الصفحة</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={openExternal}><Text style={styles.menuItemText}>فتح في تطبيق خارجي</Text></Pressable>
             <View style={styles.menuDivider} />
-            <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/vpn'); }}><Text style={styles.menuItemText}>RAID VPN</Text></Pressable>
+            <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); toggleVpn(); }}><Text style={styles.menuItemText}>{vpnConnected ? 'إيقاف RAID VPN' : 'تشغيل RAID VPN'}</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/privacy'); }}><Text style={styles.menuItemText}>الخصوصية</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/settings'); }}><Text style={styles.menuItemText}>الإعدادات</Text></Pressable>
           </Pressable>
@@ -275,7 +307,9 @@ const styles = StyleSheet.create({
   omni:{flex:1,height:44,borderRadius:18,backgroundColor:'#111827',alignItems:'center',flexDirection:'row',paddingHorizontal:5,borderWidth:1,borderColor:'#1F2937'},securityButton:{width:32,height:32,borderRadius:11,alignItems:'center',justifyContent:'center'},security:{fontSize:12,color:'#22C55E',fontWeight:'900'},insecure:{color:'#F59E0B'},input:{flex:1,color:'#F8FAFC',paddingHorizontal:7,fontSize:14,textAlign:'left'},
   private:{backgroundColor:'#2E1065',paddingVertical:5,alignItems:'center'},privateText:{color:'#DDD6FE',fontSize:11,fontWeight:'800',letterSpacing:.2},progress:{height:2,backgroundColor:'#8B5CF6'},
   webWrap:{flex:1,position:'relative'},web:{flex:1,backgroundColor:'#fff'},errorCard:{position:'absolute',left:18,right:18,top:24,padding:20,borderRadius:22,backgroundColor:'#0F172A',borderWidth:1,borderColor:'#334155'},errorTitle:{color:'#F8FAFC',fontSize:19,fontWeight:'900',textAlign:'right'},errorHost:{marginTop:5,color:'#C4B5FD',fontWeight:'800',textAlign:'right'},errorText:{marginTop:8,color:'#94A3B8',lineHeight:20,textAlign:'right'},errorActions:{flexDirection:'row-reverse',gap:9,marginTop:15},retryBtn:{flex:1,height:44,borderRadius:14,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,height:44,borderRadius:14,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},errorSecondaryText:{color:'#E2E8F0',fontWeight:'800'},
-  bottom:{height:66,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:8,backgroundColor:'#0A101C',borderTopWidth:1,borderTopColor:'#172033'},nav:{width:44,height:44,alignItems:'center',justifyContent:'center',borderRadius:14},navPrimary:{width:48,height:48,alignItems:'center',justifyContent:'center',borderRadius:16,backgroundColor:'#172033',borderWidth:1,borderColor:'#27324A'},navText:{fontSize:30,color:'#F8FAFC'},navPrimaryText:{fontSize:25,color:'#F8FAFC',fontWeight:'700'},star:{fontSize:24,color:'#E2E8F0'},starOn:{color:'#FDE68A'},disabled:{color:'#475569'},ai:{height:42,minWidth:50,paddingHorizontal:12,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiDisabled:{opacity:0.32},aiText:{color:'#fff',fontWeight:'900'},
+  bottom:{height:66,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:5,backgroundColor:'#0A101C',borderTopWidth:1,borderTopColor:'#172033'},nav:{width:40,height:42,alignItems:'center',justifyContent:'center',borderRadius:13},navPrimary:{width:44,height:44,alignItems:'center',justifyContent:'center',borderRadius:14,backgroundColor:'#172033',borderWidth:1,borderColor:'#27324A'},navText:{fontSize:28,color:'#F8FAFC'},navPrimaryText:{fontSize:24,color:'#F8FAFC',fontWeight:'700'},star:{fontSize:23,color:'#E2E8F0'},starOn:{color:'#FDE68A'},disabled:{color:'#475569'},
+  vpn:{height:40,minWidth:48,paddingHorizontal:9,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#334155'},vpnOn:{backgroundColor:'#052E1A',borderColor:'#166534'},vpnText:{color:'#E2E8F0',fontSize:11,fontWeight:'900'},controlBusy:{opacity:.55},
+  ai:{height:40,minWidth:46,paddingHorizontal:10,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},aiDisabled:{opacity:0.32},aiText:{color:'#fff',fontWeight:'900'},
   overlay:{flex:1,backgroundColor:'rgba(0,0,0,.48)',alignItems:'flex-end',paddingTop:70,paddingRight:12},overlayCentered:{flex:1,backgroundColor:'rgba(0,0,0,.55)',justifyContent:'center',padding:24},menuCard:{width:260,borderRadius:22,padding:10,backgroundColor:'#101827',borderWidth:1,borderColor:'#27324A'},menuHost:{color:'#94A3B8',fontSize:11,paddingHorizontal:12,paddingVertical:8},menuItem:{minHeight:46,borderRadius:13,justifyContent:'center',paddingHorizontal:12},menuItemText:{color:'#F8FAFC',fontSize:14,fontWeight:'700',textAlign:'right'},menuDivider:{height:1,backgroundColor:'#27324A',marginVertical:5},
   siteCard:{borderRadius:24,padding:20,backgroundColor:'#101827',borderWidth:1,borderColor:'#27324A'},siteBadge:{alignSelf:'flex-end',paddingHorizontal:10,paddingVertical:5,borderRadius:999},siteBadgeSecure:{backgroundColor:'#052E1A'},siteBadgeWarn:{backgroundColor:'#422006'},siteBadgeText:{color:'#F8FAFC',fontSize:11,fontWeight:'900'},siteHost:{marginTop:14,color:'#F8FAFC',fontSize:21,fontWeight:'900',textAlign:'right'},siteStatus:{marginTop:8,color:'#CBD5E1',lineHeight:21,textAlign:'right'},siteUrl:{marginTop:10,color:'#64748B',fontSize:11,textAlign:'right'},siteClose:{marginTop:18,height:46,borderRadius:14,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},siteCloseText:{color:'#fff',fontWeight:'900'},
   readerRoot:{flex:1,backgroundColor:'#090D14'},readerLight:{backgroundColor:'#F8F5EE'},readerHead:{height:60,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:14,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTitle:{flex:1,color:'#F8FAFC',fontWeight:'900',textAlign:'right'},readerTextLight:{color:'#1F2937'},readerBtn:{paddingHorizontal:12,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerBtnText:{color:'#F8FAFC',fontWeight:'900'},readerTools:{flexDirection:'row',justifyContent:'center',gap:8,padding:10,borderBottomWidth:1,borderBottomColor:'#27324A'},readerTool:{minWidth:48,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerContent:{paddingHorizontal:22,paddingVertical:24},readerArticle:{color:'#E5E7EB',textAlign:'right'}

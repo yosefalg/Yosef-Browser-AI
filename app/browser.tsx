@@ -3,7 +3,7 @@ import { Linking, Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet,
 import { useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
-import { addBookmark, addHistory, isBookmarked, removeBookmark, setPageContext } from '@/lib/db';
+import { addBookmark, addHistory, createBrowserTab, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -15,11 +15,15 @@ function hostOf(value: string) {
 }
 
 export default function BrowserScreen() {
-  const params = useLocalSearchParams<{ url?: string; privateMode?: string }>();
+  const params = useLocalSearchParams<{ url?: string; privateMode?: string; tabId?: string }>();
   const privateMode = params.privateMode === '1';
   const startUrl = useMemo(() => {
     try { return normalizeInput(params.url || 'https://www.google.com'); } catch { return 'https://www.google.com'; }
   }, [params.url]);
+  const [activeTabId, setActiveTabId] = useState<number | null>(() => {
+    const id = Number(params.tabId);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  });
 
   const web = useRef<WebView>(null);
   const [url, setUrl] = useState(startUrl);
@@ -55,6 +59,13 @@ export default function BrowserScreen() {
     try { setBookmarked(await isBookmarked(nav.url)); } catch { setBookmarked(false); }
     if (!privateMode && safeExternalUrl(nav.url) && !nav.loading) {
       try { await addHistory(nav.url, nav.title); } catch {}
+      try {
+        if (activeTabId) await updateBrowserTab(activeTabId, nav.url, nav.title);
+        else {
+          const id = await createBrowserTab(nav.url, nav.title || 'علامة تبويب جديدة');
+          setActiveTabId(id);
+        }
+      } catch {}
     }
   };
 
@@ -146,6 +157,7 @@ export default function BrowserScreen() {
           </Pressable>
           <TextInput value={input} onChangeText={setInput} onSubmitEditing={go} autoCapitalize="none" autoCorrect={false} style={styles.input} selectTextOnFocus accessibilityLabel="شريط العنوان والبحث" returnKeyType="go" />
         </View>
+        <Pressable onPress={() => router.push('/tabs')} style={styles.icon} accessibilityRole="button" accessibilityLabel="التبويبات"><Text style={styles.tabGlyph}>▣</Text></Pressable>
         <Pressable onPress={() => setMenuOpen(true)} style={styles.icon} accessibilityRole="button" accessibilityLabel="قائمة المتصفح"><Text style={styles.menuDots}>⋮</Text></Pressable>
       </View>
 
@@ -209,6 +221,7 @@ export default function BrowserScreen() {
         <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
           <Pressable style={styles.menuCard} onPress={() => {}}>
             <Text numberOfLines={1} style={styles.menuHost}>{host}</Text>
+            <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/tabs'); }}><Text style={styles.menuItemText}>التبويبات</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={toggleDesktop}><Text style={styles.menuItemText}>{desktopMode ? '✓ موقع سطح المكتب' : 'موقع سطح المكتب'}</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={openReader}><Text style={styles.menuItemText}>وضع القراءة</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={shareCurrent}><Text style={styles.menuItemText}>مشاركة الصفحة</Text></Pressable>
@@ -257,8 +270,8 @@ export default function BrowserScreen() {
 
 const styles = StyleSheet.create({
   root:{flex:1,backgroundColor:'#070B14'},
-  top:{height:66,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:10,backgroundColor:'#0A101C',borderBottomWidth:1,borderBottomColor:'#172033'},
-  icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#111827',borderWidth:1,borderColor:'#1F2937'},iconGlyph:{color:'#E5E7EB',fontSize:21,fontWeight:'800'},menuDots:{color:'#E5E7EB',fontSize:25,fontWeight:'900',marginTop:-4},
+  top:{height:66,flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:8,backgroundColor:'#0A101C',borderBottomWidth:1,borderBottomColor:'#172033'},
+  icon:{width:40,height:40,borderRadius:13,alignItems:'center',justifyContent:'center',backgroundColor:'#111827',borderWidth:1,borderColor:'#1F2937'},iconGlyph:{color:'#E5E7EB',fontSize:21,fontWeight:'800'},tabGlyph:{color:'#E5E7EB',fontSize:18,fontWeight:'900'},menuDots:{color:'#E5E7EB',fontSize:25,fontWeight:'900',marginTop:-4},
   omni:{flex:1,height:44,borderRadius:18,backgroundColor:'#111827',alignItems:'center',flexDirection:'row',paddingHorizontal:5,borderWidth:1,borderColor:'#1F2937'},securityButton:{width:32,height:32,borderRadius:11,alignItems:'center',justifyContent:'center'},security:{fontSize:12,color:'#22C55E',fontWeight:'900'},insecure:{color:'#F59E0B'},input:{flex:1,color:'#F8FAFC',paddingHorizontal:7,fontSize:14,textAlign:'left'},
   private:{backgroundColor:'#2E1065',paddingVertical:5,alignItems:'center'},privateText:{color:'#DDD6FE',fontSize:11,fontWeight:'800',letterSpacing:.2},progress:{height:2,backgroundColor:'#8B5CF6'},
   webWrap:{flex:1,position:'relative'},web:{flex:1,backgroundColor:'#fff'},errorCard:{position:'absolute',left:18,right:18,top:24,padding:20,borderRadius:22,backgroundColor:'#0F172A',borderWidth:1,borderColor:'#334155'},errorTitle:{color:'#F8FAFC',fontSize:19,fontWeight:'900',textAlign:'right'},errorHost:{marginTop:5,color:'#C4B5FD',fontWeight:'800',textAlign:'right'},errorText:{marginTop:8,color:'#94A3B8',lineHeight:20,textAlign:'right'},errorActions:{flexDirection:'row-reverse',gap:9,marginTop:15},retryBtn:{flex:1,height:44,borderRadius:14,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,height:44,borderRadius:14,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},errorSecondaryText:{color:'#E2E8F0',fontWeight:'800'},

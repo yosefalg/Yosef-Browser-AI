@@ -56,7 +56,7 @@ function validateConfig(configText: string) {
   if (!value) throw new Error('ملف WireGuard فارغ.');
   if (value.length > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
   if (value.includes('\0')) throw new Error('ملف WireGuard يحتوي على بيانات غير صالحة.');
-  if (/^\s*</.test(value) || /^\s*[\[{]/.test(value)) {
+  if (/^\s*</.test(value) || /^\s*\{/.test(value)) {
     throw new Error('الملف المختار ليس إعداد WireGuard نصيًا صالحًا. اختر ملف .conf الحقيقي حتى لو كان اسمه ينتهي بـ .txt.');
   }
 
@@ -335,7 +335,7 @@ export async function disconnectVpn() {
   try {
     return await native().disconnect();
   } catch (error) {
-    throw nativeVpnError(error, 'تعذر قطع اتصال RAID VPN.');
+    throw nativeVpnError(error, 'تعذر قطع اتصال RAID VPN بشكل صحيح.');
   }
 }
 

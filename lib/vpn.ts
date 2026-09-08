@@ -23,6 +23,7 @@ type VpnFunctionPayload = {
 };
 
 type FunctionErrorLike = Error & { context?: Response };
+type NativeVpnErrorLike = Error & { code?: string };
 
 export type VpnProvisioningState = {
   configured: boolean;
@@ -38,12 +39,43 @@ function native(): RaidVpnNative {
 
 function validateConfig(configText: string) {
   const value = configText.trim();
-  const required = ['[Interface]', 'PrivateKey', '[Peer]', 'PublicKey', 'Endpoint', 'AllowedIPs'];
-  if (!required.every((part) => value.includes(part))) {
-    throw new Error('إعداد WireGuard غير صالح أو غير مكتمل.');
-  }
+  if (!value) throw new Error('ملف WireGuard فارغ.');
   if (value.length > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
+  if (value.includes('\0')) throw new Error('ملف WireGuard يحتوي على بيانات غير صالحة.');
+
+  const requiredPatterns = [
+    /^\s*\[Interface\]\s*$/mi,
+    /^\s*PrivateKey\s*=\s*\S+\s*$/mi,
+    /^\s*\[Peer\]\s*$/mi,
+    /^\s*PublicKey\s*=\s*\S+\s*$/mi,
+    /^\s*Endpoint\s*=\s*\S+\s*$/mi,
+    /^\s*AllowedIPs\s*=\s*\S+\s*$/mi,
+  ];
+
+  if (!requiredPatterns.every((pattern) => pattern.test(value))) {
+    throw new Error('إعداد WireGuard غير صالح أو غير مكتمل. تأكد من وجود Interface وPeer والمفاتيح وEndpoint وAllowedIPs.');
+  }
   return value;
+}
+
+function nativeVpnError(error: unknown, fallback: string) {
+  const vpnError = error as NativeVpnErrorLike | null;
+  switch (vpnError?.code) {
+    case 'VPN_PERMISSION_DENIED':
+      return new Error('تم رفض إذن VPN من Android. اسمح بالاتصال ثم حاول مجددًا.');
+    case 'VPN_NO_ACTIVITY':
+      return new Error('تعذر فتح إذن VPN الآن. أعد فتح شاشة RAID VPN وحاول مجددًا.');
+    case 'VPN_CONFIG_EMPTY':
+      return new Error('ملف WireGuard فارغ أو غير صالح.');
+    case 'VPN_CONNECT_FAILED':
+      return new Error('تعذر تشغيل نفق WireGuard. تحقق من أن ملف الإعداد صالح وأن الخادم متاح.');
+    case 'VPN_DISCONNECT_FAILED':
+      return new Error('تعذر قطع اتصال RAID VPN بشكل صحيح.');
+    case 'VPN_STATUS_FAILED':
+      return new Error('تعذر قراءة حالة RAID VPN من Android.');
+    default:
+      return new Error(vpnError?.message || fallback);
+  }
 }
 
 async function cacheConfigForUser(userId: string, configText: string, source: 'service' | 'local' = 'service') {
@@ -216,13 +248,25 @@ export async function connectVpn() {
 
   const config = await loadConfigForUser(userId);
   if (!config) throw new Error('لا يوجد إعداد WireGuard. استورد ملف VPN مجاني أو اربط خادم RAID VPN.');
-  return native().connect(validateConfig(config));
+  try {
+    return await native().connect(validateConfig(config));
+  } catch (error) {
+    throw nativeVpnError(error, 'تعذر تشغيل RAID VPN.');
+  }
 }
 
 export async function disconnectVpn() {
-  return native().disconnect();
+  try {
+    return await native().disconnect();
+  } catch (error) {
+    throw nativeVpnError(error, 'تعذر قطع اتصال RAID VPN.');
+  }
 }
 
 export async function isVpnConnected() {
-  return native().getStatus();
+  try {
+    return await native().getStatus();
+  } catch (error) {
+    throw nativeVpnError(error, 'تعذر قراءة حالة RAID VPN.');
+  }
 }

@@ -25,6 +25,16 @@ type VpnFunctionPayload = {
 type FunctionErrorLike = Error & { context?: Response };
 type NativeVpnErrorLike = Error & { code?: string };
 
+class VpnSyncError extends Error {
+  readonly allowCachedFallback: boolean;
+
+  constructor(message: string, allowCachedFallback: boolean) {
+    super(message);
+    this.name = 'VpnSyncError';
+    this.allowCachedFallback = allowCachedFallback;
+  }
+}
+
 export type VpnProvisioningState = {
   configured: boolean;
   source: 'service' | 'local' | 'cache' | 'none';
@@ -148,18 +158,32 @@ function functionStatus(error: unknown) {
   return (error as FunctionErrorLike | null)?.context?.status;
 }
 
-async function readFunctionError(error: unknown) {
+async function mapFunctionError(error: unknown): Promise<VpnSyncError> {
   const response = (error as FunctionErrorLike | null)?.context;
-  if (!response) return error instanceof Error ? error.message : 'تعذر الاتصال بخدمة RAID VPN.';
+  if (!response) {
+    const message = error instanceof Error ? error.message : 'تعذر الاتصال بخدمة RAID VPN.';
+    return new VpnSyncError(message, true);
+  }
+
   try {
     const payload = await response.clone().json() as VpnFunctionPayload;
-    if (payload.error === 'UNAUTHORIZED') return 'انتهت جلسة الحساب. سجّل الدخول مجددًا.';
-    if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') return 'خدمة RAID VPN غير مهيأة على الخادم.';
-    if (payload.error === 'VPN_PROFILE_INVALID') return 'ملف VPN المرتبط بالحساب غير صالح.';
-    return 'تعذر مزامنة إعداد VPN من الخادم.';
+    if (payload.error === 'UNAUTHORIZED' || response.status === 401 || response.status === 403) {
+      return new VpnSyncError('انتهت جلسة الحساب. سجّل الدخول مجددًا.', false);
+    }
+    if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') {
+      return new VpnSyncError('خدمة RAID VPN غير مهيأة على الخادم.', false);
+    }
+    if (payload.error === 'VPN_PROFILE_INVALID') {
+      return new VpnSyncError('ملف VPN المرتبط بالحساب غير صالح.', false);
+    }
+    return new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', response.status >= 500);
   } catch {
-    return 'تعذر مزامنة إعداد VPN من الخادم.';
+    return new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', response.status >= 500);
   }
+}
+
+function canUseCachedServiceConfig(error: unknown) {
+  return !(error instanceof VpnSyncError) || error.allowCachedFallback;
 }
 
 export async function clearWireGuardConfig() {
@@ -201,9 +225,14 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
     if (!refreshError && token) ({ data, error } = await invokeVpnConfig(token));
   }
 
-  if (error) throw new Error(await readFunctionError(error));
+  if (error) throw await mapFunctionError(error);
   const payload = data as VpnFunctionPayload | null;
-  if (payload?.error) throw new Error(payload.error);
+  if (payload?.error) {
+    if (payload.error === 'UNAUTHORIZED') throw new VpnSyncError('انتهت جلسة الحساب. سجّل الدخول مجددًا.', false);
+    if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') throw new VpnSyncError('خدمة RAID VPN غير مهيأة على الخادم.', false);
+    if (payload.error === 'VPN_PROFILE_INVALID') throw new VpnSyncError('ملف VPN المرتبط بالحساب غير صالح.', false);
+    throw new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', false);
+  }
 
   if (!payload?.configured || !payload.configText) {
     const cached = await loadConfigForUser(user.id);
@@ -227,11 +256,16 @@ export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
 
   try {
     return await syncVpnProfileFromAccount();
-  } catch {
+  } catch (error) {
     const cached = await loadConfigForUser(userId);
     if (!cached) return { configured: false, source: 'none' };
     const local = await isLocalConfigForUser(userId);
-    return { configured: true, source: local ? 'local' : 'cache' };
+    if (local) return { configured: true, source: 'local' };
+    if (!canUseCachedServiceConfig(error)) {
+      await clearConfigForUser(userId);
+      throw error;
+    }
+    return { configured: true, source: 'cache' };
   }
 }
 
@@ -243,7 +277,12 @@ export async function connectVpn() {
     await syncVpnProfileFromAccount();
   } catch (error) {
     const cached = await loadConfigForUser(userId);
+    const local = cached ? await isLocalConfigForUser(userId) : false;
     if (!cached) throw error;
+    if (!local && !canUseCachedServiceConfig(error)) {
+      await clearConfigForUser(userId);
+      throw error;
+    }
   }
 
   const config = await loadConfigForUser(userId);

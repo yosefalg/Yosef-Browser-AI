@@ -19,7 +19,15 @@ export const READER_EXTRACT_JS = `
       const links = el.querySelectorAll('a').length;
       return text.length + p * 120 - links * 20;
     };
-    let best = candidates.sort((a,b) => score(b) - score(a))[0] || clone;
+    let best = clone;
+    let bestScore = -Infinity;
+    for (const candidate of candidates) {
+      const candidateScore = score(candidate);
+      if (candidateScore > bestScore) {
+        best = candidate;
+        bestScore = candidateScore;
+      }
+    }
     let text = (best.innerText || '').replace(/\\n{3,}/g, '\\n\\n').replace(/[ \\t]+/g, ' ').trim();
     if (text.length < 240) text = (clone.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
     window.ReactNativeWebView.postMessage(JSON.stringify({

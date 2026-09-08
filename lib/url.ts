@@ -11,6 +11,33 @@ function looksLikeHost(value: string) {
   );
 }
 
+function hostOnly(value: string) {
+  const slash = value.search(/[/?#]/);
+  const authority = slash >= 0 ? value.slice(0, slash) : value;
+  if (authority.startsWith('[')) {
+    const end = authority.indexOf(']');
+    return end >= 0 ? authority.slice(1, end).toLowerCase() : authority.toLowerCase();
+  }
+  return authority.split(':')[0].toLowerCase();
+}
+
+function isLocalDevelopmentHost(value: string) {
+  const host = hostOnly(value);
+  if (host === 'localhost' || host === '::1') return true;
+
+  const parts = host.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+
+  const [a, b] = parts;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
 export function safeExternalUrl(url: string) {
   const value = url.trim();
   if (!value || CONTROL_CHARS.test(value) || !HTTP_SCHEME.test(value)) return false;
@@ -38,7 +65,10 @@ export function normalizeInput(input: string) {
   if (EXPLICIT_SCHEME.test(value)) throw new Error('Unsupported URL scheme');
 
   if (looksLikeHost(value)) {
-    const candidate = `https://${value}`;
+    // Local/private development services commonly do not provide TLS. Public hosts
+    // still default to HTTPS, while loopback/RFC1918/link-local addresses use HTTP.
+    const scheme = isLocalDevelopmentHost(value) ? 'http' : 'https';
+    const candidate = `${scheme}://${value}`;
     if (safeExternalUrl(candidate)) return candidate;
   }
 

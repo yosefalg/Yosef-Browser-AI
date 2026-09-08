@@ -29,6 +29,7 @@
           "experimentalLauncherActivity": true
         }
       ],
+      "./plugins/withRaidWebViewSecurity",
       "./plugins/withRaidWireGuard"
     ],
     "experiments": {

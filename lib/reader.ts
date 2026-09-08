@@ -1,3 +1,5 @@
+import { safeExternalUrl } from './url';
+
 export type ReaderPayload = {
   title: string;
   text: string;
@@ -33,8 +35,23 @@ export const READER_EXTRACT_JS = `
 export function parseReaderMessage(raw: string): ReaderPayload | null {
   try {
     const msg = JSON.parse(raw);
-    if (msg?.type !== 'RAID_READER' || !msg?.payload?.text) return null;
-    return msg.payload as ReaderPayload;
+    const payload = msg?.payload;
+    if (
+      msg?.type !== 'RAID_READER' ||
+      typeof payload?.title !== 'string' ||
+      typeof payload?.text !== 'string' ||
+      typeof payload?.url !== 'string'
+    ) return null;
+
+    const text = payload.text.trim();
+    const url = payload.url.trim();
+    if (!text || !safeExternalUrl(url)) return null;
+
+    return {
+      title: payload.title.replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 300) || 'وضع القراءة',
+      text: text.slice(0, 120000),
+      url: url.slice(0, 4096),
+    };
   } catch {
     return null;
   }

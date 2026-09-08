@@ -10,6 +10,7 @@ function friendlyFunctionError(payload: FunctionFailurePayload | null, httpStatu
   const status = payload?.status || httpStatus;
   if (status === 401 || code === 'UNAUTHORIZED') return 'انتهت جلسة RAID. سجّل الدخول مجددًا ثم أعد المحاولة.';
   if (code === 'AI_NOT_CONFIGURED') return 'خدمة RAID AI غير مهيأة على الخادم حاليًا.';
+  if (code === 'AI_QUOTA_EXHAUSTED') return 'حصة مزود RAID AI انتهت أو وصلت حدها مؤقتًا. تم تفعيل التبديل التلقائي بين المزودين؛ أعد المحاولة بعد قليل.';
   if (code === 'AI_UPSTREAM_ERROR') return 'مزود RAID AI غير متاح مؤقتًا. أعد المحاولة بعد قليل.';
   if (code === 'EMPTY_RESPONSE') return 'وصل رد فارغ من مزود الذكاء الاصطناعي. أعد إرسال الطلب.';
   if (code === 'MESSAGE_REQUIRED') return 'اكتب رسالة أولاً.';

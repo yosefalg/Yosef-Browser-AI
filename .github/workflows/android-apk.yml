@@ -37,7 +37,33 @@ jobs:
         run: pnpm typecheck
 
       - name: Expo Doctor
-        run: npx expo-doctor
+        shell: bash
+        run: |
+          set -o pipefail
+          MAX_ATTEMPTS=3
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            LOG="$(mktemp)"
+            echo "Expo Doctor attempt ${attempt}/${MAX_ATTEMPTS}"
+            if npx expo-doctor 2>&1 | tee "$LOG"; then
+              rm -f "$LOG"
+              exit 0
+            fi
+
+            if ! grep -Eqi 'ECONNRESET|fetch failed|requires a connection to the Expo API|ETIMEDOUT|EAI_AGAIN' "$LOG"; then
+              echo "Expo Doctor reported a project/configuration failure; not retrying."
+              rm -f "$LOG"
+              exit 1
+            fi
+
+            rm -f "$LOG"
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Transient Expo API/network failure detected; retrying after $((attempt * 5)) seconds."
+              sleep $((attempt * 5))
+            fi
+          done
+
+          echo "Expo Doctor could not complete after ${MAX_ATTEMPTS} transient-network attempts."
+          exit 1
 
       - name: Prebuild Android
         run: npx expo prebuild --platform android --clean --no-install

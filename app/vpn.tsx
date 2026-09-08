@@ -29,9 +29,9 @@ export default function VpnScreen() {
       setReady(profile.configured);
       setSource(profile.source);
       if (session && profile.source === 'local') {
-        setStatusMessage('ملف WireGuard المجاني محفوظ محليًا على هذا الهاتف فقط، ولا يُرفع المفتاح الخاص إلى RAID.');
+        setStatusMessage('إعداد WireGuard محفوظ محليًا على هذا الهاتف. التشغيل التالي يتم بضغطة واحدة.');
       } else if (session && !profile.configured) {
-        setStatusMessage('لا يوجد خادم RAID VPN مجاني مخصص حاليًا. يمكنك استخدام Proton VPN Free أو أي ملف WireGuard مجاني.');
+        setStatusMessage('أول تشغيل فقط: اضغط تشغيل VPN واختر ملف WireGuard الحقيقي من هاتفك.');
       }
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'تعذر تحديث حالة VPN.');
@@ -51,42 +51,21 @@ export default function VpnScreen() {
     });
   };
 
-  const importFreeConfig = async () => {
-    if (!signedIn) {
-      router.push('/login');
-      return;
-    }
-
-    setBusy(true);
-    setStatusMessage('');
-    try {
-      const profile = await importLocalWireGuardConfig();
-      setReady(profile.configured);
-      setSource(profile.source);
-      setStatusMessage('تم حفظ ملف WireGuard محليًا بشكل آمن. جارٍ تشغيل النفق…');
-      await connectVpn();
-      const active = await isVpnConnected();
-      setConnected(active);
-      setStatusMessage(active
-        ? 'RAID VPN يعمل الآن باستخدام ملف WireGuard المجاني المحفوظ محليًا.'
-        : 'تم استيراد الملف، لكن Android لم يؤكد تشغيل النفق. اضغط تشغيل VPN للمحاولة مرة أخرى.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'تعذر استيراد ملف WireGuard.';
-      if (/cancel|canceled|cancelled|ألغ/i.test(message)) return;
-      Alert.alert('RAID VPN', message);
-    } finally {
-      setBusy(false);
-    }
+  const provisionAndConnect = async () => {
+    const profile = await importLocalWireGuardConfig();
+    setReady(profile.configured);
+    setSource(profile.source);
+    setStatusMessage('تم حفظ إعداد WireGuard. جارٍ تشغيل النفق…');
+    await connectVpn();
+    const active = await isVpnConnected();
+    setConnected(active);
+    if (!active) throw new Error('تم حفظ الملف لكن Android لم يؤكد تشغيل النفق. حاول تشغيل VPN مرة أخرى.');
+    setStatusMessage('RAID VPN متصل الآن. من الآن فصاعدًا التشغيل والإيقاف بضغطة واحدة.');
   };
 
   const toggle = async () => {
     if (!signedIn) {
       router.push('/login');
-      return;
-    }
-
-    if (!ready && !connected) {
-      await importFreeConfig();
       return;
     }
 
@@ -100,20 +79,28 @@ export default function VpnScreen() {
         setStatusMessage(active
           ? 'طلب Android قطع الاتصال، لكن النفق ما زال فعالًا. حاول مرة أخرى.'
           : 'تم قطع اتصال VPN.');
-      } else {
-        await connectVpn();
-        const active = await isVpnConnected();
-        setConnected(active);
-        setStatusMessage(active
-          ? source === 'local'
-            ? 'متصل عبر WireGuard المجاني المحفوظ محليًا.'
-            : 'متصل عبر RAID WireGuard.'
-          : 'لم يؤكد Android تشغيل النفق. تحقق من إذن VPN والإعداد ثم حاول مجددًا.');
+        return;
       }
+
+      if (!ready) {
+        await provisionAndConnect();
+        return;
+      }
+
+      await connectVpn();
+      const active = await isVpnConnected();
+      setConnected(active);
+      setStatusMessage(active
+        ? source === 'local'
+          ? 'متصل عبر WireGuard المحفوظ محليًا.'
+          : 'متصل عبر RAID WireGuard.'
+        : 'لم يؤكد Android تشغيل النفق. تحقق من إذن VPN ثم حاول مجددًا.');
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'تعذر تنفيذ العملية.';
+      if (/cancel|canceled|cancelled|ألغ/i.test(message)) return;
       const active = await isVpnConnected().catch(() => connected);
       setConnected(active);
-      Alert.alert('RAID VPN', error instanceof Error ? error.message : 'تعذر تنفيذ العملية.');
+      Alert.alert('RAID VPN', message);
     } finally {
       setBusy(false);
     }
@@ -123,39 +110,33 @@ export default function VpnScreen() {
     ? 'متصل ومحمي'
     : !signedIn
       ? 'يلزم تسجيل الدخول'
-      : ready && source === 'local'
-        ? 'VPN مجاني جاهز'
-        : ready
-          ? 'جاهز للاتصال'
-          : 'لا يوجد ملف VPN';
+      : ready
+        ? 'جاهز للاتصال'
+        : 'إعداد أول مرة';
 
   const mainTitle = connected
     ? 'RAID VPN يعمل الآن'
     : !signedIn
       ? 'دخول إلى حساب RAID'
-      : ready && source === 'local'
-        ? 'WireGuard مجاني جاهز'
-        : ready
-          ? 'اتصال WireGuard جاهز'
-          : 'استخدم VPN مجاني حقيقي';
+      : ready
+        ? 'WireGuard جاهز'
+        : 'تشغيل RAID VPN';
 
   const description = connected
     ? 'النفق يعمل عبر WireGuard الحقيقي على Android.'
     : !signedIn
-      ? 'استخدم حساب RAID نفسه الذي يعمل معه الذكاء الاصطناعي.'
-      : ready && source === 'local'
-        ? 'تم استيراد ملف WireGuard إلى هذا الهاتف وحفظه داخل التخزين الآمن للتطبيق.'
-        : ready
-          ? 'تم جلب إعداد WireGuard من بوابة RAID الآمنة ويمكن بدء الاتصال.'
-          : 'لا تحتاج إلى VPS مدفوع. يمكنك إنشاء ملف WireGuard مجاني من Proton VPN Free ثم استيراده مرة واحدة.';
+      ? 'استخدم حساب RAID نفسه المستخدم في بقية خدمات التطبيق.'
+      : ready
+        ? 'الإعداد محفوظ بأمان. اضغط الزر للاتصال مباشرة.'
+        : 'اضغط تشغيل VPN. في أول مرة فقط سيطلب Android اختيار ملف WireGuard ثم سيحفظه التطبيق ويشغله فورًا.';
 
   const sourceLabel = source === 'local'
-    ? 'محلي مجاني'
+    ? 'محلي'
     : source === 'service'
       ? 'RAID Server'
       : source === 'cache'
         ? 'نسخة آمنة'
-        : 'غير موجود';
+        : 'غير مهيأ';
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={s.root}>
@@ -179,27 +160,17 @@ export default function VpnScreen() {
           <Text style={s.mainTitle}>{mainTitle}</Text>
           <Text style={s.desc}>{description}</Text>
           {!!statusMessage && <Text style={s.statusMessage}>{statusMessage}</Text>}
-          <Pressable disabled={busy} onPress={toggle} style={[s.primary, connected && s.stop, busy && s.disabled]}>
+          <Pressable disabled={busy} onPress={toggle} style={[s.primary, connected && s.stop, busy && s.disabled]} accessibilityRole="button" accessibilityLabel={connected ? 'قطع اتصال RAID VPN' : 'تشغيل RAID VPN'}>
             {busy
               ? <ActivityIndicator color="#fff" />
-              : <Text style={s.primaryText}>{connected ? 'قطع الاتصال' : !signedIn ? 'تسجيل الدخول' : ready ? 'تشغيل VPN' : 'استيراد VPN مجاني'}</Text>}
+              : <Text style={s.primaryText}>{connected ? 'قطع الاتصال' : !signedIn ? 'تسجيل الدخول' : 'تشغيل VPN'}</Text>}
           </Pressable>
+          {!connected && !ready && signedIn ? (
+            <Pressable onPress={openProtonFree} disabled={busy} style={s.setupLink} accessibilityRole="link">
+              <Text style={s.setupLinkText}>ليس لديك ملف WireGuard؟ الحصول على إعداد مجاني</Text>
+            </Pressable>
+          ) : null}
         </View>
-
-        {!connected && source === 'none' && signedIn ? (
-          <View style={s.freeBox}>
-            <Text style={s.freeTitle}>VPN مجاني بدون خادم مدفوع</Text>
-            <Text style={s.freeText}>Proton VPN Free يسمح بإنشاء ملف WireGuard قياسي. أنشئ الملف ثم اختره من هاتفك؛ RAID سيخزنه محليًا ولن يرسل PrivateKey إلى قاعدة البيانات.</Text>
-            <View style={s.freeActions}>
-              <Pressable onPress={openProtonFree} style={s.freeSecondary} disabled={busy}>
-                <Text style={s.freeSecondaryText}>فتح Proton Free</Text>
-              </Pressable>
-              <Pressable onPress={importFreeConfig} style={s.freePrimary} disabled={busy}>
-                <Text style={s.freePrimaryText}>اختيار ملف .conf</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : null}
 
         <View style={s.row}>
           <View style={s.card}><Text style={s.cardLabel}>الحساب</Text><Text style={s.cardValue}>{signedIn ? 'متصل' : 'غير مسجّل'}</Text></View>
@@ -223,8 +194,7 @@ const s = StyleSheet.create({
   hero:{padding:24,borderRadius:28,alignItems:'center',backgroundColor:'#0E1524',borderWidth:1,borderColor:'#202A3D'},heroOn:{backgroundColor:'#0B1818',borderColor:'#225C4D'},
   state:{color:'#A78BFA',fontSize:12,fontWeight:'900',textAlign:'center'},circle:{width:112,height:112,borderRadius:56,alignItems:'center',justifyContent:'center',marginTop:22,backgroundColor:'#12182A',borderWidth:7,borderColor:'#0E1422'},circleOn:{backgroundColor:'#123B33',borderColor:'#0E2924'},symbol:{fontSize:48,color:'#C4B5FD'},
   mainTitle:{fontSize:24,fontWeight:'900',color:'#fff',marginTop:18,textAlign:'center'},desc:{color:'#94A3B8',lineHeight:21,marginTop:8,textAlign:'center'},statusMessage:{color:'#FBBF24',fontSize:12,lineHeight:18,textAlign:'center',marginTop:10},
-  primary:{width:'100%',height:56,borderRadius:17,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED',marginTop:22},stop:{backgroundColor:'#B4233D'},disabled:{opacity:.55},primaryText:{color:'#fff',fontSize:16,fontWeight:'900'},
-  freeBox:{marginTop:14,padding:16,borderRadius:20,backgroundColor:'#0B1320',borderWidth:1,borderColor:'#24324A'},freeTitle:{color:'#F8FAFC',fontSize:16,fontWeight:'900',textAlign:'right'},freeText:{color:'#94A3B8',fontSize:12,lineHeight:20,textAlign:'right',marginTop:7},freeActions:{flexDirection:'row',gap:10,marginTop:14},freePrimary:{flex:1,minHeight:46,borderRadius:14,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center',paddingHorizontal:10},freePrimaryText:{color:'#fff',fontWeight:'900',fontSize:12},freeSecondary:{flex:1,minHeight:46,borderRadius:14,backgroundColor:'#172033',borderWidth:1,borderColor:'#334155',alignItems:'center',justifyContent:'center',paddingHorizontal:10},freeSecondaryText:{color:'#C4B5FD',fontWeight:'900',fontSize:12},
+  primary:{width:'100%',height:56,borderRadius:17,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED',marginTop:22},stop:{backgroundColor:'#B4233D'},disabled:{opacity:.55},primaryText:{color:'#fff',fontSize:16,fontWeight:'900'},setupLink:{marginTop:14,paddingVertical:6,paddingHorizontal:8},setupLinkText:{color:'#A78BFA',fontSize:12,fontWeight:'800',textAlign:'center'},
   row:{flexDirection:'row',gap:12,marginTop:14},card:{flex:1,padding:16,borderRadius:18,backgroundColor:'#0E1524',borderWidth:1,borderColor:'#1E293B'},cardLabel:{color:'#64748B',fontSize:11,fontWeight:'800',textAlign:'right'},cardValue:{color:'#F8FAFC',fontSize:15,fontWeight:'900',textAlign:'right',marginTop:8},
   secondary:{height:50,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:'#151E2E',marginTop:14},secondaryText:{color:'#C4B5FD',fontWeight:'900'}
 });

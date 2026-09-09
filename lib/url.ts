@@ -1,6 +1,7 @@
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const HTTP_SCHEME = /^https?:\/\//i;
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+const MAX_OMNIBOX_INPUT_LENGTH = 8192;
 
 function looksLikeHost(value: string) {
   return (
@@ -64,9 +65,13 @@ function isLocalDevelopmentHost(value: string) {
   );
 }
 
+function isReasonableInputLength(value: string) {
+  return value.length <= MAX_OMNIBOX_INPUT_LENGTH;
+}
+
 export function safeExternalUrl(url: string) {
   const value = url.trim();
-  if (!value || CONTROL_CHARS.test(value) || !HTTP_SCHEME.test(value)) return false;
+  if (!value || !isReasonableInputLength(value) || CONTROL_CHARS.test(value) || !HTTP_SCHEME.test(value)) return false;
 
   try {
     const parsed = new URL(value);
@@ -84,6 +89,7 @@ export function safeExternalUrl(url: string) {
 export function normalizeInput(input: string) {
   const value = input.trim();
   if (!value) return 'https://www.google.com';
+  if (!isReasonableInputLength(value)) throw new Error('Input too long');
   if (CONTROL_CHARS.test(value)) throw new Error('Unsafe URL characters');
 
   if (HTTP_SCHEME.test(value)) {

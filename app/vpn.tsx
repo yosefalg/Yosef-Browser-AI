@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { clearWireGuardConfig, connectVpn, disconnectVpn, getVpnProvisioningState, importLocalWireGuardConfig, isVpnConnected } from '@/lib/vpn';
@@ -44,6 +44,13 @@ export default function VpnScreen() {
     void refresh();
     return () => {};
   }, [refresh]));
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refresh();
+    });
+    return () => subscription.remove();
+  }, [refresh]);
 
   const openProtonFree = () => {
     Linking.openURL('https://account.protonvpn.com/downloads').catch(() => {

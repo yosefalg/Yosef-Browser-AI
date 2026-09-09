@@ -7,15 +7,18 @@ import { getCurrentSession } from '@/lib/auth';
 
 type VpnSource = 'service' | 'local' | 'cache' | 'none';
 
-const VPN_STATE_RETRY_DELAYS_MS = [0, 150, 300, 500, 800] as const;
+const VPN_STATE_RETRY_DELAYS = [0, 300, 700, 1200] as const;
 
-async function readSettledVpnState(expected: boolean) {
-  let active = !expected;
-  for (const delayMs of VPN_STATE_RETRY_DELAYS_MS) {
-    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
-    active = await isVpnConnected();
-    if (active === expected) return active;
+async function waitForVpnState(expected: boolean) {
+  let active = await isVpnConnected().catch(() => !expected);
+  if (active === expected) return active;
+
+  for (const delay of VPN_STATE_RETRY_DELAYS.slice(1)) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    active = await isVpnConnected().catch(() => active);
+    if (active === expected) break;
   }
+
   return active;
 }
 
@@ -78,7 +81,7 @@ export default function VpnScreen() {
     setSource(profile.source);
     setStatusMessage('تم حفظ إعداد WireGuard. جارٍ تشغيل النفق…');
     await connectVpn();
-    const active = await readSettledVpnState(true);
+    const active = await waitForVpnState(true);
     setConnected(active);
     if (!active) throw new Error('تم حفظ الملف لكن Android لم يؤكد تشغيل النفق. حاول تشغيل VPN مرة أخرى.');
     setStatusMessage('RAID VPN متصل الآن. من الآن فصاعدًا التشغيل والإيقاف بضغطة واحدة.');
@@ -141,7 +144,7 @@ export default function VpnScreen() {
     try {
       if (connected) {
         await disconnectVpn();
-        const active = await readSettledVpnState(false);
+        const active = await waitForVpnState(false);
         setConnected(active);
         setStatusMessage(active
           ? 'طلب Android قطع الاتصال، لكن النفق ما زال فعالًا. حاول مرة أخرى.'
@@ -155,7 +158,7 @@ export default function VpnScreen() {
       }
 
       await connectVpn();
-      const active = await readSettledVpnState(true);
+      const active = await waitForVpnState(true);
       setConnected(active);
       setStatusMessage(active
         ? source === 'local'

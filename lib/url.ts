@@ -11,6 +11,21 @@ function looksLikeHost(value: string) {
   );
 }
 
+function looksLikeInternationalHost(value: string) {
+  if (/\s/.test(value)) return false;
+
+  const slash = value.search(/[/?#]/);
+  const authority = slash >= 0 ? value.slice(0, slash) : value;
+  if (!authority.includes('.')) return false;
+
+  try {
+    const parsed = new URL(`https://${value}`);
+    return Boolean(parsed.hostname && parsed.hostname.includes('.'));
+  } catch {
+    return false;
+  }
+}
+
 function hostOnly(value: string) {
   const slash = value.search(/[/?#]/);
   const authority = slash >= 0 ? value.slice(0, slash) : value;
@@ -79,7 +94,9 @@ export function normalizeInput(input: string) {
   // Host:port input (for example localhost:3000 or example.com:8443) is
   // syntactically similar to a URI scheme. Resolve valid web hosts first so
   // development servers and explicit web ports are not rejected as schemes.
-  if (looksLikeHost(value)) {
+  // URL parsing also recognizes internationalized domains (IDN), including
+  // Arabic domains, and converts them to their canonical ASCII representation.
+  if (looksLikeHost(value) || looksLikeInternationalHost(value)) {
     const rawHost = hostOnly(value);
     if (!validIpv4(rawHost)) throw new Error('Invalid IP address');
     // Local/private development services commonly do not provide TLS. Public hosts

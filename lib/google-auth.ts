@@ -1,6 +1,6 @@
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import { getSupabase } from '@/lib/auth';
+import { getSupabase, getSupabasePublicRuntimeConfig } from '@/lib/auth';
 
 function oauthParams(url: string) {
   const question = url.indexOf('?');
@@ -10,7 +10,27 @@ function oauthParams(url: string) {
   return new URLSearchParams([queryPart, hashPart].filter(Boolean).join('&'));
 }
 
+async function ensureGoogleProviderEnabled() {
+  const { url, publishableKey } = getSupabasePublicRuntimeConfig();
+  try {
+    const response = await fetch(`${url}/auth/v1/settings`, {
+      headers: { apikey: publishableKey },
+    });
+    if (!response.ok) return;
+    const settings = await response.json() as { external?: { google?: boolean } };
+    if (settings.external?.google !== true) {
+      throw new Error('GOOGLE_PROVIDER_DISABLED');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'GOOGLE_PROVIDER_DISABLED') throw error;
+    // Do not block login on a transient settings probe failure. The OAuth request below
+    // remains authoritative and will return a proper error if the provider is unavailable.
+  }
+}
+
 export async function signInWithGoogle() {
+  await ensureGoogleProviderEnabled();
+
   const supabase = getSupabase();
   const redirectTo = Linking.createURL('auth/callback');
   const { data, error } = await supabase.auth.signInWithOAuth({

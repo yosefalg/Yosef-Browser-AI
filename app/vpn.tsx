@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { connectVpn, disconnectVpn, getVpnProvisioningState, importLocalWireGuardConfig, isVpnConnected } from '@/lib/vpn';
+import { clearWireGuardConfig, connectVpn, disconnectVpn, getVpnProvisioningState, importLocalWireGuardConfig, isVpnConnected } from '@/lib/vpn';
 import { getCurrentSession } from '@/lib/auth';
 
 type VpnSource = 'service' | 'local' | 'cache' | 'none';
@@ -63,6 +63,46 @@ export default function VpnScreen() {
     setStatusMessage('RAID VPN متصل الآن. من الآن فصاعدًا التشغيل والإيقاف بضغطة واحدة.');
   };
 
+  const replaceProfile = async () => {
+    if (!signedIn || connected || busy) return;
+    setBusy(true);
+    setStatusMessage('اختر ملف WireGuard البديل. لن يُحذف الإعداد الحالي إلا بعد اختيار ملف جديد.');
+    try {
+      const profile = await importLocalWireGuardConfig();
+      if (!profile.configured) throw new Error('لم يتم حفظ إعداد WireGuard الجديد.');
+      setReady(true);
+      setSource(profile.source);
+      setStatusMessage('تم استبدال إعداد WireGuard بنجاح. اضغط تشغيل VPN للاتصال.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'تعذر استبدال إعداد WireGuard.';
+      if (/cancel|canceled|cancelled|ألغ/i.test(message)) {
+        setStatusMessage('لم يتم تغيير إعداد VPN الحالي.');
+        return;
+      }
+      setStatusMessage(message);
+      Alert.alert('RAID VPN', message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetProfile = async () => {
+    if (!signedIn || connected || busy) return;
+    setBusy(true);
+    try {
+      await clearWireGuardConfig();
+      setReady(false);
+      setSource('none');
+      setStatusMessage('تم حذف إعداد VPN المحفوظ من هذا الهاتف. اضغط تشغيل VPN لاختيار ملف جديد.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'تعذر حذف إعداد VPN المحفوظ.';
+      setStatusMessage(message);
+      Alert.alert('RAID VPN', message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggle = async () => {
     if (!signedIn) {
       router.push('/login');
@@ -100,6 +140,7 @@ export default function VpnScreen() {
       if (/cancel|canceled|cancelled|ألغ/i.test(message)) return;
       const active = await isVpnConnected().catch(() => connected);
       setConnected(active);
+      setStatusMessage(message);
       Alert.alert('RAID VPN', message);
     } finally {
       setBusy(false);
@@ -170,6 +211,16 @@ export default function VpnScreen() {
               <Text style={s.setupLinkText}>ليس لديك ملف WireGuard؟ الحصول على إعداد مجاني</Text>
             </Pressable>
           ) : null}
+          {!connected && ready && signedIn ? (
+            <View style={s.profileActions}>
+              <Pressable onPress={replaceProfile} disabled={busy} style={s.profileAction} accessibilityRole="button" accessibilityLabel="استبدال ملف WireGuard">
+                <Text style={s.profileActionText}>استبدال ملف VPN</Text>
+              </Pressable>
+              <Pressable onPress={resetProfile} disabled={busy} style={s.profileAction} accessibilityRole="button" accessibilityLabel="حذف إعداد WireGuard المحفوظ">
+                <Text style={s.profileActionDanger}>حذف الإعداد</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <View style={s.row}>
@@ -195,6 +246,7 @@ const s = StyleSheet.create({
   state:{color:'#A78BFA',fontSize:12,fontWeight:'900',textAlign:'center'},circle:{width:112,height:112,borderRadius:56,alignItems:'center',justifyContent:'center',marginTop:22,backgroundColor:'#12182A',borderWidth:7,borderColor:'#0E1422'},circleOn:{backgroundColor:'#123B33',borderColor:'#0E2924'},symbol:{fontSize:48,color:'#C4B5FD'},
   mainTitle:{fontSize:24,fontWeight:'900',color:'#fff',marginTop:18,textAlign:'center'},desc:{color:'#94A3B8',lineHeight:21,marginTop:8,textAlign:'center'},statusMessage:{color:'#FBBF24',fontSize:12,lineHeight:18,textAlign:'center',marginTop:10},
   primary:{width:'100%',height:56,borderRadius:17,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED',marginTop:22},stop:{backgroundColor:'#B4233D'},disabled:{opacity:.55},primaryText:{color:'#fff',fontSize:16,fontWeight:'900'},setupLink:{marginTop:14,paddingVertical:6,paddingHorizontal:8},setupLinkText:{color:'#A78BFA',fontSize:12,fontWeight:'800',textAlign:'center'},
+  profileActions:{width:'100%',flexDirection:'row-reverse',gap:10,marginTop:12},profileAction:{flex:1,minHeight:42,borderRadius:13,alignItems:'center',justifyContent:'center',paddingHorizontal:10,backgroundColor:'#141C2C',borderWidth:1,borderColor:'#2A3750'},profileActionText:{color:'#C4B5FD',fontSize:12,fontWeight:'900'},profileActionDanger:{color:'#FDA4AF',fontSize:12,fontWeight:'900'},
   row:{flexDirection:'row',gap:12,marginTop:14},card:{flex:1,padding:16,borderRadius:18,backgroundColor:'#0E1524',borderWidth:1,borderColor:'#1E293B'},cardLabel:{color:'#64748B',fontSize:11,fontWeight:'800',textAlign:'right'},cardValue:{color:'#F8FAFC',fontSize:15,fontWeight:'900',textAlign:'right',marginTop:8},
   secondary:{height:50,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:'#151E2E',marginTop:14},secondaryText:{color:'#C4B5FD',fontWeight:'900'}
 });

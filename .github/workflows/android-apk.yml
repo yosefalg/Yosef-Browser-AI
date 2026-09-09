@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build-apk:
     runs-on: ubuntu-22.04
@@ -72,28 +75,53 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --stacktrace
 
-      - name: Prepare artifact report
+      - name: Verify and prepare APK artifact
         shell: bash
         run: |
+          set -euo pipefail
+
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
+
+          PACKAGE="$(node -p "require('./app.json').expo.android.package")"
+          VERSION_NAME="$(node -p "require('./app.json').expo.version")"
+          VERSION_CODE="$(node -p "require('./app.json').expo.android.versionCode")"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+
+          test -n "$AAPT"
+          test -x "$AAPT"
+
+          BADGING="$("$AAPT" dump badging "$APK")"
+          printf '%s\n' "$BADGING" | grep -F "package: name='$PACKAGE'" >/dev/null
+          printf '%s\n' "$BADGING" | grep -F "versionName='$VERSION_NAME'" >/dev/null
+          printf '%s\n' "$BADGING" | grep -F "versionCode='$VERSION_CODE'" >/dev/null
+
+          ABI_LIST="$(unzip -Z1 "$APK" | grep '^lib/' || true)"
+          printf '%s\n' "$ABI_LIST" | grep '^lib/arm64-v8a/' >/dev/null
+          if printf '%s\n' "$ABI_LIST" | grep -Eq '^lib/(x86|x86_64|armeabi-v7a)/'; then
+            echo "Unexpected non-arm64 native libraries found in the arm64 release APK." >&2
+            exit 1
+          fi
+
           mkdir -p release
           cp "$APK" release/RAID-Browser-arm64.apk
-          SHA=$(sha256sum "$APK" | awk '{print $1}')
-          SIZE=$(stat -c%s "$APK")
-          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+
+          SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          SIZE="$(stat -c%s "$APK")"
           {
             echo "RAID Browser Android APK"
+            echo "package=$PACKAGE"
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
             echo "sha256=$SHA"
             echo "size_bytes=$SIZE"
             echo "expected_abi=arm64-v8a"
             echo "commit=${GITHUB_SHA}"
             echo
-            "$AAPT" dump badging "$APK" || true
+            printf '%s\n' "$BADGING"
+            echo
+            printf '%s\n' "$ABI_LIST"
           } > release/APKANALYZER.txt
-          if command -v unzip >/dev/null; then
-            unzip -l "$APK" | grep -E 'lib/arm64-v8a|lib/x86|lib/armeabi' >> release/APKANALYZER.txt || true
-          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

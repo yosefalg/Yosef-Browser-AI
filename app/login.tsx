@@ -71,8 +71,8 @@ export default function LoginScreen(){
     } catch (e) {
       const raw=e instanceof Error?e.message:'';
       const lower=raw.toLowerCase();
-      if (lower.includes('provider') && lower.includes('enabled')) {
-        setMsg('تسجيل Google يحتاج تفعيل Google Provider في إعدادات Supabase أولًا.');
+      if (raw === 'GOOGLE_PROVIDER_DISABLED' || (lower.includes('provider') && lower.includes('enabled'))) {
+        setMsg('تسجيل Google غير مفعّل على خادم RAID بعد. يلزم تفعيل Google Provider في Supabase وربطه ببيانات OAuth من Google Cloud.');
       } else if (lower.includes('cancel') || lower.includes('إلغاء')) {
         setMsg('تم إلغاء تسجيل الدخول بواسطة Google.');
       } else {
@@ -83,7 +83,7 @@ export default function LoginScreen(){
 
   return <LinearGradient colors={['#040609','#0A0F19','#101628']} style={s.fill}>
     <SafeAreaView style={s.root}>
-      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
+      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS==='ios'?'padding':'height'}>
         <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Animated.View style={[s.shell,{opacity:fade,transform:[{translateY:lift}]}]}>
             <View style={s.hero}>

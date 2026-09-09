@@ -2,6 +2,8 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { getSupabase, getSupabasePublicRuntimeConfig } from '@/lib/auth';
 
+WebBrowser.maybeCompleteAuthSession();
+
 function oauthParams(url: string) {
   const question = url.indexOf('?');
   const hash = url.indexOf('#');
@@ -23,22 +25,31 @@ async function ensureGoogleProviderEnabled() {
     }
   } catch (error) {
     if (error instanceof Error && error.message === 'GOOGLE_PROVIDER_DISABLED') throw error;
-    // Do not block login on a transient settings probe failure. The OAuth request below
-    // remains authoritative and will return a proper error if the provider is unavailable.
   }
+}
+
+function friendlyProviderError(message: string) {
+  const decoded = decodeURIComponent(message.replace(/\+/g, ' '));
+  if (/unable to exchange external code/i.test(decoded)) {
+    return new Error('تعذر إكمال ربط Google بالخادم. تحقق من Google OAuth Client ID/Secret في Supabase ثم حاول مجددًا.');
+  }
+  return new Error(decoded || 'تعذر تسجيل الدخول بواسطة Google.');
 }
 
 export async function signInWithGoogle() {
   await ensureGoogleProviderEnabled();
 
   const supabase = getSupabase();
-  const redirectTo = Linking.createURL('auth/callback');
+  const redirectTo = Linking.createURL('auth/callback', { scheme: 'raidbrowser' });
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo,
       skipBrowserRedirect: true,
-      queryParams: { prompt: 'select_account' },
+      queryParams: {
+        prompt: 'select_account',
+        access_type: 'offline',
+      },
     },
   });
   if (error) throw error;
@@ -51,7 +62,7 @@ export async function signInWithGoogle() {
 
   const params = oauthParams(result.url);
   const providerError = params.get('error_description') || params.get('error');
-  if (providerError) throw new Error(providerError);
+  if (providerError) throw friendlyProviderError(providerError);
 
   const code = params.get('code');
   if (code) {

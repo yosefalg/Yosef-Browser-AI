@@ -7,7 +7,11 @@ import { getCurrentSession, getSupabase } from '@/lib/auth';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthCallbackScreen() {
-  const params = useLocalSearchParams<Record<string, string | string[] | undefined>>();
+  const params = useLocalSearchParams<{
+    code?: string | string[];
+    error?: string | string[];
+    error_description?: string | string[];
+  }>();
   const [message, setMessage] = useState('جارٍ إكمال تسجيل الدخول…');
   const [failed, setFailed] = useState(false);
 

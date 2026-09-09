@@ -31,6 +31,7 @@ export function getSupabase() {
           setItem: (key, value) => SecureStore.setItemAsync(key, value),
           removeItem: (key) => SecureStore.deleteItemAsync(key),
         },
+        flowType: 'pkce',
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
@@ -80,6 +81,13 @@ async function syncProfileBestEffort(userId: string, displayName?: string) {
   } catch (error) {
     console.warn('RAID profile sync deferred', error);
   }
+}
+
+export async function syncCurrentUserProfileBestEffort() {
+  const session = await getCurrentSession();
+  if (!session?.user) return;
+  const name = String(session.user.user_metadata?.display_name || session.user.user_metadata?.full_name || '').trim();
+  await syncProfileBestEffort(session.user.id, name);
 }
 
 export async function getCurrentProfile(): Promise<RaidUserProfile | null> {

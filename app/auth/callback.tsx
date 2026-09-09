@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { getCurrentSession, getSupabase } from '@/lib/auth';
+import { getCurrentSession, getSupabase, syncCurrentUserProfileBestEffort } from '@/lib/auth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -14,6 +14,7 @@ export default function AuthCallbackScreen() {
   }>();
   const [message, setMessage] = useState('جارٍ إكمال تسجيل الدخول…');
   const [failed, setFailed] = useState(false);
+  const completedCode = useRef<string | null>(null);
 
   const errorText = useMemo(() => {
     const value = params.error_description ?? params.error;
@@ -26,21 +27,25 @@ export default function AuthCallbackScreen() {
       try {
         if (errorText) throw new Error(decodeURIComponent(String(errorText).replace(/\+/g, ' ')));
 
+        let session = await getCurrentSession().catch(() => null);
         const codeValue = params.code;
         const code = Array.isArray(codeValue) ? codeValue[0] : codeValue;
-        if (code) {
-          const { error } = await getSupabase().auth.exchangeCodeForSession(code);
+
+        if (!session && code && completedCode.current !== code) {
+          completedCode.current = code;
+          const { data, error } = await getSupabase().auth.exchangeCodeForSession(code);
           if (error) throw error;
+          session = data.session;
         }
 
-        const session = await getCurrentSession();
         if (!session?.user) throw new Error('لم تُنشأ جلسة Google صالحة. أعد المحاولة.');
+        await syncCurrentUserProfileBestEffort();
         if (alive) router.replace('/');
       } catch (error) {
         if (!alive) return;
         const raw = error instanceof Error ? error.message : 'تعذر إكمال تسجيل الدخول.';
         setMessage(/unable to exchange external code/i.test(raw)
-          ? 'فشل تبادل رمز Google مع Supabase. يلزم تصحيح بيانات Google OAuth في Supabase.'
+          ? 'تعذر على خادم Google/Supabase إكمال المصادقة. إعدادات OAuth الخارجية تحتاج تصحيحًا.'
           : raw);
         setFailed(true);
       }

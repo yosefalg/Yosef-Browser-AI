@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -14,8 +14,10 @@ export default function VpnScreen() {
   const [source, setSource] = useState<VpnSource>('none');
   const [busy, setBusy] = useState(true);
   const [statusMessage, setStatusMessage] = useState('');
+  const operationInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (operationInFlight.current) return;
     setBusy(true);
     setStatusMessage('');
     try {
@@ -71,7 +73,8 @@ export default function VpnScreen() {
   };
 
   const replaceProfile = async () => {
-    if (!signedIn || connected || busy) return;
+    if (!signedIn || connected || busy || operationInFlight.current) return;
+    operationInFlight.current = true;
     setBusy(true);
     setStatusMessage('اختر ملف WireGuard البديل. لن يُحذف الإعداد الحالي إلا بعد اختيار ملف جديد.');
     try {
@@ -89,12 +92,14 @@ export default function VpnScreen() {
       setStatusMessage(message);
       Alert.alert('RAID VPN', message);
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
 
   const resetProfile = async () => {
-    if (!signedIn || connected || busy) return;
+    if (!signedIn || connected || busy || operationInFlight.current) return;
+    operationInFlight.current = true;
     setBusy(true);
     try {
       await clearWireGuardConfig();
@@ -106,6 +111,7 @@ export default function VpnScreen() {
       setStatusMessage(message);
       Alert.alert('RAID VPN', message);
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
@@ -115,7 +121,9 @@ export default function VpnScreen() {
       router.push('/login');
       return;
     }
+    if (operationInFlight.current) return;
 
+    operationInFlight.current = true;
     setBusy(true);
     setStatusMessage('');
     try {
@@ -150,6 +158,7 @@ export default function VpnScreen() {
       setStatusMessage(message);
       Alert.alert('RAID VPN', message);
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };

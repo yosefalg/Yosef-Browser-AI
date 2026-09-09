@@ -14,11 +14,17 @@ export type RaidUserProfile = {
   updated_at: string;
 };
 
+export function getSupabasePublicRuntimeConfig() {
+  return {
+    url: process.env.EXPO_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL,
+    publishableKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+  };
+}
+
 export function getSupabase() {
-  const url = process.env.EXPO_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-  const anon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+  const { url, publishableKey } = getSupabasePublicRuntimeConfig();
   if (!client) {
-    client = createClient(url, anon, {
+    client = createClient(url, publishableKey, {
       auth: {
         storage: {
           getItem: (key) => SecureStore.getItemAsync(key),

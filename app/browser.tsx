@@ -38,6 +38,43 @@ const MEDIA_SCAN_JS = `(() => {
   } catch {}
   true;
 })();`;
+const SILENT_STREAM_ASSIST_JS = `(() => {
+  try {
+    const report = () => {
+      const videos = Array.from(document.querySelectorAll('video'));
+      const urls = [];
+      const push = (value) => {
+        if (!value || typeof value !== 'string') return;
+        try {
+          const absolute = new URL(value, location.href).href;
+          if (/^https?:/i.test(absolute) && !urls.includes(absolute)) urls.push(absolute);
+        } catch {}
+      };
+      videos.forEach((video) => {
+        video.setAttribute('playsinline', '');
+        push(video.currentSrc);
+        push(video.src);
+        video.querySelectorAll('source').forEach((source) => push(source.src));
+        if (video.paused) {
+          const result = video.play();
+          if (result && typeof result.catch === 'function') result.catch(() => {});
+        }
+      });
+      if (urls.length) window.ReactNativeWebView?.postMessage('RAID_MEDIA:' + JSON.stringify(urls.slice(0, 12)));
+    };
+    report();
+    if (!window.__raidMediaObserver) {
+      let timer = 0;
+      window.__raidMediaObserver = new MutationObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(report, 180);
+      });
+      window.__raidMediaObserver.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+    }
+  } catch {}
+  true;
+})();`;
+
 const PLAY_PAGE_VIDEO_JS = `(() => {
   try {
     const videos = Array.from(document.querySelectorAll('video'));
@@ -414,8 +451,9 @@ export default function BrowserScreen() {
             captureContext();
             scanMedia();
             if (isLikelyStreamPage(event.nativeEvent.url)) {
-              setTimeout(() => web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS), 450);
-              setTimeout(() => web.current?.injectJavaScript(MEDIA_SCAN_JS), 1200);
+              web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS);
+              setTimeout(() => web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS), 900);
+              setTimeout(() => web.current?.injectJavaScript(MEDIA_SCAN_JS), 1800);
             }
           }}
           onError={(event) => {
@@ -429,8 +467,10 @@ export default function BrowserScreen() {
           onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
           onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}
           onFileDownload={(event) => {
-            const downloadUrl = event.nativeEvent.downloadUrl;
-            if (/^https?:\/\//i.test(downloadUrl || '')) openInlineMedia(downloadUrl);
+            const downloadUrl = event.nativeEvent.downloadUrl || '';
+            if (isDirectMediaUrl(downloadUrl) || (isLikelyStreamPage(loadedUrl) && /^https?:\/\//i.test(downloadUrl))) {
+              openInlineMedia(downloadUrl);
+            }
           }}
           onMessage={onMessage}
         />

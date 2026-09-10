@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     runs-on: ubuntu-22.04
@@ -26,15 +30,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --prefer-offline
 
       - name: TypeScript
         run: pnpm typecheck
@@ -73,7 +80,7 @@ jobs:
 
       - name: Build arm64 release APK
         working-directory: android
-        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --stacktrace
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --build-cache --stacktrace
 
       - name: Verify and prepare APK artifact
         shell: bash

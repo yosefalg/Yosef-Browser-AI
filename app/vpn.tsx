@@ -6,6 +6,7 @@ import { connectVpn, disconnectVpn, getVpnProvisioningState, isVpnConnected } fr
 import { getCurrentSession } from '@/lib/auth';
 
 type VpnSource = 'service' | 'local' | 'cache' | 'none';
+type ProvisioningIssue = 'none' | 'server-unconfigured' | 'temporary' | 'session' | 'unknown';
 
 const VPN_STATE_RETRY_DELAYS = [0, 300, 700, 1200] as const;
 
@@ -22,10 +23,25 @@ async function waitForVpnState(expected: boolean) {
   return active;
 }
 
+function classifyVpnError(error: unknown): ProvisioningIssue {
+  const raw = error instanceof Error ? error.message : '';
+  if (/غير مربوط بخدمة التزويد|VPN_SERVICE_NOT_CONFIGURED|غير مهيأة على الخادم|NO_VPN_SERVER/i.test(raw)) return 'server-unconfigured';
+  if (/PROVISIONING_UNAVAILABLE|غير متاحة مؤقت|تعذر الاتصال بخدمة RAID VPN|تعذر مزامنة إعداد VPN/i.test(raw)) return 'temporary';
+  if (/انتهت جلسة الحساب|سجّل الدخول مجدد|UNAUTHORIZED/i.test(raw)) return 'session';
+  return raw ? 'unknown' : 'none';
+}
+
 function friendlyVpnError(error: unknown) {
   const raw = error instanceof Error ? error.message : 'تعذر تنفيذ العملية.';
-  if (/لا يوجد إعداد WireGuard|استورد ملف VPN|NO_VPN_SERVER|PROVISIONING_UNAVAILABLE/i.test(raw)) {
-    return 'خدمة RAID VPN لم تُجهّز ملف الاتصال لهذا الحساب بعد. التطبيق يحاول التجهيز تلقائيًا ولا يحتاج منك اختيار أي ملف.';
+  const issue = classifyVpnError(error);
+  if (issue === 'server-unconfigured') {
+    return 'خادم RAID VPN غير مربوط بخدمة التزويد حاليًا. التطبيق سليم، لكن لا يمكن إنشاء نفق جديد قبل تجهيز الخادم.';
+  }
+  if (issue === 'temporary') {
+    return 'خدمة RAID VPN غير متاحة مؤقتًا. يمكنك إعادة الفحص دون إعادة تسجيل الدخول أو اختيار ملف يدوي.';
+  }
+  if (/لا يوجد إعداد WireGuard|استورد ملف VPN/i.test(raw)) {
+    return 'لم يصل إعداد WireGuard صالح لهذا الحساب بعد. لا تحتاج إلى اختيار ملف يدوي.';
   }
   return raw;
 }
@@ -37,6 +53,8 @@ export default function VpnScreen() {
   const [source, setSource] = useState<VpnSource>('none');
   const [busy, setBusy] = useState(true);
   const [statusMessage, setStatusMessage] = useState('');
+  const [provisioningIssue, setProvisioningIssue] = useState<ProvisioningIssue>('none');
+  const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
   const operationInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -54,17 +72,22 @@ export default function VpnScreen() {
       setConnected(active);
       setReady(profile.configured);
       setSource(profile.source);
+      setProvisioningIssue('none');
 
       if (session && profile.configured) {
         setStatusMessage(profile.source === 'service'
           ? 'RAID VPN جاهز لهذا الحساب. اضغط تشغيل للاتصال.'
           : 'إعداد VPN محفوظ وآمن على هذا الهاتف.');
       } else if (session) {
-        setStatusMessage('سيتم تجهيز إعداد RAID VPN تلقائيًا عند الضغط على تشغيل. لا حاجة لأي ملف يدوي.');
+        setStatusMessage('لا يوجد ملف اتصال جاهز بعد. سيتم فحص خدمة RAID عند الضغط على تشغيل.');
       }
     } catch (error) {
+      setProvisioningIssue(classifyVpnError(error));
+      setReady(false);
+      setSource('none');
       setStatusMessage(friendlyVpnError(error));
     } finally {
+      setLastCheckedAt(new Date());
       setBusy(false);
     }
   }, []);
@@ -103,7 +126,8 @@ export default function VpnScreen() {
         return;
       }
 
-      setStatusMessage(ready ? 'جارٍ تشغيل النفق الآمن…' : 'جارٍ تجهيز RAID VPN تلقائيًا لهذا الحساب…');
+      setProvisioningIssue('none');
+      setStatusMessage(ready ? 'جارٍ تشغيل النفق الآمن…' : 'جارٍ فحص وتجهيز RAID VPN لهذا الحساب…');
       await connectVpn();
       const active = await waitForVpnState(true);
       setConnected(active);
@@ -114,42 +138,61 @@ export default function VpnScreen() {
         setReady(profile.configured);
         setSource(profile.source);
       }
+      setProvisioningIssue('none');
       setStatusMessage('RAID VPN متصل الآن والنفق يعمل على Android.');
     } catch (error) {
+      const issue = classifyVpnError(error);
       const message = friendlyVpnError(error);
       const active = await isVpnConnected().catch(() => connected);
       setConnected(active);
+      setProvisioningIssue(issue);
       setStatusMessage(message);
       Alert.alert('RAID VPN', message);
     } finally {
+      setLastCheckedAt(new Date());
       operationInFlight.current = false;
       setBusy(false);
     }
   };
 
+  const serviceBlocked = provisioningIssue === 'server-unconfigured';
+  const transientIssue = provisioningIssue === 'temporary';
+
   const stateLabel = connected
     ? 'متصل ومحمي'
     : !signedIn
       ? 'يلزم تسجيل الدخول'
-      : ready
-        ? 'جاهز للاتصال'
-        : 'تجهيز تلقائي';
+      : serviceBlocked
+        ? 'الخادم غير مجهز'
+        : transientIssue
+          ? 'الخدمة مؤقتًا غير متاحة'
+          : ready
+            ? 'جاهز للاتصال'
+            : 'بانتظار التجهيز';
 
   const mainTitle = connected
     ? 'RAID VPN يعمل الآن'
     : !signedIn
       ? 'دخول إلى حساب RAID'
-      : ready
-        ? 'RAID VPN جاهز'
-        : 'تشغيل RAID VPN';
+      : serviceBlocked
+        ? 'RAID VPN يحتاج خادمًا فعليًا'
+        : transientIssue
+          ? 'إعادة فحص خدمة RAID'
+          : ready
+            ? 'RAID VPN جاهز'
+            : 'تشغيل RAID VPN';
 
   const description = connected
     ? 'النفق يعمل عبر WireGuard الحقيقي على Android.'
     : !signedIn
       ? 'سجّل الدخول مرة واحدة لاستخدام خدمات RAID المرتبطة بحسابك.'
-      : ready
-        ? 'الإعداد محفوظ بأمان. اضغط الزر للاتصال مباشرة.'
-        : 'اضغط تشغيل. RAID سيحاول تجهيز ملف الاتصال من الخدمة تلقائيًا ثم يطلب إذن Android النظامي فقط عند الحاجة.';
+      : serviceBlocked
+        ? 'التطبيق ووحدة WireGuard جاهزان، لكن خدمة التزويد على الخادم غير مربوطة بعد. لن يعرض RAID اتصالًا وهميًا.'
+        : transientIssue
+          ? 'الاتصال بالخدمة فشل مؤقتًا. أعد الفحص؛ لن يتم حذف إعداد محفوظ صالح من جهازك.'
+          : ready
+            ? 'الإعداد محفوظ بأمان. اضغط الزر للاتصال مباشرة.'
+            : 'اضغط تشغيل. RAID سيفحص خدمة التزويد ثم يطلب إذن Android النظامي فقط عندما يصبح ملف الاتصال جاهزًا.';
 
   const sourceLabel = source === 'service'
     ? 'RAID Server'
@@ -157,7 +200,22 @@ export default function VpnScreen() {
       ? 'نسخة آمنة'
       : source === 'local'
         ? 'محفوظ على الجهاز'
-        : 'تلقائي';
+        : serviceBlocked
+          ? 'غير مربوط'
+          : 'بانتظار الخدمة';
+
+  const primaryText = connected
+    ? 'قطع الاتصال'
+    : !signedIn
+      ? 'تسجيل الدخول'
+      : serviceBlocked || transientIssue
+        ? 'إعادة فحص الخدمة'
+        : 'تشغيل VPN';
+
+  const primaryAction = serviceBlocked || transientIssue ? refresh : toggle;
+  const checkedText = lastCheckedAt
+    ? `آخر فحص: ${lastCheckedAt.toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })}`
+    : 'لم يتم الفحص بعد';
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={s.root}>
@@ -169,29 +227,30 @@ export default function VpnScreen() {
           <Text style={s.title}>RAID VPN</Text>
           <Text style={s.sub}>One-tap secure tunnel</Text>
         </View>
-        <View style={[s.dot, connected && s.dotOn]} />
+        <View style={[s.dot, connected && s.dotOn, serviceBlocked && s.dotWarn]} />
       </View>
 
       <View style={s.body}>
-        <View style={[s.hero, connected && s.heroOn]}>
+        <View style={[s.hero, connected && s.heroOn, serviceBlocked && s.heroWarn]}>
           <Text style={s.state}>{stateLabel}</Text>
           <View style={[s.circle, connected && s.circleOn]}>
-            <Text style={s.symbol}>{connected ? '◆' : '◇'}</Text>
+            <Text style={s.symbol}>{connected ? '◆' : serviceBlocked ? '!' : '◇'}</Text>
           </View>
           <Text style={s.mainTitle}>{mainTitle}</Text>
           <Text style={s.desc}>{description}</Text>
           {!!statusMessage && <Text style={s.statusMessage}>{statusMessage}</Text>}
+          <Text style={s.checked}>{checkedText}</Text>
 
           <Pressable
             disabled={busy}
-            onPress={toggle}
-            style={[s.primary, connected && s.stop, busy && s.disabled]}
+            onPress={primaryAction}
+            style={[s.primary, connected && s.stop, serviceBlocked && s.warningAction, busy && s.disabled]}
             accessibilityRole="button"
-            accessibilityLabel={connected ? 'قطع اتصال RAID VPN' : 'تشغيل RAID VPN'}
+            accessibilityLabel={connected ? 'قطع اتصال RAID VPN' : primaryText}
           >
             {busy
               ? <ActivityIndicator color="#fff" />
-              : <Text style={s.primaryText}>{connected ? 'قطع الاتصال' : !signedIn ? 'تسجيل الدخول' : 'تشغيل VPN'}</Text>}
+              : <Text style={s.primaryText}>{primaryText}</Text>}
           </Pressable>
         </View>
 
@@ -207,8 +266,10 @@ export default function VpnScreen() {
         </View>
 
         <View style={s.infoCard}>
-          <Text style={s.infoTitle}>بدون ملفات يدوية</Text>
-          <Text style={s.infoText}>RAID يحاول ربط إعداد VPN بحسابك تلقائيًا. لا تحتاج إلى تنزيل أو اختيار ملف .conf داخل التطبيق.</Text>
+          <Text style={s.infoTitle}>{serviceBlocked ? 'حالة الخادم واضحة' : 'بدون ملفات يدوية'}</Text>
+          <Text style={s.infoText}>{serviceBlocked
+            ? 'RAID لن يدّعي أن VPN يعمل قبل وجود خادم WireGuard صالح. بعد ربط خدمة التزويد، يكفي إعادة الفحص.'
+            : 'RAID يحاول ربط إعداد VPN بحسابك تلقائيًا. لا تحتاج إلى تنزيل أو اختيار ملف .conf داخل التطبيق.'}</Text>
         </View>
 
         <Pressable onPress={refresh} disabled={busy} style={[s.secondary, busy && s.disabled]}>
@@ -229,9 +290,11 @@ const s = StyleSheet.create({
   sub:{color:'#A99686',fontSize:11,fontWeight:'800',marginTop:2},
   dot:{width:11,height:11,borderRadius:6,backgroundColor:'#5F5A55'},
   dotOn:{backgroundColor:'#5FAF86'},
+  dotWarn:{backgroundColor:'#C89554'},
   body:{padding:18,gap:14},
   hero:{padding:24,borderRadius:28,alignItems:'center',backgroundColor:'#151719',borderWidth:1,borderColor:'#343230'},
   heroOn:{backgroundColor:'#111B18',borderColor:'#315446'},
+  heroWarn:{borderColor:'#5B4731'},
   state:{color:'#B6A291',fontSize:12,fontWeight:'900',textAlign:'center'},
   circle:{width:112,height:112,borderRadius:56,alignItems:'center',justifyContent:'center',marginTop:22,backgroundColor:'#1D1F21',borderWidth:7,borderColor:'#121416'},
   circleOn:{backgroundColor:'#163127',borderColor:'#10251E'},
@@ -239,7 +302,9 @@ const s = StyleSheet.create({
   mainTitle:{fontSize:24,fontWeight:'900',color:'#F7F4EF',marginTop:18,textAlign:'center'},
   desc:{color:'#A7A19A',lineHeight:21,marginTop:8,textAlign:'center'},
   statusMessage:{color:'#D7B985',fontSize:12,lineHeight:18,textAlign:'center',marginTop:10},
+  checked:{color:'#746F69',fontSize:11,marginTop:8,textAlign:'center'},
   primary:{width:'100%',height:56,borderRadius:17,alignItems:'center',justifyContent:'center',backgroundColor:'#806955',marginTop:22,borderWidth:1,borderColor:'#A58D78'},
+  warningAction:{backgroundColor:'#6B5337',borderColor:'#9A774D'},
   stop:{backgroundColor:'#703B42',borderColor:'#9A5962'},
   disabled:{opacity:.55},
   primaryText:{color:'#fff',fontSize:16,fontWeight:'900'},

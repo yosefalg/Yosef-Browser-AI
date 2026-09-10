@@ -36,7 +36,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile --prefer-offline
@@ -75,6 +74,16 @@ jobs:
 
       - name: Prebuild Android
         run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Cache Gradle after prebuild
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Build arm64 release APK
         working-directory: android

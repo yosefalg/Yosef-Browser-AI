@@ -16,6 +16,9 @@ jobs:
   build-apk:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
+    env:
+      PNPM_STORE_DIR: .pnpm-store
+      GRADLE_OPTS: -Dorg.gradle.caching=true -Dorg.gradle.parallel=true -Dorg.gradle.daemon=true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +39,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Configure pnpm store
+        run: pnpm config set store-dir "$PNPM_STORE_DIR"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: .pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile --prefer-offline
@@ -87,7 +101,7 @@ jobs:
 
       - name: Build arm64 release APK
         working-directory: android
-        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --build-cache --stacktrace
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --parallel --build-cache --stacktrace
 
       - name: Verify and prepare APK artifact
         shell: bash

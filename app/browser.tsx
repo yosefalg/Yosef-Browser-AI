@@ -14,6 +14,7 @@ const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l
 const RENDERER_RECOVERY_WINDOW_MS = 30_000;
 const MAX_RENDERER_RECOVERIES = 2;
 const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
+const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const MEDIA_SCAN_JS = `(() => {
   try {
     const urls = [];
@@ -68,6 +69,13 @@ function hostOf(value: string) {
 
 function isDirectMediaUrl(value: string) {
   return /^https?:\/\//i.test(value) && DIRECT_MEDIA_RE.test(value);
+}
+
+function isLikelyStreamPage(value: string) {
+  try {
+    const parsed = new URL(value);
+    return /^https?:$/i.test(parsed.protocol) && STREAM_PAGE_RE.test(parsed.pathname + parsed.search + parsed.hash);
+  } catch { return false; }
 }
 
 function mediaPlayerHtml(mediaUrl: string) {
@@ -258,6 +266,13 @@ export default function BrowserScreen() {
 
   const scanMedia = () => web.current?.injectJavaScript(MEDIA_SCAN_JS);
 
+  const openInlineMedia = (candidate: string) => {
+    if (!/^https?:\/\//i.test(candidate)) return;
+    setMediaUrl(candidate);
+    setMediaUrls((current) => current.includes(candidate) ? current : [candidate, ...current].slice(0, 12));
+    setMediaOpen(true);
+  };
+
   const onMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
     if (raw.startsWith('RAID_MEDIA:')) {
@@ -393,7 +408,16 @@ export default function BrowserScreen() {
           onNavigationStateChange={changed}
           onLoadStart={() => { setLoading(true); setLoadProgress(0.05); setLoadError(''); setMediaUrls([]); }}
           onLoadProgress={(event) => setLoadProgress(event.nativeEvent.progress)}
-          onLoadEnd={() => { setLoading(false); setLoadProgress(1); captureContext(); scanMedia(); }}
+          onLoadEnd={(event) => {
+            setLoading(false);
+            setLoadProgress(1);
+            captureContext();
+            scanMedia();
+            if (isLikelyStreamPage(event.nativeEvent.url)) {
+              setTimeout(() => web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS), 450);
+              setTimeout(() => web.current?.injectJavaScript(MEDIA_SCAN_JS), 1200);
+            }
+          }}
           onError={(event) => {
             setLoading(false);
             setLoadProgress(0);
@@ -404,6 +428,10 @@ export default function BrowserScreen() {
           }}
           onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
           onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}
+          onFileDownload={(event) => {
+            const downloadUrl = event.nativeEvent.downloadUrl;
+            if (/^https?:\/\//i.test(downloadUrl || '')) openInlineMedia(downloadUrl);
+          }}
           onMessage={onMessage}
         />
         {loadError ? (

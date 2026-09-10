@@ -1,12 +1,12 @@
 import { NativeModules, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { File } from 'expo-file-system';
 import { getSupabase } from '@/lib/auth';
 
 const LEGACY_CONFIG_KEY = 'raid_wireguard_config_v2';
 const OWNER_KEY = 'raid_wireguard_owner_v3';
 const configKeyFor = (userId: string) => `raid_wireguard_config_v3_${userId}`;
 const localMarkerFor = (userId: string) => `raid_wireguard_local_v4_${userId}`;
+const PROVISION_RETRY_DELAYS = [0, 700, 1500] as const;
 
 type RaidVpnNative = {
   connect(configText: string): Promise<boolean>;
@@ -57,7 +57,7 @@ function validateConfig(configText: string) {
   if (value.length > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
   if (value.includes('\0')) throw new Error('ملف WireGuard يحتوي على بيانات غير صالحة.');
   if (/^\s*</.test(value) || /^\s*\{/.test(value)) {
-    throw new Error('الملف المختار ليس إعداد WireGuard نصيًا صالحًا. اختر ملف .conf الحقيقي حتى لو كان اسمه ينتهي بـ .txt.');
+    throw new Error('إعداد WireGuard المستلم من الخدمة ليس نصًا صالحًا.');
   }
 
   let section: 'interface' | 'peer' | null = null;
@@ -99,7 +99,7 @@ function validateConfig(configText: string) {
   );
 
   if (!privateKey || !validPeer) {
-    throw new Error('إعداد WireGuard غير صالح أو غير مكتمل. تأكد من وجود PrivateKey داخل Interface وPublicKey وEndpoint وAllowedIPs داخل Peer.');
+    throw new Error('إعداد WireGuard المرتبط بالحساب غير صالح أو غير مكتمل.');
   }
 
   return value;
@@ -113,9 +113,9 @@ function nativeVpnError(error: unknown, fallback: string) {
     case 'VPN_NO_ACTIVITY':
       return new Error('تعذر فتح إذن VPN الآن. أعد فتح شاشة RAID VPN وحاول مجددًا.');
     case 'VPN_CONFIG_EMPTY':
-      return new Error('ملف WireGuard فارغ أو غير صالح.');
+      return new Error('إعداد WireGuard فارغ أو غير صالح.');
     case 'VPN_CONNECT_FAILED':
-      return new Error('تعذر تشغيل نفق WireGuard. تحقق من أن ملف الإعداد صالح وأن الخادم متاح.');
+      return new Error('تعذر تشغيل نفق WireGuard. تحقق من أن خادم RAID VPN متاح.');
     case 'VPN_DISCONNECT_FAILED':
       return new Error('تعذر قطع اتصال RAID VPN بشكل صحيح.');
     case 'VPN_STATUS_FAILED':
@@ -211,7 +211,7 @@ async function mapFunctionError(error: unknown): Promise<VpnSyncError> {
       return new VpnSyncError('خدمة RAID VPN غير مهيأة على الخادم.', false);
     }
     if (payload.error === 'VPN_PROFILE_INVALID') {
-      return new VpnSyncError('ملف VPN المرتبط بالحساب غير صالح.', false);
+      return new VpnSyncError('إعداد VPN المرتبط بالحساب غير صالح.', false);
     }
     return new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', response.status >= 500);
   } catch {
@@ -223,24 +223,11 @@ function canUseCachedServiceConfig(error: unknown) {
   return !(error instanceof VpnSyncError) || error.allowCachedFallback;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function clearWireGuardConfig() {
   const userId = await currentUserId().catch(() => null);
   await clearConfigForUser(userId ?? undefined);
-}
-
-export async function importLocalWireGuardConfig(): Promise<VpnProvisioningState> {
-  const userId = await currentUserId();
-  if (!userId) throw new Error('سجّل الدخول أولًا لربط ملف VPN بحساب RAID.');
-  if (Platform.OS !== 'android') throw new Error('استيراد WireGuard متاح حاليًا على Android فقط.');
-
-  const picked = await File.pickFileAsync();
-  const file = Array.isArray(picked) ? picked[0] : picked;
-  if (!file) throw new Error('لم يتم اختيار ملف WireGuard.');
-  if (typeof file.size === 'number' && file.size > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
-
-  const configText = await file.text();
-  await cacheConfigForUser(userId, configText, 'local');
-  return { configured: true, source: 'local' };
 }
 
 export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState> {
@@ -267,7 +254,7 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
   if (payload?.error) {
     if (payload.error === 'UNAUTHORIZED') throw new VpnSyncError('انتهت جلسة الحساب. سجّل الدخول مجددًا.', false);
     if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') throw new VpnSyncError('خدمة RAID VPN غير مهيأة على الخادم.', false);
-    if (payload.error === 'VPN_PROFILE_INVALID') throw new VpnSyncError('ملف VPN المرتبط بالحساب غير صالح.', false);
+    if (payload.error === 'VPN_PROFILE_INVALID') throw new VpnSyncError('إعداد VPN المرتبط بالحساب غير صالح.', false);
     throw new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', false);
   }
 
@@ -276,12 +263,44 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
     if (cached && await isLocalConfigForUser(user.id)) {
       return { configured: true, source: 'local' };
     }
-    await clearConfigForUser(user.id);
+    if (payload?.reason === 'NO_VPN_SERVER') {
+      throw new VpnSyncError('خادم RAID VPN غير مربوط بخدمة التزويد التلقائي بعد.', false);
+    }
+    if (payload?.reason === 'PROVISIONING_UNAVAILABLE') {
+      throw new VpnSyncError('خدمة تجهيز RAID VPN غير متاحة مؤقتًا.', true);
+    }
     return { configured: false, source: 'none' };
   }
 
   await cacheConfigForUser(user.id, payload.configText, 'service');
   return { configured: true, source: 'service' };
+}
+
+async function prepareVpnProfileForConnect(userId: string) {
+  let lastError: unknown = null;
+
+  for (let index = 0; index < PROVISION_RETRY_DELAYS.length; index += 1) {
+    const delay = PROVISION_RETRY_DELAYS[index];
+    if (delay > 0) await sleep(delay);
+
+    try {
+      const state = await syncVpnProfileFromAccount();
+      if (state.configured) return state;
+    } catch (error) {
+      lastError = error;
+      const cached = await loadConfigForUser(userId);
+      if (cached) {
+        const local = await isLocalConfigForUser(userId);
+        if (local || canUseCachedServiceConfig(error)) {
+          return { configured: true, source: local ? 'local' : 'cache' } as VpnProvisioningState;
+        }
+      }
+      if (!(error instanceof VpnSyncError) || !error.allowCachedFallback) throw error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw new Error('لم يتم تجهيز RAID VPN لهذا الحساب حتى الآن.');
 }
 
 export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
@@ -310,20 +329,10 @@ export async function connectVpn() {
   const userId = await currentUserId();
   if (!userId) throw new Error('سجّل الدخول أولًا لتشغيل RAID VPN.');
 
-  try {
-    await syncVpnProfileFromAccount();
-  } catch (error) {
-    const cached = await loadConfigForUser(userId);
-    const local = cached ? await isLocalConfigForUser(userId) : false;
-    if (!cached) throw error;
-    if (!local && !canUseCachedServiceConfig(error)) {
-      await clearConfigForUser(userId);
-      throw error;
-    }
-  }
+  await prepareVpnProfileForConnect(userId);
 
   const config = await loadConfigForUser(userId);
-  if (!config) throw new Error('لا يوجد إعداد WireGuard. استورد ملف VPN مجاني أو اربط خادم RAID VPN.');
+  if (!config) throw new Error('RAID VPN لم يستلم إعداد اتصال من الخادم بعد.');
   try {
     return await native().connect(validateConfig(config));
   } catch (error) {

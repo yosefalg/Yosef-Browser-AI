@@ -35,10 +35,7 @@ export function normalizeOAuthError(message: string) {
   return new Error(decoded || 'تعذر إكمال تسجيل الدخول بواسطة Google.');
 }
 
-async function waitForSession(timeoutMs = 1500): Promise<Session | null> {
-  const existing = await getCurrentSession().catch(() => null);
-  if (existing?.user) return existing;
-
+async function waitForFreshSession(previousAccessToken: string | null, timeoutMs = 1800): Promise<Session | null> {
   const supabase = getSupabase();
   return new Promise<Session | null>((resolve) => {
     let finished = false;
@@ -54,7 +51,9 @@ async function waitForSession(timeoutMs = 1500): Promise<Session | null> {
 
     const timer = setTimeout(() => finish(null), timeoutMs);
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) finish(session);
+      if (!session?.user) return;
+      if (previousAccessToken && session.access_token === previousAccessToken) return;
+      finish(session);
     });
     unsubscribe = () => data.subscription.unsubscribe();
   });
@@ -99,32 +98,31 @@ export async function completeOAuthRedirect(url: string) {
   const providerError = params.get('error_description') || params.get('error_code') || params.get('error');
   if (providerError) throw normalizeOAuthError(providerError);
 
+  const previousSession = await getCurrentSession().catch(() => null);
   const code = params.get('code');
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
   let session: Session | null = null;
 
-  // A returned authorization code belongs to the account the user just chose.
-  // Always exchange it before consulting any pre-existing local session; otherwise
-  // an older email/Google session can be mistaken for a successful account switch.
+  // Prefer the explicit result from the account the user just selected. Never
+  // treat an older cached RAID session as proof that the new OAuth attempt worked.
   if (code) {
     session = await exchangeCodeOnce(code);
+  } else if (accessToken && refreshToken) {
+    const { data, error } = await getSupabase().auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) throw normalizeOAuthError(error.message);
+    session = data.session;
   } else {
-    session = await waitForSession();
+    session = await waitForFreshSession(previousSession?.access_token ?? null);
   }
 
-  if (!session) {
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
-    if (accessToken && refreshToken) {
-      const { data, error } = await getSupabase().auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (error) throw normalizeOAuthError(error.message);
-      session = data.session;
-    }
+  if (!session?.user) {
+    throw new Error('لم تُنشأ جلسة Google جديدة صالحة. أعد اختيار الحساب وحاول مرة أخرى.');
   }
 
-  if (!session?.user) throw new Error('لم تُنشأ جلسة Google صالحة. أعد المحاولة.');
   await syncCurrentUserProfileBestEffort();
   return { session, user: session.user };
 }

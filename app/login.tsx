@@ -72,7 +72,9 @@ export default function LoginScreen(){
       const raw=e instanceof Error?e.message:'';
       const lower=raw.toLowerCase();
       if (raw === 'GOOGLE_PROVIDER_DISABLED' || (lower.includes('provider') && lower.includes('enabled'))) {
-        setMsg('تسجيل Google غير مفعّل على خادم RAID بعد. يلزم تفعيل Google Provider في Supabase وربطه ببيانات OAuth من Google Cloud.');
+        setMsg('تسجيل Google غير مفعّل على خادم RAID بعد.');
+      } else if (raw === 'GOOGLE_EXTERNAL_CODE_EXCHANGE_FAILED' || lower.includes('unable to exchange external code')) {
+        setMsg('مسار التطبيق جاهز، لكن Google OAuth على الخادم يرفض بيانات Client ID/Secret الحالية. يمكنك استخدام البريد وكلمة المرور إلى أن يتم تصحيح بيانات Google الخارجية.');
       } else if (lower.includes('cancel') || lower.includes('إلغاء')) {
         setMsg('تم إلغاء تسجيل الدخول بواسطة Google.');
       } else {

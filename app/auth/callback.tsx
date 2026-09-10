@@ -1,58 +1,48 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { getCurrentSession, getSupabase, syncCurrentUserProfileBestEffort } from '@/lib/auth';
+import { completeOAuthRedirect, normalizeOAuthError } from '@/lib/oauth-callback';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthCallbackScreen() {
-  const params = useLocalSearchParams<{
-    code?: string | string[];
-    error?: string | string[];
-    error_description?: string | string[];
-  }>();
+  const params = useLocalSearchParams<Record<string, string | string[]>>();
   const [message, setMessage] = useState('جارٍ إكمال تسجيل الدخول…');
   const [failed, setFailed] = useState(false);
-  const completedCode = useRef<string | null>(null);
 
-  const errorText = useMemo(() => {
-    const value = params.error_description ?? params.error;
-    return Array.isArray(value) ? value[0] : value;
-  }, [params.error, params.error_description]);
+  const callbackUrl = useMemo(() => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      const resolved = Array.isArray(value) ? value[0] : value;
+      if (resolved != null) query.set(key, String(resolved));
+    }
+    const suffix = query.toString();
+    return `raidbrowser://auth/callback${suffix ? `?${suffix}` : ''}`;
+  }, [params]);
 
   useEffect(() => {
     let alive = true;
     const complete = async () => {
       try {
-        if (errorText) throw new Error(decodeURIComponent(String(errorText).replace(/\+/g, ' ')));
-
-        let session = await getCurrentSession().catch(() => null);
-        const codeValue = params.code;
-        const code = Array.isArray(codeValue) ? codeValue[0] : codeValue;
-
-        if (!session && code && completedCode.current !== code) {
-          completedCode.current = code;
-          const { data, error } = await getSupabase().auth.exchangeCodeForSession(code);
-          if (error) throw error;
-          session = data.session;
-        }
-
-        if (!session?.user) throw new Error('لم تُنشأ جلسة Google صالحة. أعد المحاولة.');
-        await syncCurrentUserProfileBestEffort();
+        await completeOAuthRedirect(callbackUrl);
         if (alive) router.replace('/');
       } catch (error) {
         if (!alive) return;
-        const raw = error instanceof Error ? error.message : 'تعذر إكمال تسجيل الدخول.';
-        setMessage(/unable to exchange external code/i.test(raw)
-          ? 'تعذر على خادم Google/Supabase إكمال المصادقة. إعدادات OAuth الخارجية تحتاج تصحيحًا.'
-          : raw);
+        const normalized = error instanceof Error ? normalizeOAuthError(error.message) : new Error('تعذر إكمال تسجيل الدخول.');
+        if (normalized.message === 'GOOGLE_EXTERNAL_CODE_EXCHANGE_FAILED') {
+          setMessage('خادم Google رفض بيانات OAuth المسجلة في Supabase. التطبيق أكمل مسار PKCE محليًا، لكن بيانات Google الخارجية تحتاج تصحيحًا على الخادم.');
+        } else if (normalized.message === 'GOOGLE_PROVIDER_DISABLED') {
+          setMessage('تسجيل Google غير مفعّل على خادم RAID.');
+        } else {
+          setMessage(normalized.message);
+        }
         setFailed(true);
       }
     };
     void complete();
     return () => { alive = false; };
-  }, [errorText, params.code]);
+  }, [callbackUrl]);
 
   return <SafeAreaView style={s.root}>
     <View style={s.card}>

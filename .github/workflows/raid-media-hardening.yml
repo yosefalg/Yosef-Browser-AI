@@ -1,0 +1,59 @@
+name: RAID Media Hardening
+
+on:
+  push:
+    paths:
+      - '.github/workflows/raid-media-hardening.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Harden in-browser media behavior
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/browser.tsx')
+          s = p.read_text(encoding='utf-8')
+
+          anchor = "const PLAY_PAGE_VIDEO_JS = `(() => {"
+          assert anchor in s, 'PLAY_PAGE_VIDEO_JS anchor missing'
+          insert = """const SILENT_STREAM_ASSIST_JS = `(() => {\n  try {\n    const report = () => {\n      const videos = Array.from(document.querySelectorAll('video'));\n      const urls = [];\n      const push = (value) => {\n        if (!value || typeof value !== 'string') return;\n        try {\n          const absolute = new URL(value, location.href).href;\n          if (/^https?:/i.test(absolute) && !urls.includes(absolute)) urls.push(absolute);\n        } catch {}\n      };\n      videos.forEach((video) => {\n        video.setAttribute('playsinline', '');\n        push(video.currentSrc);\n        push(video.src);\n        video.querySelectorAll('source').forEach((source) => push(source.src));\n        if (video.paused) {\n          const result = video.play();\n          if (result && typeof result.catch === 'function') result.catch(() => {});\n        }\n      });\n      if (urls.length) window.ReactNativeWebView?.postMessage('RAID_MEDIA:' + JSON.stringify(urls.slice(0, 12)));\n    };\n    report();\n    if (!window.__raidMediaObserver) {\n      let timer = 0;\n      window.__raidMediaObserver = new MutationObserver(() => {\n        clearTimeout(timer);\n        timer = setTimeout(report, 180);\n      });\n      window.__raidMediaObserver.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });\n    }\n  } catch {}\n  true;\n})();`;\n\n"""
+          s = s.replace(anchor, insert + anchor, 1)
+
+          old = """            if (isLikelyStreamPage(event.nativeEvent.url)) {\n              setTimeout(() => web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS), 450);\n              setTimeout(() => web.current?.injectJavaScript(MEDIA_SCAN_JS), 1200);\n            }"""
+          new = """            if (isLikelyStreamPage(event.nativeEvent.url)) {\n              web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS);\n              setTimeout(() => web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS), 900);\n              setTimeout(() => web.current?.injectJavaScript(MEDIA_SCAN_JS), 1800);\n            }"""
+          assert old in s, 'stream onLoadEnd anchor missing'
+          s = s.replace(old, new, 1)
+
+          old = """          onFileDownload={(event) => {\n            const downloadUrl = event.nativeEvent.downloadUrl;\n            if (/^https?:\\/\\//i.test(downloadUrl || '')) openInlineMedia(downloadUrl);\n          }}"""
+          new = """          onFileDownload={(event) => {\n            const downloadUrl = event.nativeEvent.downloadUrl || '';\n            if (isDirectMediaUrl(downloadUrl) || (isLikelyStreamPage(loadedUrl) && /^https?:\\/\\//i.test(downloadUrl))) {\n              openInlineMedia(downloadUrl);\n            }\n          }}"""
+          assert old in s, 'onFileDownload anchor missing'
+          s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Verify hardening anchors
+        run: |
+          grep -q "SILENT_STREAM_ASSIST_JS" app/browser.tsx
+          grep -q "MutationObserver" app/browser.tsx
+          grep -q "isDirectMediaUrl(downloadUrl)" app/browser.tsx
+
+      - name: Commit hardening and remove one-shot workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/raid-media-hardening.yml
+          git config user.name "RAID Build Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/browser.tsx .github/workflows/raid-media-hardening.yml
+          git commit -m "fix: harden dynamic web streaming playback"
+          git push origin HEAD:main

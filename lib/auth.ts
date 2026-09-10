@@ -3,6 +3,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const DEFAULT_SUPABASE_URL = 'https://aoftmiajhujveahjqlct.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_WRrrrMpgaFmM3ikNJxYHtA_l9-RO0cP';
+const AUTH_CHUNK_SIZE = 1800;
+const AUTH_CHUNK_MARKER = 'raid-auth-chunks:';
 
 let client: SupabaseClient | null = null;
 
@@ -12,6 +14,67 @@ export type RaidUserProfile = {
   locale: string;
   created_at: string;
   updated_at: string;
+};
+
+function authChunkKey(key: string, index: number) {
+  return `${key}.raid.${index}`;
+}
+
+function chunkCount(value: string | null) {
+  if (!value?.startsWith(AUTH_CHUNK_MARKER)) return 0;
+  const count = Number(value.slice(AUTH_CHUNK_MARKER.length));
+  return Number.isInteger(count) && count > 0 && count <= 64 ? count : 0;
+}
+
+async function clearAuthChunks(key: string, marker?: string | null) {
+  const count = chunkCount(marker ?? await SecureStore.getItemAsync(key));
+  if (!count) return;
+  await Promise.all(Array.from({ length: count }, (_, index) =>
+    SecureStore.deleteItemAsync(authChunkKey(key, index)).catch(() => {})
+  ));
+}
+
+const secureAuthStorage = {
+  async getItem(key: string) {
+    const stored = await SecureStore.getItemAsync(key);
+    const count = chunkCount(stored);
+    if (!count) return stored;
+
+    const chunks = await Promise.all(Array.from({ length: count }, (_, index) =>
+      SecureStore.getItemAsync(authChunkKey(key, index))
+    ));
+    if (chunks.some((part) => part == null)) {
+      await clearAuthChunks(key, stored);
+      await SecureStore.deleteItemAsync(key).catch(() => {});
+      return null;
+    }
+    return chunks.join('');
+  },
+
+  async setItem(key: string, value: string) {
+    const previous = await SecureStore.getItemAsync(key);
+    await clearAuthChunks(key, previous);
+
+    if (value.length <= AUTH_CHUNK_SIZE) {
+      await SecureStore.setItemAsync(key, value);
+      return;
+    }
+
+    const chunks: string[] = [];
+    for (let offset = 0; offset < value.length; offset += AUTH_CHUNK_SIZE) {
+      chunks.push(value.slice(offset, offset + AUTH_CHUNK_SIZE));
+    }
+    await Promise.all(chunks.map((part, index) =>
+      SecureStore.setItemAsync(authChunkKey(key, index), part)
+    ));
+    await SecureStore.setItemAsync(key, `${AUTH_CHUNK_MARKER}${chunks.length}`);
+  },
+
+  async removeItem(key: string) {
+    const stored = await SecureStore.getItemAsync(key);
+    await clearAuthChunks(key, stored);
+    await SecureStore.deleteItemAsync(key).catch(() => {});
+  },
 };
 
 export function getSupabasePublicRuntimeConfig() {
@@ -26,11 +89,7 @@ export function getSupabase() {
   if (!client) {
     client = createClient(url, publishableKey, {
       auth: {
-        storage: {
-          getItem: (key) => SecureStore.getItemAsync(key),
-          setItem: (key, value) => SecureStore.setItemAsync(key, value),
-          removeItem: (key) => SecureStore.deleteItemAsync(key),
-        },
+        storage: secureAuthStorage,
         flowType: 'pkce',
         autoRefreshToken: true,
         persistSession: true,

@@ -2,14 +2,14 @@
   "expo": {
     "name": "RAID Browser",
     "slug": "raid-browser",
-    "version": "2.3.0",
+    "version": "2.4.0",
     "orientation": "portrait",
     "scheme": "raidbrowser",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
       "package": "com.yosef.raidbrowser",
-      "versionCode": 14,
+      "versionCode": 15,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",

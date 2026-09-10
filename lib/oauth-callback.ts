@@ -2,6 +2,8 @@ import type { Session } from '@supabase/supabase-js';
 import { getCurrentSession, getSupabase, syncCurrentUserProfileBestEffort } from '@/lib/auth';
 
 const inFlightCodeExchanges = new Map<string, Promise<Session>>();
+const completedCodeExchanges = new Map<string, { session: Session; expiresAt: number }>();
+const COMPLETED_CODE_TTL_MS = 120_000;
 
 function oauthParams(url: string) {
   const question = url.indexOf('?');
@@ -21,16 +23,19 @@ function decodeOAuthMessage(value: string) {
 
 export function normalizeOAuthError(message: string) {
   const decoded = decodeOAuthMessage(message || '');
-  if (/unable to exchange external code/i.test(decoded)) {
+  if (decoded === 'GOOGLE_EXTERNAL_CODE_EXCHANGE_FAILED' || /unable to exchange external code/i.test(decoded)) {
     return new Error('GOOGLE_EXTERNAL_CODE_EXCHANGE_FAILED');
   }
-  if (/provider.+not enabled|unsupported provider/i.test(decoded)) {
+  if (decoded === 'GOOGLE_PROVIDER_DISABLED' || /provider.+not enabled|unsupported provider/i.test(decoded)) {
     return new Error('GOOGLE_PROVIDER_DISABLED');
+  }
+  if (/code verifier|pkce/i.test(decoded)) {
+    return new Error('GOOGLE_PKCE_SESSION_MISMATCH');
   }
   return new Error(decoded || 'تعذر إكمال تسجيل الدخول بواسطة Google.');
 }
 
-async function waitForSession(timeoutMs = 900): Promise<Session | null> {
+async function waitForSession(timeoutMs = 1500): Promise<Session | null> {
   const existing = await getCurrentSession().catch(() => null);
   if (existing?.user) return existing;
 
@@ -55,7 +60,20 @@ async function waitForSession(timeoutMs = 900): Promise<Session | null> {
   });
 }
 
+function getCompletedExchange(code: string) {
+  const cached = completedCodeExchanges.get(code);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    completedCodeExchanges.delete(code);
+    return null;
+  }
+  return cached.session;
+}
+
 async function exchangeCodeOnce(code: string) {
+  const completed = getCompletedExchange(code);
+  if (completed?.user) return completed;
+
   const current = inFlightCodeExchanges.get(code);
   if (current) return current;
 
@@ -63,9 +81,9 @@ async function exchangeCodeOnce(code: string) {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      const recovered = await waitForSession(650);
+      const recovered = await waitForSession(1200);
       if (recovered?.user) return recovered;
-      throw error;
+      throw normalizeOAuthError(error.message);
     }
     if (!data.session?.user) throw new Error('لم تُنشأ جلسة Google صالحة.');
     return data.session;
@@ -73,7 +91,9 @@ async function exchangeCodeOnce(code: string) {
 
   inFlightCodeExchanges.set(code, exchange);
   try {
-    return await exchange;
+    const session = await exchange;
+    completedCodeExchanges.set(code, { session, expiresAt: Date.now() + COMPLETED_CODE_TTL_MS });
+    return session;
   } finally {
     inFlightCodeExchanges.delete(code);
   }
@@ -81,14 +101,20 @@ async function exchangeCodeOnce(code: string) {
 
 export async function completeOAuthRedirect(url: string) {
   const params = oauthParams(url);
-  const providerError = params.get('error_description') || params.get('error');
+  const providerError = params.get('error_description') || params.get('error_code') || params.get('error');
   if (providerError) throw normalizeOAuthError(providerError);
 
-  let session = await waitForSession();
-  if (!session) {
-    const code = params.get('code');
-    if (code) session = await exchangeCodeOnce(code);
+  const code = params.get('code');
+  if (code) {
+    const completed = getCompletedExchange(code);
+    if (completed?.user) {
+      await syncCurrentUserProfileBestEffort();
+      return { session: completed, user: completed.user };
+    }
   }
+
+  let session = await waitForSession();
+  if (!session && code) session = await exchangeCodeOnce(code);
 
   if (!session) {
     const accessToken = params.get('access_token');
@@ -98,7 +124,7 @@ export async function completeOAuthRedirect(url: string) {
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      if (error) throw error;
+      if (error) throw normalizeOAuthError(error.message);
       session = data.session;
     }
   }

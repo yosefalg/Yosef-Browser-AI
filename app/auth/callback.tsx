@@ -31,9 +31,11 @@ export default function AuthCallbackScreen() {
         if (!alive) return;
         const normalized = error instanceof Error ? normalizeOAuthError(error.message) : new Error('تعذر إكمال تسجيل الدخول.');
         if (normalized.message === 'GOOGLE_EXTERNAL_CODE_EXCHANGE_FAILED') {
-          setMessage('خادم Google رفض بيانات OAuth المسجلة في Supabase. التطبيق أكمل مسار PKCE محليًا، لكن بيانات Google الخارجية تحتاج تصحيحًا على الخادم.');
+          setMessage('Google أكمل اختيار الحساب، لكن خادم Google رفض بيانات OAuth المرتبطة بـ Supabase. يلزم تصحيح Client ID/Secret الخارجي على الخادم قبل أن تنشأ جلسة RAID.');
         } else if (normalized.message === 'GOOGLE_PROVIDER_DISABLED') {
           setMessage('تسجيل Google غير مفعّل على خادم RAID.');
+        } else if (normalized.message === 'GOOGLE_PKCE_SESSION_MISMATCH') {
+          setMessage('انتهت محاولة تسجيل Google أو فُقدت جلسة التحقق الآمنة. أعد المحاولة من زر Google داخل RAID مرة واحدة فقط.');
         } else {
           setMessage(normalized.message);
         }
@@ -49,7 +51,7 @@ export default function AuthCallbackScreen() {
       {!failed ? <ActivityIndicator size="large" color="#8E7A6A" /> : <Text style={s.mark}>!</Text>}
       <Text style={s.title}>{failed ? 'تعذر تسجيل الدخول' : 'RAID Account'}</Text>
       <Text style={s.text}>{message}</Text>
-      {failed ? <Pressable onPress={() => router.replace('/login')} style={s.button}><Text style={s.buttonText}>العودة لتسجيل الدخول</Text></Pressable> : null}
+      {failed ? <Pressable onPress={() => router.replace('/login')} style={s.button}><Text style={s.buttonText}>إعادة المحاولة</Text></Pressable> : null}
     </View>
   </SafeAreaView>;
 }

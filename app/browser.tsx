@@ -77,7 +77,7 @@ function mediaPlayerHtml(mediaUrl: string) {
 html,body{margin:0;width:100%;height:100%;background:#05070c;color:#fff;font-family:sans-serif}body{display:flex;align-items:center;justify-content:center}video{width:100%;height:100%;background:#000;object-fit:contain}.msg{position:fixed;left:16px;right:16px;bottom:18px;background:rgba(15,23,42,.88);padding:10px 14px;border-radius:12px;text-align:center;font-size:12px;color:#cbd5e1}
 </style></head><body><video id="raidVideo" controls autoplay playsinline webkit-playsinline></video><div id="msg" class="msg">RAID Media Player</div><script>
 const video=document.getElementById('raidVideo'); const msg=document.getElementById('msg'); const src=${source}; video.src=src;
-video.addEventListener('playing',()=>{msg.style.display='none'}); video.addEventListener('error',()=>{msg.textContent='تعذر تشغيل المصدر داخل المشغل. جرّب فتحه بتطبيق فيديو خارجي.'});
+video.addEventListener('playing',()=>{msg.style.display='none'}); video.addEventListener('error',()=>{msg.textContent='تعذر تشغيل هذا المصدر مباشرة داخل RAID. ارجع إلى صفحة المشاهدة وحاول تشغيل المشغل الموجود فيها.'});
 </script></body></html>`;
 }
 
@@ -271,11 +271,11 @@ export default function BrowserScreen() {
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:NO_VIDEO') {
-      Alert.alert('RAID Media Player', 'لم يعثر المتصفح على عنصر فيديو مباشر في هذه الصفحة. إذا كان المشغل داخل إطار خارجي مثل MEGA أو TeraBox فشغّله من الصفحة أو استخدم خيار الفتح الخارجي.');
+      Alert.alert('RAID Media Player', 'لم يعثر RAID على عنصر فيديو مباشر بعد. أبقِ صفحة المشاهدة مفتوحة وشغّل مشغل الموقع من داخل المتصفح.');
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:FAILED') {
-      Alert.alert('RAID Media Player', 'تعذر تشغيل فيديو الصفحة مباشرة.');
+      Alert.alert('RAID Media Player', 'تعذر تشغيل فيديو الصفحة مباشرة داخل RAID.');
       return;
     }
     const page = parsePageContext(raw);
@@ -318,14 +318,15 @@ export default function BrowserScreen() {
     router.push({ pathname: '/ai', params: { url: loadedUrl, title } });
   };
 
-  const openExternal = () => {
-    setMenuOpen(false);
-    Linking.openURL(loadedUrl).catch(() => {});
-  };
-
   const goHome = () => router.replace('/');
 
   const shouldLoad = (requestUrl: string) => {
+    if (isDirectMediaUrl(requestUrl)) {
+      setMediaUrl(requestUrl);
+      setMediaUrls((current) => current.includes(requestUrl) ? current : [requestUrl, ...current].slice(0, 12));
+      setMediaOpen(true);
+      return false;
+    }
     if (safeExternalUrl(requestUrl)) return true;
     if (/^(mailto:|tel:|sms:)/i.test(requestUrl)) Linking.openURL(requestUrl).catch(() => {});
     return false;
@@ -439,7 +440,6 @@ export default function BrowserScreen() {
             <Pressable style={styles.menuItem} onPress={openReader}><Text style={styles.menuIcon}>Aa</Text><Text style={styles.menuText}>وضع القراءة</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={toggleDesktop}><Text style={styles.menuIcon}>▣</Text><Text style={styles.menuText}>{desktopMode ? 'عرض الهاتف' : 'عرض سطح المكتب'}</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={shareCurrent}><Text style={styles.menuIcon}>↗</Text><Text style={styles.menuText}>مشاركة الصفحة</Text></Pressable>
-            <Pressable style={styles.menuItem} onPress={openExternal}><Text style={styles.menuIcon}>◇</Text><Text style={styles.menuText}>فتح خارج RAID</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); setSiteInfoOpen(true); }}><Text style={styles.menuIcon}>i</Text><Text style={styles.menuText}>معلومات وأمان الموقع</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={openVpn}><Text style={styles.menuIcon}>V</Text><Text style={styles.menuText}>{vpnConnected ? 'RAID VPN • متصل' : 'RAID VPN'}</Text></Pressable>
             {!privateMode && <Pressable style={styles.menuItem} onPress={openAI}><Text style={styles.menuIcon}>AI</Text><Text style={styles.menuText}>اسأل RAID AI عن الصفحة</Text></Pressable>}
@@ -468,7 +468,6 @@ export default function BrowserScreen() {
           <View style={styles.mediaTop}>
             <Pressable onPress={() => setMediaOpen(false)} style={styles.mediaClose}><Text style={styles.mediaCloseText}>×</Text></Pressable>
             <View style={styles.mediaHeading}><Text style={styles.mediaTitle}>RAID Media Player</Text><Text numberOfLines={1} style={styles.mediaHost}>{hostOf(mediaUrl)}</Text></View>
-            <Pressable onPress={() => Linking.openURL(mediaUrl).catch(() => {})} style={styles.mediaExternal}><Text style={styles.mediaExternalText}>خارجي</Text></Pressable>
           </View>
           {!!mediaUrl && <WebView
             source={{ html: playerHtml, baseUrl: loadedUrl }}

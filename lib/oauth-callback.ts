@@ -78,13 +78,8 @@ async function exchangeCodeOnce(code: string) {
   if (current) return current;
 
   const exchange = (async () => {
-    const supabase = getSupabase();
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
-      const recovered = await waitForSession(1200);
-      if (recovered?.user) return recovered;
-      throw normalizeOAuthError(error.message);
-    }
+    const { data, error } = await getSupabase().auth.exchangeCodeForSession(code);
+    if (error) throw normalizeOAuthError(error.message);
     if (!data.session?.user) throw new Error('لم تُنشأ جلسة Google صالحة.');
     return data.session;
   })();
@@ -105,16 +100,16 @@ export async function completeOAuthRedirect(url: string) {
   if (providerError) throw normalizeOAuthError(providerError);
 
   const code = params.get('code');
-  if (code) {
-    const completed = getCompletedExchange(code);
-    if (completed?.user) {
-      await syncCurrentUserProfileBestEffort();
-      return { session: completed, user: completed.user };
-    }
-  }
+  let session: Session | null = null;
 
-  let session = await waitForSession();
-  if (!session && code) session = await exchangeCodeOnce(code);
+  // A returned authorization code belongs to the account the user just chose.
+  // Always exchange it before consulting any pre-existing local session; otherwise
+  // an older email/Google session can be mistaken for a successful account switch.
+  if (code) {
+    session = await exchangeCodeOnce(code);
+  } else {
+    session = await waitForSession();
+  }
 
   if (!session) {
     const accessToken = params.get('access_token');

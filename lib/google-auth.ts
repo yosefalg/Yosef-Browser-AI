@@ -1,6 +1,6 @@
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import { getCurrentSession, getSupabase, getSupabasePublicRuntimeConfig } from '@/lib/auth';
+import { getSupabase, getSupabasePublicRuntimeConfig } from '@/lib/auth';
 import { completeOAuthRedirect } from '@/lib/oauth-callback';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -22,9 +22,11 @@ async function ensureGoogleProviderEnabled() {
 export async function signInWithGoogle() {
   await ensureGoogleProviderEnabled();
 
-  const existing = await getCurrentSession().catch(() => null);
-  if (existing?.user) return { session: existing, user: existing.user };
-
+  // Always start a fresh Google chooser. Returning an already-existing RAID
+  // session here prevented users who were signed in by email (or another
+  // Google account) from actually switching/choosing the requested account.
+  // Supabase replaces the local session only after the OAuth exchange succeeds,
+  // so a cancelled Google flow does not destroy the current signed-in session.
   const redirectTo = Linking.createURL('auth/callback', { scheme: 'raidbrowser' });
   const { data, error } = await getSupabase().auth.signInWithOAuth({
     provider: 'google',

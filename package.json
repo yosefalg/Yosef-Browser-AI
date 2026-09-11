@@ -12,6 +12,7 @@
     "prebuild": "expo prebuild --platform android --clean"
   },
   "dependencies": {
+    "@expo/vector-icons": "15.0.3",
     "@supabase/supabase-js": "^2.57.4",
     "expo": "~54.0.27",
     "expo-constants": "~18.0.10",

@@ -9,6 +9,9 @@ export type DownloadItem = {
   progress: number;
   total_bytes: number | null;
   written_bytes: number;
+  speed_bps: number;
+  eta_seconds: number | null;
+  resume_data: string | null;
   error: string | null;
   created_at: number;
   updated_at: number;

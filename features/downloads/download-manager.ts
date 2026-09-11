@@ -4,6 +4,7 @@ import { createDownload, deleteDownloadRecord, getDownload, setDownloadState, up
 
 const active = new Map<number, FileSystem.DownloadResumable>();
 const paused = new Map<number, FileSystem.DownloadPauseState>();
+const progressStats = new Map<number, { at: number; written: number; speed: number; persistedAt: number }>();
 
 function safeFileName(url: string) {
   try {
@@ -24,13 +25,31 @@ async function ensureDirectory() {
 
 function progressHandler(id: number) {
   return async (progress: FileSystem.DownloadProgressData) => {
+    const now = Date.now();
     const total = progress.totalBytesExpectedToWrite || 0;
     const written = progress.totalBytesWritten || 0;
+    const previous = progressStats.get(id);
+    const elapsed = previous ? Math.max(0.05, (now - previous.at) / 1000) : 0;
+    const instant = previous && written >= previous.written ? (written - previous.written) / elapsed : 0;
+    const speed = instant > 0 ? (previous?.speed ? previous.speed * 0.65 + instant * 0.35 : instant) : (previous?.speed || 0);
+    const eta = total > written && speed > 1 ? Math.ceil((total - written) / speed) : null;
+    const shouldPersist = !previous || now - previous.persistedAt >= 500 || (total > 0 && written >= total);
+
+    progressStats.set(id, {
+      at: now,
+      written,
+      speed,
+      persistedAt: shouldPersist ? now : (previous?.persistedAt || 0),
+    });
+
+    if (!shouldPersist) return;
     await updateDownload(id, {
       state: 'downloading',
       progress: total > 0 ? Math.min(1, written / total) : 0,
       total_bytes: total || null,
       written_bytes: written,
+      speed_bps: speed,
+      eta_seconds: eta,
       error: null,
     }).catch(() => {});
   };
@@ -39,16 +58,32 @@ function progressHandler(id: number) {
 async function runTask(id: number, task: FileSystem.DownloadResumable) {
   active.set(id, task);
   paused.delete(id);
-  await setDownloadState(id, 'downloading');
+  await updateDownload(id, { state: 'downloading', error: null });
   try {
     const result = await task.downloadAsync();
     active.delete(id);
+    paused.delete(id);
+    progressStats.delete(id);
     if (!result?.uri) throw new Error('لم يرجع Android ملفًا بعد اكتمال التنزيل.');
-    await updateDownload(id, { state: 'completed', progress: 1, local_uri: result.uri, error: null });
+    await updateDownload(id, {
+      state: 'completed',
+      progress: 1,
+      local_uri: result.uri,
+      speed_bps: 0,
+      eta_seconds: 0,
+      resume_data: null,
+      error: null,
+    });
   } catch (error) {
     active.delete(id);
+    progressStats.delete(id);
     if (paused.has(id)) return;
-    await updateDownload(id, { state: 'failed', error: error instanceof Error ? error.message : 'فشل التنزيل.' });
+    await updateDownload(id, {
+      state: 'failed',
+      speed_bps: 0,
+      eta_seconds: null,
+      error: error instanceof Error ? error.message : 'فشل التنزيل.',
+    });
   }
 }
 
@@ -72,14 +107,22 @@ export async function pauseDownload(id: number) {
   const state = await task.pauseAsync();
   active.delete(id);
   paused.set(id, state);
-  await setDownloadState(id, 'paused');
+  progressStats.delete(id);
+  await updateDownload(id, {
+    state: 'paused',
+    speed_bps: 0,
+    eta_seconds: null,
+    resume_data: state.resumeData || null,
+    error: null,
+  });
 }
 
 export async function resumeDownload(id: number) {
-  const state = paused.get(id);
+  const memoryState = paused.get(id);
   const item = await getDownload(id);
-  if (!state || !item?.local_uri) throw new Error('لا توجد جلسة تنزيل قابلة للاستكمال.');
-  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, {}, progressHandler(id), state.resumeData);
+  const resumeData = memoryState?.resumeData || item?.resume_data || undefined;
+  if (!item?.local_uri || !resumeData) throw new Error('لا توجد جلسة تنزيل قابلة للاستكمال. أعد التنزيل إذا كان Android قد حذف بيانات الاستئناف.');
+  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, {}, progressHandler(id), resumeData);
   void runTask(id, task);
 }
 
@@ -88,7 +131,8 @@ export async function cancelDownload(id: number) {
   if (task) await task.pauseAsync().catch(() => {});
   active.delete(id);
   paused.delete(id);
-  await setDownloadState(id, 'cancelled');
+  progressStats.delete(id);
+  await updateDownload(id, { state: 'cancelled', speed_bps: 0, eta_seconds: null, resume_data: null });
 }
 
 export async function retryDownload(id: number) {
@@ -110,6 +154,7 @@ export async function removeDownload(id: number, deleteFile = false) {
   const item = await getDownload(id);
   if (active.has(id)) await cancelDownload(id);
   paused.delete(id);
+  progressStats.delete(id);
   if (deleteFile && item?.local_uri) await FileSystem.deleteAsync(item.local_uri, { idempotent: true }).catch(() => {});
   await deleteDownloadRecord(id);
 }

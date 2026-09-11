@@ -2,14 +2,14 @@
   "expo": {
     "name": "RAID Browser",
     "slug": "raid-browser",
-    "version": "2.9.0",
+    "version": "2.9.1",
     "orientation": "portrait",
     "scheme": "raidbrowser",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
       "package": "com.yosef.raidbrowser",
-      "versionCode": 31,
+      "versionCode": 32,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",
@@ -31,7 +31,8 @@
         }
       ],
       "./plugins/withRaidWebViewSecurity",
-      "./plugins/withRaidWireGuard"
+      "./plugins/withRaidWireGuard",
+      "./plugins/withRaidLauncherIcon"
     ],
     "experiments": {
       "typedRoutes": true

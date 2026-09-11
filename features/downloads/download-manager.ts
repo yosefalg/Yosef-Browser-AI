@@ -72,7 +72,7 @@ export async function pauseDownload(id: number) {
   const state = await task.pauseAsync();
   active.delete(id);
   paused.set(id, state);
-  await setDownloadState(id, 'queued');
+  await setDownloadState(id, 'paused');
 }
 
 export async function resumeDownload(id: number) {

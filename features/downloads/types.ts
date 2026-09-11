@@ -1,4 +1,4 @@
-export type DownloadState = 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled';
+export type DownloadState = 'queued' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 export type DownloadItem = {
   id: number;

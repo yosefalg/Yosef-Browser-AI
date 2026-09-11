@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { createDownload, deleteDownloadRecord, getDownload, setDownloadState, updateDownload } from './store';
 
 const active = new Map<number, FileSystem.DownloadResumable>();
+const paused = new Map<number, FileSystem.DownloadPauseState>();
 
 function safeFileName(url: string) {
   try {
@@ -21,16 +22,8 @@ async function ensureDirectory() {
   return root;
 }
 
-export async function startDownload(url: string) {
-  if (!/^https:\/\//i.test(url)) throw new Error('RAID يسمح بالتنزيل الآمن عبر HTTPS فقط.');
-  const root = await ensureDirectory();
-  const fileName = safeFileName(url);
-  let destination = `${root}${fileName}`;
-  const exists = await FileSystem.getInfoAsync(destination);
-  if (exists.exists) destination = `${root}${Date.now()}-${fileName}`;
-
-  const id = await createDownload(url, fileName, destination);
-  const task = FileSystem.createDownloadResumable(url, destination, {}, async (progress) => {
+function progressHandler(id: number) {
+  return async (progress: FileSystem.DownloadProgressData) => {
     const total = progress.totalBytesExpectedToWrite || 0;
     const written = progress.totalBytesWritten || 0;
     await updateDownload(id, {
@@ -40,28 +33,61 @@ export async function startDownload(url: string) {
       written_bytes: written,
       error: null,
     }).catch(() => {});
-  });
-  active.set(id, task);
-  await setDownloadState(id, 'downloading');
+  };
+}
 
-  void task.downloadAsync().then(async (result) => {
+async function runTask(id: number, task: FileSystem.DownloadResumable) {
+  active.set(id, task);
+  paused.delete(id);
+  await setDownloadState(id, 'downloading');
+  try {
+    const result = await task.downloadAsync();
     active.delete(id);
     if (!result?.uri) throw new Error('لم يرجع Android ملفًا بعد اكتمال التنزيل.');
     await updateDownload(id, { state: 'completed', progress: 1, local_uri: result.uri, error: null });
-  }).catch(async (error) => {
+  } catch (error) {
     active.delete(id);
+    if (paused.has(id)) return;
     await updateDownload(id, { state: 'failed', error: error instanceof Error ? error.message : 'فشل التنزيل.' });
-  });
+  }
+}
 
+export async function startDownload(url: string) {
+  if (!/^https:\/\//i.test(url)) throw new Error('RAID يسمح بالتنزيل الآمن عبر HTTPS فقط.');
+  const root = await ensureDirectory();
+  const fileName = safeFileName(url);
+  let destination = `${root}${fileName}`;
+  const exists = await FileSystem.getInfoAsync(destination);
+  if (exists.exists) destination = `${root}${Date.now()}-${fileName}`;
+
+  const id = await createDownload(url, fileName, destination);
+  const task = FileSystem.createDownloadResumable(url, destination, {}, progressHandler(id));
+  void runTask(id, task);
   return id;
+}
+
+export async function pauseDownload(id: number) {
+  const task = active.get(id);
+  if (!task) throw new Error('هذا التنزيل غير نشط الآن.');
+  const state = await task.pauseAsync();
+  active.delete(id);
+  paused.set(id, state);
+  await setDownloadState(id, 'queued');
+}
+
+export async function resumeDownload(id: number) {
+  const state = paused.get(id);
+  const item = await getDownload(id);
+  if (!state || !item?.local_uri) throw new Error('لا توجد جلسة تنزيل قابلة للاستكمال.');
+  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, {}, progressHandler(id), state.resumeData);
+  void runTask(id, task);
 }
 
 export async function cancelDownload(id: number) {
   const task = active.get(id);
-  if (task) {
-    await task.pauseAsync().catch(() => {});
-    active.delete(id);
-  }
+  if (task) await task.pauseAsync().catch(() => {});
+  active.delete(id);
+  paused.delete(id);
   await setDownloadState(id, 'cancelled');
 }
 
@@ -83,6 +109,7 @@ export async function openDownload(id: number) {
 export async function removeDownload(id: number, deleteFile = false) {
   const item = await getDownload(id);
   if (active.has(id)) await cancelDownload(id);
+  paused.delete(id);
   if (deleteFile && item?.local_uri) await FileSystem.deleteAsync(item.local_uri, { idempotent: true }).catch(() => {});
   await deleteDownloadRecord(id);
 }

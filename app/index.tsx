@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { normalizeInput } from '@/lib/url';
-import { getRecentSites, getSetting, setSetting } from '@/lib/db';
+import { getBrowserTabs, getRecentSites, getSetting, setSetting } from '@/lib/db';
 import { getTheme, type ThemeName } from '@/lib/theme';
 import { isVpnConnected } from '@/lib/vpn';
 import { HomeMenu, type HomeMenuItem } from '@/components/HomeMenu';
@@ -26,6 +26,7 @@ export default function HomeScreen(){
   const [query,setQuery]=useState('');
   const [recent,setRecent]=useState<RecentSite[]>([]);
   const [downloads,setDownloads]=useState<DownloadItem[]>([]);
+  const [tabsCount,setTabsCount]=useState(0);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [menuOpen,setMenuOpen]=useState(false);
   const [vpnConnected,setVpnConnected]=useState(false);
@@ -33,22 +34,24 @@ export default function HomeScreen(){
 
   useFocusEffect(useCallback(()=>{let alive=true;Promise.all([
     getRecentSites(8).catch(()=>[] as RecentSite[]),
-    listDownloads(4).catch(()=>[] as DownloadItem[]),
+    listDownloads(12).catch(()=>[] as DownloadItem[]),
+    getBrowserTabs().catch(()=>[]),
     getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
     isVpnConnected().catch(()=>false),
-  ]).then(([sites,items,saved,connected])=>{if(!alive)return;setRecent(sites);setDownloads(items);setThemeName(saved==='cinematic'||saved==='amoled'||saved==='light'?saved:'cinematic');setVpnConnected(Boolean(connected));});return()=>{alive=false};},[]));
+  ]).then(([sites,items,tabs,saved,connected])=>{if(!alive)return;setRecent(sites);setDownloads(items);setTabsCount(tabs.length);setThemeName(saved==='cinematic'||saved==='amoled'||saved==='light'?saved:'cinematic');setVpnConnected(Boolean(connected));});return()=>{alive=false};},[]));
 
   const openUrl=(value:string)=>{const clean=value.trim();if(!clean)return;Keyboard.dismiss();router.push({pathname:'/browser',params:{url:normalizeInput(clean)}})};
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
   const submit=()=>looksLikeAIQuery(query)?askAI():openUrl(query);
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
   const chooseTheme=async(value:ThemeName)=>{setThemeName(value);await setSetting('theme',value)};
+  const latestSite=recent[0];
 
   const menuItems=useMemo<HomeMenuItem[]>(()=>[
     {label:'الرئيسية',icon:'home-outline',hint:'الصفحة الرئيسية',onPress:()=>setMenuOpen(false)},
     {label:'علامة تبويب جديدة',icon:'add-circle-outline',hint:'فتح تبويب جديد',onPress:()=>go('/browser')},
     {label:'علامة تبويب خاصة',icon:'eye-off-outline',hint:'تصفح بخصوصية',onPress:()=>go('/browser?privateMode=1')},
-    {label:'التبويبات',icon:'albums-outline',hint:'إدارة التبويبات',onPress:()=>go('/tabs')},
+    {label:'التبويبات',icon:'albums-outline',hint:`${tabsCount} تبويب مفتوح`,badge:tabsCount||undefined,onPress:()=>go('/tabs')},
     {label:'المكتبة والسجل',icon:'library-outline',hint:'المفضلة والسجل',onPress:()=>go('/library')},
     {label:'عمليات التنزيل',icon:'download-outline',hint:'إدارة الملفات',badge:downloads.length||undefined,onPress:()=>go('/downloads')},
     {label:'RAID AI',icon:'sparkles-outline',hint:'مساعدك الذكي',onPress:()=>go('/ai')},
@@ -56,7 +59,7 @@ export default function HomeScreen(){
     {label:'الخصوصية',icon:'lock-closed-outline',hint:'مركز الحماية',onPress:()=>go('/privacy')},
     {label:'الحساب',icon:'person-outline',hint:'إدارة الحساب',onPress:()=>go('/account')},
     {label:'الإعدادات',icon:'settings-outline',hint:'تخصيص التطبيق',onPress:()=>go('/settings')},
-  ],[downloads.length,vpnConnected]);
+  ],[downloads.length,tabsCount,vpnConnected]);
 
   const shortcuts=[
     {label:'YouTube',url:'https://www.youtube.com',onPress:()=>openUrl('https://www.youtube.com')},
@@ -67,7 +70,7 @@ export default function HomeScreen(){
 
   return <LinearGradient colors={[...theme.gradient]} style={s.fill}><SafeAreaView edges={['top','bottom','left','right']} style={s.safe}>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <HomeHeader theme={theme} vpnConnected={vpnConnected} onMenu={()=>setMenuOpen(true)} onTabs={()=>router.push('/tabs')} onDownloads={()=>router.push('/downloads')} onVpn={()=>router.push('/vpn')}/>
+      <HomeHeader theme={theme} vpnConnected={vpnConnected} tabsCount={tabsCount} downloadsCount={downloads.length} onMenu={()=>setMenuOpen(true)} onTabs={()=>router.push('/tabs')} onDownloads={()=>router.push('/downloads')} onVpn={()=>router.push('/vpn')}/>
 
       <View style={[s.search,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <Ionicons name="search-outline" size={22} color={theme.accent}/>
@@ -76,7 +79,7 @@ export default function HomeScreen(){
       </View>
 
       <HomeShortcuts theme={theme} items={shortcuts} onMore={()=>setMenuOpen(true)}/>
-      <HomeHero onPress={()=>openUrl('https://www.google.com')}/>
+      <HomeHero recent={latestSite} vpnConnected={vpnConnected} tabsCount={tabsCount} onPress={()=>openUrl(latestSite?.url||'https://www.google.com')}/>
       <HomeFeatureCards theme={theme} downloadsCount={downloads.length} onDownloads={()=>router.push('/downloads')} onLibrary={()=>router.push('/library')} onPrivacy={()=>router.push('/privacy')}/>
 
       {recent.length>0&&<View style={[s.panel,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.panelHead}><Text style={[s.panelTitle,{color:theme.text}]}>المواقع الأخيرة</Text><Pressable onPress={()=>router.push('/library')}><Text style={[s.panelLink,{color:theme.accent}]}>عرض الكل</Text></Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.recentRow}>{recent.slice(0,6).map(site=><Pressable key={site.url} onPress={()=>openUrl(site.url)} style={({pressed})=>[s.recentCard,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.press]}><SiteIcon url={site.url} size={40} radius={12}/><Text numberOfLines={2} style={[s.recentTitle,{color:theme.text}]}>{site.title||hostname(site.url)}</Text><Text numberOfLines={1} style={[s.recentHost,{color:theme.muted}]}>{hostname(site.url)}</Text></Pressable>)}</ScrollView></View>}

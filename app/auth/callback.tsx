@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { completeOAuthRedirect, normalizeOAuthError } from '@/lib/oauth-callback';
@@ -10,6 +11,7 @@ export default function AuthCallbackScreen() {
   const params = useLocalSearchParams<Record<string, string | string[]>>();
   const [message, setMessage] = useState('جارٍ إكمال تسجيل الدخول…');
   const [failed, setFailed] = useState(false);
+  const [googleServerIssue, setGoogleServerIssue] = useState(false);
 
   const callbackUrl = useMemo(() => {
     const query = new URLSearchParams();
@@ -31,11 +33,13 @@ export default function AuthCallbackScreen() {
         if (!alive) return;
         const normalized = error instanceof Error ? normalizeOAuthError(error.message) : new Error('تعذر إكمال تسجيل الدخول.');
         if (normalized.message === 'GOOGLE_EXTERNAL_CODE_EXCHANGE_FAILED') {
-          setMessage('Google أكمل اختيار الحساب، لكن خادم Google رفض بيانات OAuth المرتبطة بـ Supabase. يلزم تصحيح Client ID/Secret الخارجي على الخادم قبل أن تنشأ جلسة RAID.');
+          setGoogleServerIssue(true);
+          setMessage('Google أكمل اختيار الحساب، لكن إعداد OAuth الخارجي على الخادم غير صالح حاليًا. حسابك لم يتضرر، ويمكنك الدخول بالبريد وكلمة المرور الآن.');
         } else if (normalized.message === 'GOOGLE_PROVIDER_DISABLED') {
-          setMessage('تسجيل Google غير مفعّل على خادم RAID.');
+          setGoogleServerIssue(true);
+          setMessage('تسجيل Google غير مفعّل على الخادم حاليًا. استخدم البريد وكلمة المرور إلى أن يتم تفعيله.');
         } else if (normalized.message === 'GOOGLE_PKCE_SESSION_MISMATCH') {
-          setMessage('انتهت محاولة تسجيل Google أو فُقدت جلسة التحقق الآمنة. أعد المحاولة من زر Google داخل RAID مرة واحدة فقط.');
+          setMessage('انتهت محاولة تسجيل Google أو فُقدت جلسة التحقق الآمنة. ارجع إلى صفحة الدخول وابدأ محاولة جديدة.');
         } else {
           setMessage(normalized.message);
         }
@@ -46,22 +50,37 @@ export default function AuthCallbackScreen() {
     return () => { alive = false; };
   }, [callbackUrl]);
 
-  return <SafeAreaView style={s.root}>
-    <View style={s.card}>
-      {!failed ? <ActivityIndicator size="large" color="#8E7A6A" /> : <Text style={s.mark}>!</Text>}
-      <Text style={s.title}>{failed ? 'تعذر تسجيل الدخول' : 'RAID Account'}</Text>
-      <Text style={s.text}>{message}</Text>
-      {failed ? <Pressable onPress={() => router.replace('/login')} style={s.button}><Text style={s.buttonText}>إعادة المحاولة</Text></Pressable> : null}
-    </View>
-  </SafeAreaView>;
+  return (
+    <SafeAreaView edges={['top','bottom','left','right']} style={s.root}>
+      <View style={s.card}>
+        {!failed ? <ActivityIndicator size="large" color="#8E7A6A" /> : <Text style={s.mark}>!</Text>}
+        <Text style={s.title}>{failed ? 'تعذر تسجيل الدخول' : 'RAID Account'}</Text>
+        <Text style={s.text}>{message}</Text>
+        {failed ? (
+          <>
+            <Pressable onPress={() => router.replace('/login')} style={s.button}>
+              <Text style={s.buttonText}>{googleServerIssue ? 'الدخول بالبريد الآن' : 'العودة إلى تسجيل الدخول'}</Text>
+            </Pressable>
+            {!googleServerIssue ? (
+              <Pressable onPress={() => router.replace('/login')} style={s.secondary}>
+                <Text style={s.secondaryText}>بدء محاولة جديدة</Text>
+              </Pressable>
+            ) : null}
+          </>
+        ) : null}
+      </View>
+    </SafeAreaView>
+  );
 }
 
 const s = StyleSheet.create({
   root:{flex:1,backgroundColor:'#EDE9E4',alignItems:'center',justifyContent:'center',padding:24},
-  card:{width:'100%',maxWidth:480,borderRadius:28,padding:28,backgroundColor:'rgba(255,255,255,.76)',borderWidth:1,borderColor:'#D8D1CA',alignItems:'center'},
+  card:{width:'100%',maxWidth:480,borderRadius:28,padding:28,backgroundColor:'rgba(255,255,255,.82)',borderWidth:1,borderColor:'#D8D1CA',alignItems:'center'},
   mark:{width:54,height:54,borderRadius:27,textAlign:'center',textAlignVertical:'center',fontSize:31,fontWeight:'900',color:'#7A4E45',backgroundColor:'#F1E4DF'},
   title:{marginTop:18,fontSize:24,fontWeight:'900',color:'#302C29',textAlign:'center'},
   text:{marginTop:10,color:'#746D67',lineHeight:22,textAlign:'center'},
-  button:{marginTop:22,minHeight:50,paddingHorizontal:20,borderRadius:17,backgroundColor:'#8E7A6A',alignItems:'center',justifyContent:'center'},
-  buttonText:{color:'#FFFDF9',fontWeight:'900'}
+  button:{marginTop:22,minHeight:50,paddingHorizontal:22,borderRadius:17,backgroundColor:'#8E7A6A',alignItems:'center',justifyContent:'center'},
+  buttonText:{color:'#FFFDF9',fontWeight:'900'},
+  secondary:{marginTop:10,minHeight:44,paddingHorizontal:18,alignItems:'center',justifyContent:'center'},
+  secondaryText:{color:'#7A716A',fontWeight:'800'}
 });

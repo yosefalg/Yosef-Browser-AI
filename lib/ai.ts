@@ -51,12 +51,12 @@ export async function askAgent(messages: AgentMessage[], pageText?: string) {
   if (!session.access_token) throw new Error('تعذر الحصول على جلسة صالحة لـ RAID AI.');
 
   const cleanMessages = messages
-    .slice(-14)
-    .map((message) => ({ role: message.role, content: message.content.trim().slice(0, 6000) }))
+    .slice(-10)
+    .map((message) => ({ role: message.role, content: message.content.trim().slice(0, 4000) }))
     .filter((message) => message.content.length > 0);
   if (!cleanMessages.length) throw new Error('اكتب رسالة أولاً.');
 
-  const body = { messages: cleanMessages, pageText: pageText?.slice(0, 18000) };
+  const body = { messages: cleanMessages, pageText: pageText?.slice(0, 9000) };
   const invoke = (accessToken: string) => supabase.functions.invoke('raid-ai', {
     body,
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -72,7 +72,7 @@ export async function askAgent(messages: AgentMessage[], pageText?: string) {
 
   const transientStatus = error ? (error as FunctionErrorLike).context?.status : undefined;
   if (error && transientStatus && [502, 503, 504].includes(transientStatus)) {
-    await delay(450);
+    await delay(250);
     ({ data, error } = await invoke((await supabase.auth.getSession()).data.session?.access_token || session.access_token));
   }
 

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { getCurrentProfile, getCurrentSession, signOut, updateCurrentProfile } from '@/lib/auth';
 import { syncAccountData } from '@/lib/sync';
@@ -61,7 +62,7 @@ export default function AccountScreen(){
 
   const initial=(name||email||'R').slice(0,1).toUpperCase();
 
-  return <SafeAreaView style={s.root}>
+  return <SafeAreaView edges={['top','bottom','left','right']} style={s.root}>
     <View style={s.header}><Pressable onPress={()=>router.back()} style={s.back}><Text style={s.backText}>‹</Text></Pressable><Text style={s.title}>حسابي</Text><Pressable onPress={()=>router.push('/notifications')} style={s.statusBtn}><Text style={s.statusBtnText}>الحالة</Text></Pressable></View>
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={s.hero}>
@@ -102,7 +103,7 @@ export default function AccountScreen(){
 function Quick({title,sub,onPress}:{title:string;sub:string;onPress:()=>void}){return <Pressable onPress={onPress} style={({pressed})=>[s.quick,pressed&&s.quickPressed]}><Text style={s.quickTitle}>{title}</Text><Text style={s.quickSub}>{sub}</Text></Pressable>}
 
 const s=StyleSheet.create({
-  root:{flex:1,backgroundColor:'#070B14'},header:{height:64,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,borderBottomWidth:1,borderBottomColor:'#1E293B'},back:{width:42,height:42,borderRadius:14,backgroundColor:'#111827',alignItems:'center',justifyContent:'center'},backText:{color:'#fff',fontSize:30,marginTop:-3},title:{color:'#fff',fontSize:19,fontWeight:'900'},statusBtn:{minWidth:58,height:36,paddingHorizontal:12,borderRadius:12,backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A',alignItems:'center',justifyContent:'center'},statusBtnText:{color:'#C4B5FD',fontWeight:'900',fontSize:12},content:{padding:16,paddingBottom:36,gap:12},
+  root:{flex:1,backgroundColor:'#070B14'},header:{minHeight:60,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:6,borderBottomWidth:1,borderBottomColor:'#1E293B'},back:{width:42,height:42,borderRadius:14,backgroundColor:'#111827',alignItems:'center',justifyContent:'center'},backText:{color:'#fff',fontSize:30,marginTop:-3},title:{color:'#fff',fontSize:19,fontWeight:'900'},statusBtn:{minWidth:58,height:36,paddingHorizontal:12,borderRadius:12,backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A',alignItems:'center',justifyContent:'center'},statusBtnText:{color:'#C4B5FD',fontWeight:'900',fontSize:12},content:{padding:16,paddingBottom:36,gap:12},
   hero:{flexDirection:'row-reverse',alignItems:'center',gap:14,padding:16,borderRadius:22,backgroundColor:'#0D1628',borderWidth:1,borderColor:'#263653'},avatar:{width:64,height:64,borderRadius:21,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},avatarText:{color:'#fff',fontSize:26,fontWeight:'900'},heroCopy:{flex:1,alignItems:'flex-end'},name:{color:'#fff',fontSize:21,fontWeight:'900',maxWidth:'100%'},email:{marginTop:4,color:'#94A3B8',maxWidth:'100%'},badge:{marginTop:9,flexDirection:'row-reverse',alignItems:'center',gap:6,paddingHorizontal:9,height:26,borderRadius:13,backgroundColor:'#0E2A23'},badgeDot:{width:7,height:7,borderRadius:4,backgroundColor:'#34D399'},badgeText:{color:'#A7F3D0',fontSize:11,fontWeight:'800'},
   quickGrid:{flexDirection:'row-reverse',flexWrap:'wrap',justifyContent:'space-between',rowGap:10},quick:{width:'48.5%',minHeight:76,borderRadius:18,backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A',padding:14,alignItems:'flex-end',justifyContent:'center'},quickPressed:{opacity:.7,transform:[{scale:.99}]},quickTitle:{color:'#fff',fontSize:15,fontWeight:'900'},quickSub:{marginTop:4,color:'#7C8AA5',fontSize:11},
   section:{marginTop:2,color:'#A78BFA',fontWeight:'900',textAlign:'right'},card:{padding:15,borderRadius:22,backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A',gap:9},label:{color:'#CBD5E1',fontWeight:'800',textAlign:'right'},input:{height:48,borderRadius:15,backgroundColor:'#0B1220',borderWidth:1,borderColor:'#27324A',paddingHorizontal:14,color:'#fff',textAlign:'right'},readonly:{height:48,borderRadius:15,backgroundColor:'#0B1220',borderWidth:1,borderColor:'#1F2937',justifyContent:'center',paddingHorizontal:14},readonlyText:{color:'#94A3B8',textAlign:'right'},meta:{color:'#64748B',fontSize:11,textAlign:'right'},primary:{height:48,borderRadius:15,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center',marginTop:4},primaryText:{color:'#fff',fontWeight:'900'},disabled:{opacity:.5},

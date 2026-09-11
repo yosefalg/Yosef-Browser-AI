@@ -1,99 +1,22 @@
-import { memo, useEffect, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SiteIcon } from '@/components/SiteIcon';
 import type { BrowserTab } from '@/lib/db';
+import type { ThemePalette } from '@/lib/theme';
+import type { TabViewMode } from '@/components/TabViewControls';
 
-function hostOf(value: string) {
-  try { return new URL(value).hostname.replace(/^www\./, ''); } catch { return value; }
+function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return value;}}
+function ago(ts:number){const diff=Math.max(0,Date.now()-ts);const min=Math.floor(diff/60000);if(min<1)return 'الآن';if(min<60)return `منذ ${min} د`;const hr=Math.floor(min/60);if(hr<24)return `منذ ${hr} س`;return `منذ ${Math.floor(hr/24)} ي`;}
+
+export function TabCard({tab,viewMode,theme,busy,onOpen,onDuplicate,onClose,onMenu}:{tab:BrowserTab;viewMode:TabViewMode;theme:ThemePalette;busy:boolean;onOpen:()=>void;onDuplicate:()=>void;onClose:()=>void;onMenu:()=>void}){
+  const grid=viewMode==='grid';
+  return <Pressable disabled={busy} onPress={onOpen} onLongPress={onMenu} delayLongPress={350} style={({pressed})=>[grid?s.grid:s.list,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.press,busy&&s.disabled]}>
+    <View style={s.top}><SiteIcon url={tab.url} size={grid?42:46} radius={14}/><View style={s.actions}>
+      <Pressable onPress={e=>{e.stopPropagation();onDuplicate();}} hitSlop={8} style={[s.action,{backgroundColor:theme.surface2}]} accessibilityLabel="تكرار التبويب"><Ionicons name="copy-outline" size={16} color={theme.muted}/></Pressable>
+      <Pressable onPress={e=>{e.stopPropagation();onClose();}} hitSlop={8} style={[s.action,{backgroundColor:theme.surface2}]} accessibilityLabel="إغلاق التبويب"><Ionicons name="close" size={18} color={theme.muted}/></Pressable>
+    </View></View>
+    <View style={grid?undefined:s.copy}><Text numberOfLines={grid?2:1} style={[s.title,{color:theme.text}]}>{tab.title||hostOf(tab.url)}</Text><Text numberOfLines={1} style={[s.host,{color:theme.muted}]}>{hostOf(tab.url)}</Text><View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View></View>
+  </Pressable>;
 }
 
-type Props = {
-  tab: BrowserTab;
-  compact?: boolean;
-  index?: number;
-  disabled?: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-  onDuplicate: () => void;
-  onMenu: () => void;
-};
-
-function TabCardBase({ tab, compact = false, index = 0, disabled, onOpen, onClose, onDuplicate, onMenu }: Props) {
-  const progress = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    progress.setValue(0);
-    Animated.spring(progress, {
-      toValue: 1,
-      delay: Math.min(index, 8) * 28,
-      damping: 18,
-      stiffness: 180,
-      mass: 0.7,
-      useNativeDriver: true,
-    }).start();
-  }, [index, progress, tab.id]);
-
-  const animatedStyle = {
-    opacity: progress,
-    transform: [
-      { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
-      { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) },
-    ],
-  } as const;
-
-  if (compact) {
-    return (
-      <Animated.View style={animatedStyle}>
-        <Pressable disabled={disabled} onPress={onOpen} onLongPress={onMenu} delayLongPress={320} style={({ pressed }) => [s.listRow, pressed && s.pressed, disabled && s.disabled]}>
-          <SiteIcon url={tab.url} size={42} radius={13} />
-          <View style={s.listCopy}>
-            <Text numberOfLines={1} style={s.listTitle}>{tab.title || hostOf(tab.url)}</Text>
-            <Text numberOfLines={1} style={s.host}>{hostOf(tab.url)}</Text>
-          </View>
-          <Pressable onPress={(e) => { e.stopPropagation(); onMenu(); }} hitSlop={8} style={s.more}><Text style={s.moreText}>•••</Text></Pressable>
-          <Pressable onPress={(e) => { e.stopPropagation(); onClose(); }} hitSlop={10} style={s.close}><Text style={s.closeText}>×</Text></Pressable>
-        </Pressable>
-      </Animated.View>
-    );
-  }
-
-  return (
-    <Animated.View style={[s.gridWrap, animatedStyle]}>
-      <Pressable disabled={disabled} onPress={onOpen} onLongPress={onMenu} delayLongPress={320} style={({ pressed }) => [s.card, pressed && s.cardPressed, disabled && s.disabled]}>
-        <View style={s.cardTop}>
-          <SiteIcon url={tab.url} size={42} radius={13} />
-          <View style={s.cardActions}>
-            <Pressable onPress={(e) => { e.stopPropagation(); onDuplicate(); }} hitSlop={8} style={s.smallAction}><Text style={s.duplicateText}>⧉</Text></Pressable>
-            <Pressable onPress={(e) => { e.stopPropagation(); onClose(); }} hitSlop={10} style={s.smallAction}><Text style={s.closeText}>×</Text></Pressable>
-          </View>
-        </View>
-        <Text numberOfLines={2} style={s.cardTitle}>{tab.title || hostOf(tab.url)}</Text>
-        <Text numberOfLines={1} style={s.host}>{hostOf(tab.url)}</Text>
-        <Pressable onPress={(e) => { e.stopPropagation(); onMenu(); }} style={s.menuLine}><Text style={s.menuText}>المزيد</Text><Text style={s.menuDots}>•••</Text></Pressable>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-export const TabCard = memo(TabCardBase);
-
-const s = StyleSheet.create({
-  gridWrap:{width:'48%'},
-  card:{minHeight:166,borderRadius:22,padding:13,backgroundColor:'#101827',borderWidth:1,borderColor:'#26334A'},
-  cardPressed:{transform:[{scale:.985}],borderColor:'#7457E8',backgroundColor:'#121C2F'},
-  disabled:{opacity:.55},
-  cardTop:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
-  cardActions:{flexDirection:'row',gap:6},
-  smallAction:{width:32,height:32,borderRadius:11,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},
-  duplicateText:{color:'#C4B5FD',fontSize:17,fontWeight:'900'},
-  closeText:{color:'#A7B0C0',fontSize:21,lineHeight:22},
-  cardTitle:{marginTop:15,color:'#F8FAFC',fontSize:14,fontWeight:'900',textAlign:'right',lineHeight:20},
-  host:{marginTop:5,color:'#718096',fontSize:10,textAlign:'right'},
-  menuLine:{marginTop:'auto',paddingTop:12,flexDirection:'row-reverse',justifyContent:'space-between',alignItems:'center'},
-  menuText:{color:'#9D8DF1',fontSize:10,fontWeight:'900'},menuDots:{color:'#65728A',fontSize:13,letterSpacing:1},
-  listRow:{minHeight:68,borderRadius:19,paddingHorizontal:12,paddingVertical:10,backgroundColor:'#101827',borderWidth:1,borderColor:'#26334A',flexDirection:'row-reverse',alignItems:'center',gap:10},
-  pressed:{borderColor:'#7457E8',backgroundColor:'#121C2F'},
-  listCopy:{flex:1,alignItems:'flex-end'},listTitle:{color:'#F8FAFC',fontSize:14,fontWeight:'900',textAlign:'right',maxWidth:'100%'},
-  more:{width:34,height:34,borderRadius:11,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},moreText:{color:'#9D8DF1',fontSize:13,fontWeight:'900',letterSpacing:1},
-  close:{width:34,height:34,borderRadius:11,backgroundColor:'#172033',alignItems:'center',justifyContent:'center'},
-});
+const s=StyleSheet.create({grid:{width:'48.4%',minHeight:168,borderRadius:22,borderWidth:1,padding:13,gap:13},list:{width:'100%',minHeight:86,borderRadius:20,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'center',gap:12},top:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},actions:{flexDirection:'row',gap:6},action:{width:30,height:30,borderRadius:10,alignItems:'center',justifyContent:'center'},copy:{flex:1},title:{fontSize:14,fontWeight:'900',textAlign:'right',lineHeight:20},host:{fontSize:10,marginTop:5,textAlign:'right'},meta:{marginTop:8,flexDirection:'row-reverse',alignItems:'center',gap:4},time:{fontSize:9,fontWeight:'700'},press:{opacity:.84,transform:[{scale:.985}]},disabled:{opacity:.5}});

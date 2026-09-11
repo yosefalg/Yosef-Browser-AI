@@ -56,9 +56,7 @@ function validateConfig(configText: string) {
   if (!value) throw new Error('ملف WireGuard فارغ.');
   if (value.length > 32_768) throw new Error('ملف WireGuard أكبر من الحد المسموح.');
   if (value.includes('\0')) throw new Error('ملف WireGuard يحتوي على بيانات غير صالحة.');
-  if (/^\s*</.test(value) || /^\s*\{/.test(value)) {
-    throw new Error('إعداد WireGuard المستلم من الخدمة ليس نصًا صالحًا.');
-  }
+  if (/^\s*</.test(value) || /^\s*\{/.test(value)) throw new Error('إعداد WireGuard المستلم من الخدمة ليس نصًا صالحًا.');
 
   let section: 'interface' | 'peer' | null = null;
   const interfaceFields = new Map<string, string>();
@@ -68,7 +66,6 @@ function validateConfig(configText: string) {
   for (const rawLine of value.split('\n')) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
-
     if (/^\[Interface\]$/i.test(line)) {
       section = 'interface';
       currentPeer = null;
@@ -80,13 +77,11 @@ function validateConfig(configText: string) {
       peers.push(currentPeer);
       continue;
     }
-
     const equalAt = line.indexOf('=');
     if (equalAt <= 0 || !section) continue;
     const key = line.slice(0, equalAt).trim().toLowerCase();
     const fieldValue = line.slice(equalAt + 1).trim();
     if (!fieldValue) continue;
-
     if (section === 'interface') interfaceFields.set(key, fieldValue);
     else currentPeer?.set(key, fieldValue);
   }
@@ -98,45 +93,29 @@ function validateConfig(configText: string) {
     Boolean(peer.get('allowedips')?.trim())
   );
 
-  if (!privateKey || !validPeer) {
-    throw new Error('إعداد WireGuard المرتبط بالحساب غير صالح أو غير مكتمل.');
-  }
-
+  if (!privateKey || !validPeer) throw new Error('إعداد WireGuard المرتبط بالحساب غير صالح أو غير مكتمل.');
   return value;
 }
 
 function nativeVpnError(error: unknown, fallback: string) {
   const vpnError = error as NativeVpnErrorLike | null;
   switch (vpnError?.code) {
-    case 'VPN_PERMISSION_DENIED':
-      return new Error('تم رفض إذن VPN من Android. اسمح بالاتصال ثم حاول مجددًا.');
-    case 'VPN_NO_ACTIVITY':
-      return new Error('تعذر فتح إذن VPN الآن. أعد فتح شاشة RAID VPN وحاول مجددًا.');
-    case 'VPN_CONFIG_EMPTY':
-      return new Error('إعداد WireGuard فارغ أو غير صالح.');
-    case 'VPN_CONNECT_FAILED':
-      return new Error('تعذر تشغيل نفق WireGuard. تحقق من أن خادم RAID VPN متاح.');
-    case 'VPN_DISCONNECT_FAILED':
-      return new Error('تعذر قطع اتصال RAID VPN بشكل صحيح.');
-    case 'VPN_STATUS_FAILED':
-      return new Error('تعذر قراءة حالة RAID VPN من Android.');
-    default:
-      return new Error(vpnError?.message || fallback);
+    case 'VPN_PERMISSION_DENIED': return new Error('تم رفض إذن VPN من Android. اسمح بالاتصال ثم حاول مجددًا.');
+    case 'VPN_NO_ACTIVITY': return new Error('تعذر فتح إذن VPN الآن. أعد فتح شاشة RAID VPN وحاول مجددًا.');
+    case 'VPN_CONFIG_EMPTY': return new Error('إعداد WireGuard فارغ أو غير صالح.');
+    case 'VPN_CONNECT_FAILED': return new Error('تعذر تشغيل نفق WireGuard. تحقق من إعداد VPN المحفوظ ثم حاول مجددًا.');
+    case 'VPN_DISCONNECT_FAILED': return new Error('تعذر قطع اتصال RAID VPN بشكل صحيح.');
+    case 'VPN_STATUS_FAILED': return new Error('تعذر قراءة حالة RAID VPN من Android.');
+    default: return new Error(vpnError?.message || fallback);
   }
 }
 
 async function cacheConfigForUser(userId: string, configText: string, source: 'service' | 'local' = 'service') {
   const value = validateConfig(configText);
-  await SecureStore.setItemAsync(configKeyFor(userId), value, {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-  });
-  await SecureStore.setItemAsync(OWNER_KEY, userId, {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-  });
+  await SecureStore.setItemAsync(configKeyFor(userId), value, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+  await SecureStore.setItemAsync(OWNER_KEY, userId, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
   if (source === 'local') {
-    await SecureStore.setItemAsync(localMarkerFor(userId), '1', {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
+    await SecureStore.setItemAsync(localMarkerFor(userId), '1', { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
   } else {
     await SecureStore.deleteItemAsync(localMarkerFor(userId)).catch(() => {});
   }
@@ -152,6 +131,20 @@ async function loadConfigForUser(userId: string) {
 
 async function isLocalConfigForUser(userId: string) {
   return (await SecureStore.getItemAsync(localMarkerFor(userId))) === '1';
+}
+
+async function getLocalProfile(userId: string): Promise<VpnProvisioningState | null> {
+  const config = await loadConfigForUser(userId);
+  if (!config) return null;
+  if (!(await isLocalConfigForUser(userId))) return null;
+  try {
+    validateConfig(config);
+    return { configured: true, source: 'local' };
+  } catch {
+    await SecureStore.deleteItemAsync(configKeyFor(userId)).catch(() => {});
+    await SecureStore.deleteItemAsync(localMarkerFor(userId)).catch(() => {});
+    return null;
+  }
 }
 
 async function clearConfigForUser(userId?: string) {
@@ -170,7 +163,6 @@ async function getValidSession() {
   if (error) throw error;
   let session = data.session;
   if (!session) return null;
-
   const expiresSoon = session.expires_at ? session.expires_at * 1000 - Date.now() < 60_000 : false;
   if (expiresSoon) {
     const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
@@ -185,10 +177,7 @@ async function currentUserId() {
 }
 
 async function invokeVpnConfig(accessToken: string) {
-  return getSupabase().functions.invoke('raid-vpn-config', {
-    body: {},
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  return getSupabase().functions.invoke('raid-vpn-config', { body: {}, headers: { Authorization: `Bearer ${accessToken}` } });
 }
 
 function functionStatus(error: unknown) {
@@ -201,18 +190,11 @@ async function mapFunctionError(error: unknown): Promise<VpnSyncError> {
     const message = error instanceof Error ? error.message : 'تعذر الاتصال بخدمة RAID VPN.';
     return new VpnSyncError(message, true);
   }
-
   try {
     const payload = await response.clone().json() as VpnFunctionPayload;
-    if (payload.error === 'UNAUTHORIZED' || response.status === 401 || response.status === 403) {
-      return new VpnSyncError('انتهت جلسة الحساب. سجّل الدخول مجددًا.', false);
-    }
-    if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') {
-      return new VpnSyncError('خدمة RAID VPN غير مهيأة على الخادم.', false);
-    }
-    if (payload.error === 'VPN_PROFILE_INVALID') {
-      return new VpnSyncError('إعداد VPN المرتبط بالحساب غير صالح.', false);
-    }
+    if (payload.error === 'UNAUTHORIZED' || response.status === 401 || response.status === 403) return new VpnSyncError('انتهت جلسة الحساب. سجّل الدخول مجددًا.', false);
+    if (payload.error === 'VPN_SERVICE_NOT_CONFIGURED') return new VpnSyncError('خدمة RAID VPN غير مهيأة على الخادم.', false);
+    if (payload.error === 'VPN_PROFILE_INVALID') return new VpnSyncError('إعداد VPN المرتبط بالحساب غير صالح.', false);
     return new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', response.status >= 500);
   } catch {
     return new VpnSyncError('تعذر مزامنة إعداد VPN من الخادم.', response.status >= 500);
@@ -242,6 +224,11 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
   const owner = await SecureStore.getItemAsync(OWNER_KEY);
   if (owner && owner !== user.id) await clearConfigForUser(owner);
 
+  // Local WireGuard is authoritative on this device. Never wait for the RAID
+  // provisioning service when the user already has a valid tunnel saved.
+  const localProfile = await getLocalProfile(user.id);
+  if (localProfile) return localProfile;
+
   let { data, error } = await invokeVpnConfig(session.access_token);
   if (error && functionStatus(error) === 401) {
     const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
@@ -259,16 +246,8 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
   }
 
   if (!payload?.configured || !payload.configText) {
-    const cached = await loadConfigForUser(user.id);
-    if (cached && await isLocalConfigForUser(user.id)) {
-      return { configured: true, source: 'local' };
-    }
-    if (payload?.reason === 'NO_VPN_SERVER') {
-      throw new VpnSyncError('خادم RAID VPN غير مربوط بخدمة التزويد التلقائي بعد.', false);
-    }
-    if (payload?.reason === 'PROVISIONING_UNAVAILABLE') {
-      throw new VpnSyncError('خدمة تجهيز RAID VPN غير متاحة مؤقتًا.', true);
-    }
+    if (payload?.reason === 'NO_VPN_SERVER') throw new VpnSyncError('خادم RAID VPN غير مربوط بخدمة التزويد التلقائي بعد.', false);
+    if (payload?.reason === 'PROVISIONING_UNAVAILABLE') throw new VpnSyncError('خدمة تجهيز RAID VPN غير متاحة مؤقتًا.', true);
     return { configured: false, source: 'none' };
   }
 
@@ -277,12 +256,13 @@ export async function syncVpnProfileFromAccount(): Promise<VpnProvisioningState>
 }
 
 async function prepareVpnProfileForConnect(userId: string) {
-  let lastError: unknown = null;
+  const localProfile = await getLocalProfile(userId);
+  if (localProfile) return localProfile;
 
+  let lastError: unknown = null;
   for (let index = 0; index < PROVISION_RETRY_DELAYS.length; index += 1) {
     const delay = PROVISION_RETRY_DELAYS[index];
     if (delay > 0) await sleep(delay);
-
     try {
       const state = await syncVpnProfileFromAccount();
       if (state.configured) return state;
@@ -291,14 +271,11 @@ async function prepareVpnProfileForConnect(userId: string) {
       const cached = await loadConfigForUser(userId);
       if (cached) {
         const local = await isLocalConfigForUser(userId);
-        if (local || canUseCachedServiceConfig(error)) {
-          return { configured: true, source: local ? 'local' : 'cache' } as VpnProvisioningState;
-        }
+        if (local || canUseCachedServiceConfig(error)) return { configured: true, source: local ? 'local' : 'cache' } as VpnProvisioningState;
       }
       if (!(error instanceof VpnSyncError) || !error.allowCachedFallback) throw error;
     }
   }
-
   if (lastError) throw lastError;
   throw new Error('لم يتم تجهيز RAID VPN لهذا الحساب حتى الآن.');
 }
@@ -310,13 +287,14 @@ export async function getVpnProvisioningState(): Promise<VpnProvisioningState> {
     return { configured: false, source: 'none' };
   }
 
+  const localProfile = await getLocalProfile(userId);
+  if (localProfile) return localProfile;
+
   try {
     return await syncVpnProfileFromAccount();
   } catch (error) {
     const cached = await loadConfigForUser(userId);
     if (!cached) return { configured: false, source: 'none' };
-    const local = await isLocalConfigForUser(userId);
-    if (local) return { configured: true, source: 'local' };
     if (!canUseCachedServiceConfig(error)) {
       await clearConfigForUser(userId);
       throw error;
@@ -330,9 +308,8 @@ export async function connectVpn() {
   if (!userId) throw new Error('سجّل الدخول أولًا لتشغيل RAID VPN.');
 
   await prepareVpnProfileForConnect(userId);
-
   const config = await loadConfigForUser(userId);
-  if (!config) throw new Error('RAID VPN لم يستلم إعداد اتصال من الخادم بعد.');
+  if (!config) throw new Error('لا يوجد إعداد VPN صالح محفوظ على هذا الجهاز حتى الآن.');
   try {
     return await native().connect(validateConfig(config));
   } catch (error) {

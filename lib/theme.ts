@@ -1,4 +1,4 @@
-export type ThemeName = 'cinematic' | 'amoled' | 'light' | 'cyber';
+export type ThemeName = 'cinematic' | 'amoled' | 'light';
 
 export type ThemePalette = {
   bg: string;
@@ -14,20 +14,16 @@ export type ThemePalette = {
 
 export const themes: Record<ThemeName, ThemePalette> = {
   cinematic: {
-    bg: '#070B14', surface: '#111827', surface2: '#172033', text: '#F8FAFC', muted: '#94A3B8', accent: '#7C3AED', border: '#27324A',
-    gradient: ['#05070C', '#0A0F19', '#0D1220'], accentGradient: ['#7C3AED', '#4F46E5'],
+    bg: '#070B14', surface: '#101725', surface2: '#151E30', text: '#F8FAFC', muted: '#8E9AAE', accent: '#7C3AED', border: '#27324A',
+    gradient: ['#060910', '#0A1020', '#0D1424'], accentGradient: ['#8B5CF6', '#4F46E5'],
   },
   amoled: {
-    bg: '#000000', surface: '#090909', surface2: '#121212', text: '#FFFFFF', muted: '#A3A3A3', accent: '#8B5CF6', border: '#202020',
-    gradient: ['#000000', '#030303', '#080808'], accentGradient: ['#8B5CF6', '#6D28D9'],
+    bg: '#000000', surface: '#090A0C', surface2: '#111317', text: '#FFFFFF', muted: '#9CA3AF', accent: '#8B5CF6', border: '#24262B',
+    gradient: ['#000000', '#020203', '#08080A'], accentGradient: ['#8B5CF6', '#5B21B6'],
   },
   light: {
-    bg: '#F4F7FB', surface: '#FFFFFF', surface2: '#EEF2F7', text: '#101828', muted: '#667085', accent: '#6D28D9', border: '#D0D5DD',
-    gradient: ['#F8FAFC', '#F4F7FB', '#EEF2F7'], accentGradient: ['#7C3AED', '#6D28D9'],
-  },
-  cyber: {
-    bg: '#041018', surface: '#071A26', surface2: '#0B2433', text: '#E6FBFF', muted: '#78A7B8', accent: '#00D4FF', border: '#134052',
-    gradient: ['#031016', '#061924', '#082532'], accentGradient: ['#00D4FF', '#0284C7'],
+    bg: '#F2F1EF', surface: '#FFFFFF', surface2: '#EAE8E4', text: '#24201D', muted: '#716B65', accent: '#6D5BD0', border: '#D8D4CE',
+    gradient: ['#F8F7F5', '#F1EFEC', '#E8E5E1'], accentGradient: ['#7C6BE8', '#5E50C8'],
   },
 };
 

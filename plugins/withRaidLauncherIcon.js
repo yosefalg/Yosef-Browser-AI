@@ -23,7 +23,6 @@ module.exports = function withRaidLauncherIcon(config) {
     }
     return cfg;
   });
-
   return withDangerousMod(config, ['android', async (cfg) => {
     const resDir = path.join(cfg.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res', 'drawable');
     fs.mkdirSync(resDir, { recursive: true });

@@ -72,11 +72,21 @@ export default function DownloadsScreen() {
   }, [refresh]);
 
   const summary = useMemo(() => {
-    const active = items.filter(item => item.state === 'downloading' || item.state === 'paused').length;
+    const running = items.filter(item => item.state === 'downloading');
+    const paused = items.filter(item => item.state === 'paused');
+    const active = running.length + paused.length;
     const completed = items.filter(item => item.state === 'completed').length;
     const failed = items.filter(item => item.state === 'failed' || item.state === 'cancelled').length;
     const written = items.reduce((sum,item) => sum + (item.written_bytes || 0), 0);
-    return { active, completed, failed, written };
+    const speed = running.reduce((sum,item) => sum + (item.speed_bps || 0), 0);
+    const known = running.filter(item => (item.total_bytes || 0) > 0);
+    const knownTotal = known.reduce((sum,item) => sum + (item.total_bytes || 0), 0);
+    const knownWritten = known.reduce((sum,item) => sum + Math.min(item.written_bytes || 0, item.total_bytes || 0), 0);
+    const remainingBytes = knownTotal > 0 ? Math.max(0, knownTotal - knownWritten) : null;
+    const remainingSeconds = remainingBytes !== null && speed > 1 ? Math.ceil(remainingBytes / speed) : null;
+    const aggregateProgress = knownTotal > 0 ? Math.min(1, knownWritten / knownTotal) : null;
+    const unknownSize = running.length - known.length;
+    return { active, running: running.length, paused: paused.length, completed, failed, written, speed, remainingBytes, remainingSeconds, aggregateProgress, unknownSize };
   }, [items]);
 
   const visible = useMemo(()=>items.filter(item=>{
@@ -91,12 +101,32 @@ export default function DownloadsScreen() {
     catch (error) { Alert.alert('التنزيلات', error instanceof Error ? error.message : 'تعذر تنفيذ العملية.'); }
   };
 
+  const pauseAll = async () => {
+    const ids = items.filter(item => item.state === 'downloading').map(item => item.id);
+    if (!ids.length) return;
+    const results = await Promise.allSettled(ids.map(id => pauseDownload(id)));
+    const failed = results.filter(result => result.status === 'rejected').length;
+    await refresh();
+    if (failed) Alert.alert('التنزيلات', `تم إيقاف ${ids.length - failed} تنزيل، وتعذر إيقاف ${failed}.`);
+  };
+
+  const resumeAll = async () => {
+    const ids = items.filter(item => item.state === 'paused').map(item => item.id);
+    if (!ids.length) return;
+    const results = await Promise.allSettled(ids.map(id => resumeDownload(id)));
+    const failed = results.filter(result => result.status === 'rejected').length;
+    await refresh();
+    if (failed) Alert.alert('التنزيلات', `تم استكمال ${ids.length - failed} تنزيل، وتعذر استكمال ${failed}.`);
+  };
+
   const filters:Array<{key:Filter;label:string;count:number;icon:keyof typeof Ionicons.glyphMap}> = [
     {key:'all',label:'الكل',count:items.length,icon:'layers-outline'},
     {key:'active',label:'نشط',count:summary.active,icon:'pulse-outline'},
     {key:'completed',label:'مكتمل',count:summary.completed,icon:'checkmark-circle-outline'},
     {key:'failed',label:'متوقف',count:summary.failed,icon:'alert-circle-outline'},
   ];
+
+  const aggregateRemaining = eta(summary.remainingSeconds);
 
   return (
     <SafeAreaView edges={['top','bottom','left','right']} style={[s.root,{backgroundColor:theme.bg}]}>
@@ -108,6 +138,24 @@ export default function DownloadsScreen() {
 
       {loading ? <View style={s.center}><ActivityIndicator color={theme.accent} /></View> : (
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+          {summary.active > 0 && <View style={[s.livePanel,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+            <View style={s.liveTop}>
+              <View style={[s.liveIcon,{backgroundColor:theme.surface2}]}><Ionicons name="speedometer-outline" size={24} color={theme.accent}/></View>
+              <View style={s.liveCopy}>
+                <Text style={[s.liveTitle,{color:theme.text}]}>حالة التنزيل الآن</Text>
+                <Text style={[s.liveSpeed,{color:theme.accent}]}>{summary.speed > 0 ? `${bytes(summary.speed)}/ث` : 'بانتظار تدفق البيانات'}</Text>
+              </View>
+              <View style={s.liveNumbers}><Text style={[s.liveCount,{color:theme.text}]}>{summary.running}</Text><Text style={[s.liveLabel,{color:theme.muted}]}>يعمل</Text></View>
+            </View>
+            {summary.remainingBytes !== null && <Text style={[s.liveDetail,{color:theme.muted}]}>متبقٍ {bytes(summary.remainingBytes)}{aggregateRemaining ? ` • تقريبًا ${aggregateRemaining}` : ''}</Text>}
+            {summary.unknownSize > 0 && <Text style={[s.liveHint,{color:theme.muted}]}>هناك {summary.unknownSize} تنزيل لا يرسل حجمه الكامل؛ لن يعرض RAID له وقتًا متبقيًا وهميًا.</Text>}
+            {summary.aggregateProgress !== null && <View style={[s.liveTrack,{backgroundColor:theme.surface2}]}><View style={[s.liveProgress,{backgroundColor:theme.accent,width:`${Math.max(2,Math.round(summary.aggregateProgress*100))}%`}]} /></View>}
+            <View style={s.bulkActions}>
+              {summary.running > 0 && <Pressable onPress={() => void pauseAll()} style={[s.bulkButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pause" size={16} color={theme.text}/><Text style={[s.bulkText,{color:theme.text}]}>إيقاف الكل</Text></Pressable>}
+              {summary.paused > 0 && <Pressable onPress={() => void resumeAll()} style={[s.bulkButton,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff"/><Text style={s.bulkPrimary}>استكمال الكل</Text></Pressable>}
+            </View>
+          </View>}
+
           <View style={s.summary}>
             <View style={[s.summaryItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="pulse" size={18} color={theme.accent} /><Text style={[s.summaryValue,{color:theme.text}]}>{summary.active}</Text><Text style={[s.summaryLabel,{color:theme.muted}]}>نشط</Text></View>
             <View style={[s.summaryItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="checkmark-done" size={18} color="#7FB890" /><Text style={[s.summaryValue,{color:theme.text}]}>{summary.completed}</Text><Text style={[s.summaryLabel,{color:theme.muted}]}>مكتمل</Text></View>
@@ -159,5 +207,7 @@ export default function DownloadsScreen() {
 }
 
 const s = StyleSheet.create({
-  root:{flex:1},header:{minHeight:72,paddingHorizontal:16,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1},headerButton:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',borderWidth:1},headerCopy:{flex:1},title:{fontSize:21,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,textAlign:'right',marginTop:3},body:{padding:16,gap:12,paddingBottom:42},center:{flex:1,alignItems:'center',justifyContent:'center'},summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},press:{transform:[{scale:.985}],opacity:.86}
+  root:{flex:1},header:{minHeight:72,paddingHorizontal:16,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1},headerButton:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',borderWidth:1},headerCopy:{flex:1},title:{fontSize:21,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,textAlign:'right',marginTop:3},body:{padding:16,gap:12,paddingBottom:42},center:{flex:1,alignItems:'center',justifyContent:'center'},
+  livePanel:{padding:16,borderRadius:24,borderWidth:1,gap:10},liveTop:{flexDirection:'row-reverse',alignItems:'center',gap:11},liveIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},liveCopy:{flex:1,alignItems:'flex-end'},liveTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},liveSpeed:{marginTop:3,fontSize:18,fontWeight:'900',textAlign:'right'},liveNumbers:{alignItems:'center',minWidth:44},liveCount:{fontSize:18,fontWeight:'900'},liveLabel:{fontSize:9,marginTop:1},liveDetail:{fontSize:11,textAlign:'right',fontWeight:'700'},liveHint:{fontSize:10,lineHeight:17,textAlign:'right'},liveTrack:{height:7,borderRadius:99,overflow:'hidden'},liveProgress:{height:'100%',borderRadius:99},bulkActions:{flexDirection:'row-reverse',gap:8,flexWrap:'wrap'},bulkButton:{height:38,paddingHorizontal:13,borderRadius:13,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:6},bulkText:{fontSize:11,fontWeight:'800'},bulkPrimary:{fontSize:11,fontWeight:'900',color:'#fff'},
+  summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},press:{transform:[{scale:.985}],opacity:.86}
 });

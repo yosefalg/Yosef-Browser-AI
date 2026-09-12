@@ -4,12 +4,14 @@ export type SitePreferences = {
   desktopMode: boolean;
   thirdPartyCookies: boolean;
   autoplayMedia: boolean;
+  adBlock: boolean;
 };
 
 export const DEFAULT_SITE_PREFERENCES: SitePreferences = {
   desktopMode: false,
   thirdPartyCookies: true,
   autoplayMedia: true,
+  adBlock: true,
 };
 
 const STORE_KEY = 'browser_site_preferences_v1';
@@ -31,6 +33,7 @@ function sanitize(value: Partial<SitePreferences> | null | undefined): SitePrefe
     desktopMode: value?.desktopMode === true,
     thirdPartyCookies: value?.thirdPartyCookies !== false,
     autoplayMedia: value?.autoplayMedia !== false,
+    adBlock: value?.adBlock !== false,
   };
 }
 

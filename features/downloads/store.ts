@@ -11,6 +11,7 @@ async function migrate(d: SQLite.SQLiteDatabase) {
   if (!names.has('speed_bps')) await d.execAsync('ALTER TABLE downloads ADD COLUMN speed_bps REAL NOT NULL DEFAULT 0;');
   if (!names.has('eta_seconds')) await d.execAsync('ALTER TABLE downloads ADD COLUMN eta_seconds INTEGER;');
   if (!names.has('resume_data')) await d.execAsync('ALTER TABLE downloads ADD COLUMN resume_data TEXT;');
+  if (!names.has('referer')) await d.execAsync('ALTER TABLE downloads ADD COLUMN referer TEXT;');
   migrated = true;
 }
 
@@ -24,6 +25,7 @@ async function db() {
       url TEXT NOT NULL,
       file_name TEXT NOT NULL,
       local_uri TEXT,
+      referer TEXT,
       state TEXT NOT NULL,
       progress REAL NOT NULL DEFAULT 0,
       total_bytes INTEGER,
@@ -41,12 +43,12 @@ async function db() {
   return value;
 }
 
-export async function createDownload(url: string, fileName: string, localUri: string) {
+export async function createDownload(url: string, fileName: string, localUri: string, referer: string | null = null) {
   const d = await db();
   const now = Date.now();
   const result = await d.runAsync(
-    'INSERT INTO downloads (url,file_name,local_uri,state,progress,total_bytes,written_bytes,speed_bps,eta_seconds,resume_data,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    url, fileName, localUri, 'queued', 0, null, 0, 0, null, null, null, now, now,
+    'INSERT INTO downloads (url,file_name,local_uri,referer,state,progress,total_bytes,written_bytes,speed_bps,eta_seconds,resume_data,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    url, fileName, localUri, referer, 'queued', 0, null, 0, 0, null, null, null, now, now,
   );
   return Number(result.lastInsertRowId);
 }

@@ -24,6 +24,22 @@ async function ensureDirectory() {
   return root;
 }
 
+function safeReferer(value?: string | null) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (!/^https?:$/.test(parsed.protocol)) return null;
+    return `${parsed.protocol}//${parsed.host}/`;
+  } catch {
+    return null;
+  }
+}
+
+function requestOptions(referer?: string | null) {
+  const safe = safeReferer(referer);
+  return safe ? { headers: { Referer: safe } } : {};
+}
+
 function progressHandler(id: number) {
   return async (progress: FileSystem.DownloadProgressData) => {
     const now = Date.now();
@@ -95,7 +111,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
   }
 }
 
-export async function startDownload(url: string) {
+export async function startDownload(url: string, referer?: string | null) {
   if (!/^https:\/\//i.test(url)) throw new Error('RAID يسمح بالتنزيل الآمن عبر HTTPS فقط.');
   const root = await ensureDirectory();
   const fileName = safeFileName(url);
@@ -103,8 +119,9 @@ export async function startDownload(url: string) {
   const exists = await FileSystem.getInfoAsync(destination);
   if (exists.exists) destination = `${root}${Date.now()}-${fileName}`;
 
-  const id = await createDownload(url, fileName, destination);
-  const task = FileSystem.createDownloadResumable(url, destination, {}, progressHandler(id));
+  const storedReferer = safeReferer(referer);
+  const id = await createDownload(url, fileName, destination, storedReferer);
+  const task = FileSystem.createDownloadResumable(url, destination, requestOptions(storedReferer), progressHandler(id));
   void runTask(id, task);
   return id;
 }
@@ -136,7 +153,7 @@ export async function resumeDownload(id: number) {
     await updateDownload(id, { state: 'failed', resume_data: null, speed_bps: 0, eta_seconds: null, error: 'ملف التنزيل الجزئي لم يعد موجودًا. اضغط إعادة لبدء التنزيل من جديد.' });
     throw new Error('ملف التنزيل الجزئي غير موجود على الجهاز. استخدم إعادة التنزيل.');
   }
-  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, {}, progressHandler(id), resumeData);
+  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, requestOptions(item.referer), progressHandler(id), resumeData);
   void runTask(id, task);
 }
 
@@ -233,7 +250,7 @@ export async function retryDownload(id: number) {
     error: null,
   });
 
-  const task = FileSystem.createDownloadResumable(item.url, item.local_uri, {}, progressHandler(id));
+  const task = FileSystem.createDownloadResumable(item.url, item.local_uri, requestOptions(item.referer), progressHandler(id));
   void runTask(id, task);
   return id;
 }

@@ -2,6 +2,8 @@ import { startDownload } from '@/features/downloads/download-manager';
 
 const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
+const recentDownloads = new Map<string, { id: number; at: number }>();
+const DEDUPE_WINDOW_MS = 3000;
 
 export type BrowserDownloadResult =
   | { kind: 'media'; url: string }
@@ -21,10 +23,30 @@ function isLikelyStreamPage(value: string) {
   }
 }
 
+function safePageReferer(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (!/^https?:$/.test(parsed.protocol)) return null;
+    return `${parsed.protocol}//${parsed.host}/`;
+  } catch {
+    return null;
+  }
+}
+
+function recentDownload(url: string) {
+  const now = Date.now();
+  for (const [key, value] of recentDownloads) {
+    if (now - value.at > DEDUPE_WINDOW_MS) recentDownloads.delete(key);
+  }
+  const existing = recentDownloads.get(url);
+  return existing && now - existing.at <= DEDUPE_WINDOW_MS ? existing.id : null;
+}
+
 /**
  * Routes WebView download events without hijacking inline video playback.
  * Ordinary files are handed to RAID Download Manager; direct media remains
  * in the in-app player, while insecure/non-web URLs are rejected.
+ * Duplicate WebView callbacks are collapsed so one tap creates one download.
  */
 export async function routeBrowserDownload(downloadUrl: string, pageUrl: string): Promise<BrowserDownloadResult> {
   const candidate = downloadUrl.trim();
@@ -38,6 +60,10 @@ export async function routeBrowserDownload(downloadUrl: string, pageUrl: string)
     return { kind: 'blocked', reason: 'RAID يسمح بتنزيل الملفات عبر HTTPS فقط لحماية الجهاز.' };
   }
 
-  const id = await startDownload(candidate);
+  const duplicateId = recentDownload(candidate);
+  if (duplicateId) return { kind: 'download', url: candidate, id: duplicateId };
+
+  const id = await startDownload(candidate, safePageReferer(pageUrl));
+  recentDownloads.set(candidate, { id, at: Date.now() });
   return { kind: 'download', url: candidate, id };
 }

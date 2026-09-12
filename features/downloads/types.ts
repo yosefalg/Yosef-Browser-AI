@@ -5,6 +5,7 @@ export type DownloadItem = {
   url: string;
   file_name: string;
   local_uri: string | null;
+  referer: string | null;
   state: DownloadState;
   progress: number;
   total_bytes: number | null;

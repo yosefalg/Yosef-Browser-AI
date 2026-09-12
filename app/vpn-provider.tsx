@@ -56,11 +56,11 @@ export default function VpnProviderScreen(){
         <MaterialCommunityIcons name="open-in-new" size={18} color={theme.muted}/>
       </Pressable>)}</View>
 
-      <View style={s.sectionHead}><MaterialCommunityIcons name="text-box-key-outline" size={18} color={theme.accent}/><Text style={[s.section,{color:theme.accent}]}>إعداد WireGuard المخصص</Text></View>
+      <View style={s.sectionHead}><MaterialCommunityIcons name="text-box-outline" size={18} color={theme.accent}/><Text style={[s.section,{color:theme.accent}]}>إعداد WireGuard المخصص</Text></View>
       <View style={[s.card,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <Text style={[s.hint,{color:theme.muted}]}>ألصق ملف .conf كاملًا. يتم التحقق من Interface وPrivateKey وPeer وEndpoint وAllowedIPs قبل الحفظ.</Text>
         <TextInput value={config} onChangeText={setConfig} multiline autoCapitalize="none" autoCorrect={false} textAlign="left" placeholder={'[Interface]\nPrivateKey = ...\nAddress = ...\n\n[Peer]\nPublicKey = ...\nEndpoint = ...\nAllowedIPs = 0.0.0.0/0'} placeholderTextColor={theme.muted} style={[s.input,{backgroundColor:theme.surface2,borderColor:theme.border,color:theme.text}]} accessibilityLabel="إعداد WireGuard"/>
-        <Pressable onPress={save} disabled={busy||!config.trim()} style={({pressed})=>[s.primary,{backgroundColor:theme.accent},(busy||!config.trim()||pressed)&&s.pressed]} accessibilityRole="button"><View style={s.buttonRow}><MaterialCommunityIcons name={busy?'progress-clock':'content-save-lock-outline'} size={19} color="#fff"/><Text style={s.primaryText}>{busy?'جارٍ التحقق والحفظ…':'تحقق واحفظ الإعداد'}</Text></View></Pressable>
+        <Pressable onPress={save} disabled={busy||!config.trim()} style={({pressed})=>[s.primary,{backgroundColor:theme.accent},(busy||!config.trim()||pressed)&&s.pressed]} accessibilityRole="button"><View style={s.buttonRow}><MaterialCommunityIcons name={busy?'progress-clock':'content-save'} size={19} color="#fff"/><Text style={s.primaryText}>{busy?'جارٍ التحقق والحفظ…':'تحقق واحفظ الإعداد'}</Text></View></Pressable>
         {!!message&&<View style={[s.messageBox,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="information-outline" size={18} color={theme.accent}/><Text style={[s.message,{color:theme.text}]}>{message}</Text></View>}
       </View>
 

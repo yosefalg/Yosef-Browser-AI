@@ -11,6 +11,7 @@ import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/read
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
 import { isVpnConnected } from '@/lib/vpn';
 import { DEFAULT_SITE_PREFERENCES, getSitePreferences, resetSitePreferences, saveSitePreferences, type SitePreferences } from '@/lib/site-preferences';
+import { routeBrowserDownload } from '@/features/downloads/browser-download';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 const RENDERER_RECOVERY_WINDOW_MS = 30_000;
@@ -296,6 +297,11 @@ export default function BrowserScreen() {
     router.push('/vpn');
   };
 
+  const openDownloads = () => {
+    setMenuOpen(false);
+    router.push('/downloads');
+  };
+
   const updateSitePreference = async (patch: Partial<SitePreferences>, reload = false) => {
     const next = { ...sitePrefs, ...patch };
     setSitePrefs(next);
@@ -330,6 +336,29 @@ export default function BrowserScreen() {
     setMediaUrl(candidate);
     setMediaUrls((current) => current.includes(candidate) ? current : [candidate, ...current].slice(0, 12));
     setMediaOpen(true);
+  };
+
+  const handleFileDownload = (downloadUrl: string) => {
+    void routeBrowserDownload(downloadUrl, loadedUrl)
+      .then((result) => {
+        if (result.kind === 'media') {
+          openInlineMedia(result.url);
+          return;
+        }
+        if (result.kind === 'blocked') {
+          Alert.alert('RAID Downloads', result.reason);
+          return;
+        }
+        Alert.alert(
+          'بدأ التنزيل',
+          'تم إرسال الملف إلى مدير تنزيلات RAID ويمكنك متابعة التصفح بينما يكتمل.',
+          [
+            { text: 'متابعة', style: 'cancel' },
+            { text: 'فتح التنزيلات', onPress: openDownloads },
+          ],
+        );
+      })
+      .catch((error) => Alert.alert('RAID Downloads', error instanceof Error ? error.message : 'تعذر بدء التنزيل.'));
   };
 
   const onMessage = (event: WebViewMessageEvent) => {
@@ -490,12 +519,7 @@ export default function BrowserScreen() {
           }}
           onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
           onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}
-          onFileDownload={(event) => {
-            const downloadUrl = event.nativeEvent.downloadUrl || '';
-            if (isDirectMediaUrl(downloadUrl) || (isLikelyStreamPage(loadedUrl) && /^https?:\/\//i.test(downloadUrl))) {
-              openInlineMedia(downloadUrl);
-            }
-          }}
+          onFileDownload={(event) => handleFileDownload(event.nativeEvent.downloadUrl || '')}
           onMessage={onMessage}
         />
         {loadError ? (
@@ -531,6 +555,7 @@ export default function BrowserScreen() {
             <Pressable style={styles.menuItem} onPress={openMediaPlayer}><Ionicons name="play-circle-outline" size={20} color="#D5AA88" /><Text style={styles.menuText}>{mediaUrls.length ? `RAID Media Player • ${mediaUrls.length}` : 'تشغيل فيديو الصفحة'}</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={openReader}><Ionicons name="reader-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>وضع القراءة</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={toggleDesktop}><Ionicons name={sitePrefs.desktopMode ? 'phone-portrait-outline' : 'desktop-outline'} size={19} color="#D5AA88" /><Text style={styles.menuText}>{sitePrefs.desktopMode ? 'عرض الهاتف لهذا الموقع' : 'عرض سطح المكتب لهذا الموقع'}</Text></Pressable>
+            <Pressable style={styles.menuItem} onPress={openDownloads}><Ionicons name="download-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>التنزيلات</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={shareCurrent}><Ionicons name="share-social-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>مشاركة الصفحة</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); setSiteInfoOpen(true); }}><Ionicons name="options-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>أمان وإعدادات الموقع</Text></Pressable>
             <Pressable style={styles.menuItem} onPress={openVpn}><Ionicons name={vpnConnected ? 'shield-checkmark' : 'shield-outline'} size={19} color="#D5AA88" /><Text style={styles.menuText}>{vpnConnected ? 'RAID VPN • متصل' : 'RAID VPN'}</Text></Pressable>

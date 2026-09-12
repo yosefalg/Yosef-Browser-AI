@@ -1,146 +1,118 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { AgentMessage, askAgent } from '@/lib/ai';
 import { executeLocalAgentCommand } from '@/lib/agent';
-import { getLatestPageContext, getMemories } from '@/lib/db';
+import { getLatestPageContext, getMemories, getSetting } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
+import { getTheme, type ThemeName } from '@/lib/theme';
+import { AIQuickActions } from '@/components/ai/AIQuickActions';
 
 export default function AIScreen() {
   const params = useLocalSearchParams<{ prompt?: string; url?: string; title?: string }>();
-  const [messages, setMessages] = useState<AgentMessage[]>([{ role: 'assistant', content: 'مرحباً، أنا RAID AI. اسألني عن الصفحة الحالية أو اطلب تلخيصًا، شرحًا أو مقارنة.' }]);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [lastFailedText, setLastFailedText] = useState('');
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const lastAutoPrompt = useRef('');
-  const listRef = useRef<FlatList<AgentMessage>>(null);
+  const [messages,setMessages]=useState<AgentMessage[]>([{role:'assistant',content:'مرحباً، أنا RAID AI. أستطيع تلخيص الصفحة، شرحها، استخراج أهم المعلومات أو تنفيذ أوامر RAID المحلية المدعومة.'}]);
+  const [text,setText]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [signedIn,setSignedIn]=useState<boolean|null>(null);
+  const [lastFailedText,setLastFailedText]=useState('');
+  const [keyboardOpen,setKeyboardOpen]=useState(false);
+  const [themeName,setThemeName]=useState<ThemeName>('cinematic');
+  const theme=useMemo(()=>getTheme(themeName),[themeName]);
+  const lastAutoPrompt=useRef('');
+  const listRef=useRef<FlatList<AgentMessage>>(null);
 
-  const refreshAccountState = useCallback(async () => {
-    try { setSignedIn(Boolean(await getCurrentSession())); }
-    catch { setSignedIn(false); }
-  }, []);
+  const refreshState=useCallback(async()=>{
+    const [session,savedTheme]=await Promise.all([
+      getCurrentSession().catch(()=>null),
+      getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
+    ]);
+    setSignedIn(Boolean(session));
+    setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
+  },[]);
 
-  useFocusEffect(useCallback(() => { void refreshAccountState(); return () => {}; }, [refreshAccountState]));
+  useFocusEffect(useCallback(()=>{void refreshState();return()=>{};},[refreshState]));
 
-  useEffect(() => {
-    const id = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 40);
-    return () => clearTimeout(id);
-  }, [messages.length, busy]);
+  useEffect(()=>{const id=setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),40);return()=>clearTimeout(id);},[messages.length,busy]);
+  useEffect(()=>{
+    const showEvent=Platform.OS==='ios'?'keyboardWillShow':'keyboardDidShow';
+    const hideEvent=Platform.OS==='ios'?'keyboardWillHide':'keyboardDidHide';
+    const show=Keyboard.addListener(showEvent,()=>{setKeyboardOpen(true);setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),70);});
+    const hide=Keyboard.addListener(hideEvent,()=>setKeyboardOpen(false));
+    return()=>{show.remove();hide.remove();};
+  },[]);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, () => {
-      setKeyboardOpen(true);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 70);
-    });
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-
-  const sendValue = async (raw: string) => {
-    const value = raw.trim();
-    if (!value || busy) return;
-    const next = [...messages, { role:'user', content:value } as AgentMessage];
-    setMessages(next); setText(''); setLastFailedText(''); setBusy(true);
-    try {
-      const session = await getCurrentSession();
-      if (!session) {
-        setSignedIn(false); setLastFailedText(value);
-        setMessages([...next, { role:'assistant', content:'سجّل الدخول مرة واحدة حتى يعمل RAID AI على حسابك.' }]);
+  const sendValue=useCallback(async(raw:string)=>{
+    const value=raw.trim();
+    if(!value||busy)return;
+    const next=[...messages,{role:'user',content:value} as AgentMessage];
+    setMessages(next);setText('');setLastFailedText('');setBusy(true);
+    try{
+      const session=await getCurrentSession();
+      if(!session){
+        setSignedIn(false);setLastFailedText(value);
+        setMessages([...next,{role:'assistant',content:'RAID AI السحابي يحتاج تسجيل الدخول لحماية الجلسة ومفاتيح المزود. الأوامر المحلية في التطبيق تبقى منفصلة عن ذلك.'}]);
         return;
       }
       setSignedIn(true);
-
-      const local = await executeLocalAgentCommand(value);
-      if (local.handled) {
-        setMessages([...next, { role:'assistant', content:local.message || 'تم التنفيذ.' }]);
-        return;
-      }
-
-      const [page, memories] = await Promise.all([
-        getLatestPageContext().catch(() => null),
-        getMemories(6).catch(() => []),
-      ]);
-      const memoryText = memories.length
-        ? `ذاكرة محلية مفيدة:\n${memories.map((m) => `- ${m.kind}: ${m.value}`).join('\n')}`.slice(0, 1500)
-        : '';
-      const pageText = page
-        ? `${memoryText ? `${memoryText}\n\n` : ''}الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text.slice(0, 6500)}`
-        : memoryText || undefined;
-
-      const aiMessages = local.aiPrompt
-        ? [...messages.slice(-8), { role: 'user', content: local.aiPrompt } as AgentMessage]
-        : next.slice(-9);
-      const answer = await askAgent(aiMessages, pageText);
-      setMessages([...next, { role:'assistant', content:answer }]);
-    } catch (error) {
+      const local=await executeLocalAgentCommand(value);
+      if(local.handled){setMessages([...next,{role:'assistant',content:local.message||'تم التنفيذ.'}]);return;}
+      const [page,memories]=await Promise.all([getLatestPageContext().catch(()=>null),getMemories(6).catch(()=>[])]);
+      const memoryText=memories.length?`ذاكرة محلية مفيدة:\n${memories.map(m=>`- ${m.kind}: ${m.value}`).join('\n')}`.slice(0,1500):'';
+      const pageText=page?`${memoryText?`${memoryText}\n\n`:''}الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text.slice(0,6500)}`:memoryText||undefined;
+      const aiMessages=local.aiPrompt?[...messages.slice(-8),{role:'user',content:local.aiPrompt} as AgentMessage]:next.slice(-9);
+      const answer=await askAgent(aiMessages,pageText);
+      setMessages([...next,{role:'assistant',content:answer}]);
+    }catch(error){
       setLastFailedText(value);
-      setMessages([...next, { role:'assistant', content:error instanceof Error ? error.message : 'تعذر تشغيل RAID AI الآن.' }]);
-      void refreshAccountState();
-    } finally { setBusy(false); }
-  };
+      setMessages([...next,{role:'assistant',content:error instanceof Error?error.message:'تعذر تشغيل RAID AI الآن.'}]);
+      void refreshState();
+    }finally{setBusy(false);}
+  },[busy,messages,refreshState]);
 
-  const send = () => void sendValue(text);
+  useEffect(()=>{
+    const prompt=typeof params.prompt==='string'?params.prompt.trim():'';
+    if(!prompt||lastAutoPrompt.current===prompt)return;
+    lastAutoPrompt.current=prompt;
+    const id=setTimeout(()=>void sendValue(prompt),0);
+    return()=>clearTimeout(id);
+  },[params.prompt,sendValue]);
 
-  useEffect(() => {
-    const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
-    if (!prompt || lastAutoPrompt.current === prompt) return;
-    lastAutoPrompt.current = prompt;
-    const id = setTimeout(() => void sendValue(prompt), 0);
-    return () => clearTimeout(id);
-  }, [params.prompt]);
+  const send=()=>void sendValue(text);
+  const hasContext=Boolean(params.title||params.url);
 
-  return (
-    <SafeAreaView edges={['top','bottom','left','right']} style={styles.root}>
-      <View style={styles.header}>
-        <Pressable onPress={()=>router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="رجوع"><Text style={styles.back}>‹</Text></Pressable>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>RAID AI</Text>
-          <Text style={[styles.accountState, signedIn === false && styles.accountOff]}>{signedIn === null ? 'جارٍ التحقق…' : signedIn ? 'متصل بحسابك' : 'يلزم تسجيل الدخول'}</Text>
-          {params.title ? <Text style={styles.context} numberOfLines={1}>السياق: {params.title}</Text> : null}
+  return <SafeAreaView edges={['top','bottom','left','right']} style={[s.root,{backgroundColor:theme.bg}]}>
+    <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
+      <Pressable onPress={()=>router.back()} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="رجوع"><Ionicons name="chevron-forward" size={23} color={theme.text}/></Pressable>
+      <View style={s.headerText}><Text style={[s.title,{color:theme.text}]}>RAID AI</Text><View style={s.statusLine}><View style={[s.dot,{backgroundColor:signedIn?'#4CB884':theme.muted}]}/><Text style={[s.accountState,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn===null?'جارٍ التحقق':signedIn?'الحساب متصل':'يتطلب حسابًا للخدمة السحابية'}</Text></View>{hasContext?<Text style={[s.context,{color:theme.muted}]} numberOfLines={1}>{params.title||params.url}</Text>:null}</View>
+      <View style={[s.aiBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="sparkles" size={20} color={theme.accent}/></View>
+    </View>
+
+    <KeyboardAvoidingView style={s.chat} behavior={Platform.OS==='ios'?'padding':'height'} keyboardVerticalOffset={0}>
+      {signedIn===false&&<View style={[s.loginBanner,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.loginCopy}><Ionicons name="lock-closed-outline" size={20} color={theme.accent}/><View style={{flex:1}}><Text style={[s.loginTitle,{color:theme.text}]}>RAID AI السحابي غير متصل</Text><Text style={[s.loginText,{color:theme.muted}]}>سجّل الدخول لتشغيل المزود السحابي. لن يتم ادعاء أن AI يعمل قبل توفر جلسة صالحة.</Text></View></View><Pressable onPress={()=>router.push('/login')} style={[s.loginButton,{backgroundColor:theme.accent}]}><Ionicons name="log-in-outline" size={18} color="#fff"/><Text style={s.loginButtonText}>تسجيل الدخول</Text></Pressable></View>}
+
+      <FlatList ref={listRef} style={s.listView} data={messages} keyExtractor={(_,i)=>String(i)} contentContainerStyle={[s.list,keyboardOpen&&s.listKeyboard]} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'} onContentSizeChange={()=>{if(keyboardOpen||busy)listRef.current?.scrollToEnd({animated:false});}} renderItem={({item})=>{
+        const user=item.role==='user';
+        return <View style={[s.messageRow,user&&s.messageRowUser]}><View style={[s.avatar,{backgroundColor:user?theme.surface2:theme.surface,borderColor:theme.border}]}><Ionicons name={user?'person-outline':'sparkles-outline'} size={15} color={user?theme.text:theme.accent}/></View><View style={[s.msg,{backgroundColor:user?theme.accent:theme.surface,borderColor:user?theme.accent:theme.border}]}><Text selectable style={[s.msgText,{color:user?'#fff':theme.text}]}>{item.content}</Text></View></View>;
+      }} ListFooterComponent={busy?<View style={s.messageRow}><View style={[s.avatar,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="sparkles-outline" size={15} color={theme.accent}/></View><View style={[s.msg,s.thinking,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="ellipsis-horizontal" size={20} color={theme.accent}/><Text style={[s.thinkingText,{color:theme.muted}]}>جاري معالجة الطلب</Text></View></View>:null}/>
+
+      <View style={[s.bottomPanel,{backgroundColor:theme.bg,borderTopColor:theme.border}]}>
+        {!keyboardOpen&&<AIQuickActions theme={theme} disabled={busy||signedIn===false} onSelect={prompt=>void sendValue(prompt)}/>} 
+        {!!lastFailedText&&!busy&&signedIn!==false&&<Pressable onPress={()=>void sendValue(lastFailedText)} style={[s.retryButton,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="refresh" size={17} color={theme.accent}/><Text style={[s.retryText,{color:theme.text}]}>إعادة آخر طلب</Text></Pressable>}
+        <View style={[s.composer,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+          <TextInput value={text} onChangeText={setText} onFocus={()=>setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),70)} onSubmitEditing={send} placeholder="اسأل RAID AI عن الصفحة..." placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} multiline textAlign="right" maxLength={4000} accessibilityLabel="رسالة RAID AI"/>
+          <Pressable onPress={send} disabled={busy||!text.trim()} style={[s.send,{backgroundColor:theme.accent},(busy||!text.trim())&&s.sendDisabled]} accessibilityLabel="إرسال إلى RAID AI"><Ionicons name={busy?'hourglass-outline':'arrow-up'} size={20} color="#fff"/></Pressable>
         </View>
-        <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI</Text></View>
+        <View style={s.privacyLine}><Ionicons name="shield-checkmark-outline" size={13} color={theme.muted}/><Text style={[s.privacyText,{color:theme.muted}]}>يُرسل سياق الصفحة فقط عند استخدام المساعد، والوضع الخاص لا يشارك السياق.</Text></View>
       </View>
-
-      <KeyboardAvoidingView style={styles.chat} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
-        {signedIn === false && <View style={styles.loginBanner}><Text style={styles.loginText}>سجّل الدخول إلى حساب RAID نفسه المستخدم في بقية الخدمات.</Text><Pressable onPress={() => router.push('/login')} style={styles.loginButton}><Text style={styles.loginButtonText}>تسجيل الدخول</Text></Pressable></View>}
-
-        <FlatList
-          ref={listRef}
-          style={styles.listView}
-          data={messages}
-          keyExtractor={(_,i)=>String(i)}
-          contentContainerStyle={[styles.list, keyboardOpen && styles.listKeyboard]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          onContentSizeChange={() => { if (keyboardOpen || busy) listRef.current?.scrollToEnd({ animated: false }); }}
-          renderItem={({item})=><View style={[styles.msg,item.role==='user'?styles.user:styles.ai]}><Text style={styles.msgText}>{item.content}</Text></View>}
-          ListFooterComponent={busy ? <View style={[styles.msg, styles.ai, styles.thinking]}><Text style={styles.thinkingText}>RAID AI يفكر…</Text></View> : null}
-        />
-
-        {!!lastFailedText && !busy && signedIn !== false && <View style={styles.retryWrap}><Pressable onPress={() => void sendValue(lastFailedText)} style={styles.retryButton}><Text style={styles.retryText}>إعادة إرسال آخر طلب</Text></Pressable></View>}
-        {!keyboardOpen && <View style={styles.hints}><Text style={styles.hint}>جرّب: «لخّص الصفحة» • «اشرح ببساطة» • «قارن بين التبويبات»</Text></View>}
-        <View style={[styles.composer, keyboardOpen && styles.composerKeyboard]}>
-          <TextInput value={text} onChangeText={setText} onFocus={() => setTimeout(() => listRef.current?.scrollToEnd({ animated:true }), 70)} onSubmitEditing={send} placeholder="اكتب سؤالك أو طلبك..." placeholderTextColor="#64748B" style={styles.input} multiline textAlign="right" maxLength={4000} accessibilityLabel="رسالة RAID AI" />
-          <Pressable onPress={send} disabled={busy || !text.trim()} style={[styles.send, (busy || !text.trim()) && styles.sendDisabled]} accessibilityRole="button" accessibilityLabel="إرسال إلى RAID AI"><Text style={styles.sendText}>{busy?'…':'↑'}</Text></Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
 }
 
-const styles=StyleSheet.create({
-  root:{flex:1,backgroundColor:'#070B14'},chat:{flex:1,minHeight:0},
-  header:{minHeight:62,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:5,borderBottomWidth:1,borderBottomColor:'#1E293B',gap:10},
-  backButton:{width:40,height:40,borderRadius:13,alignItems:'center',justifyContent:'center',backgroundColor:'#111827',borderWidth:1,borderColor:'#25334A'},back:{fontSize:30,color:'#fff',marginTop:-3},
-  headerText:{flex:1,alignItems:'flex-end'},title:{fontSize:18,fontWeight:'900',color:'#fff'},accountState:{marginTop:1,fontSize:10,color:'#4ADE80',fontWeight:'800'},accountOff:{color:'#F59E0B'},context:{marginTop:1,maxWidth:'95%',fontSize:10,color:'#94A3B8',textAlign:'right'},
-  aiBadge:{width:40,height:40,borderRadius:13,backgroundColor:'#7C3AED',alignItems:'center',justifyContent:'center'},aiBadgeText:{color:'#fff',fontWeight:'900'},
-  loginBanner:{margin:12,padding:13,borderRadius:18,backgroundColor:'#151026',borderWidth:1,borderColor:'#5B21B6',gap:9},loginText:{color:'#DDD6FE',textAlign:'right',lineHeight:20},loginButton:{height:40,borderRadius:13,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},loginButtonText:{color:'#fff',fontWeight:'900'},
-  listView:{flex:1,minHeight:0},list:{padding:14,gap:10,paddingBottom:18},listKeyboard:{paddingBottom:8},msg:{maxWidth:'88%',paddingHorizontal:14,paddingVertical:11,borderRadius:18},user:{alignSelf:'flex-end',backgroundColor:'#7C3AED'},ai:{alignSelf:'flex-start',backgroundColor:'#111827',borderWidth:1,borderColor:'#27324A'},msgText:{color:'#F8FAFC',lineHeight:21,textAlign:'right'},thinking:{paddingVertical:9},thinkingText:{color:'#A78BFA',fontSize:12,fontWeight:'800'},
-  retryWrap:{paddingHorizontal:12,paddingBottom:8,backgroundColor:'#0B1220'},retryButton:{height:40,borderRadius:13,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#2B3952'},retryText:{color:'#C4B5FD',fontWeight:'900'},
-  hints:{paddingHorizontal:14,paddingTop:7,backgroundColor:'#0B1220'},hint:{color:'#64748B',fontSize:10,textAlign:'right'},composer:{flexDirection:'row',alignItems:'flex-end',gap:9,paddingHorizontal:12,paddingTop:9,paddingBottom:9,borderTopWidth:1,borderTopColor:'#1E293B',backgroundColor:'#0B1220'},composerKeyboard:{paddingTop:7,paddingBottom:5},input:{flex:1,maxHeight:120,minHeight:46,borderRadius:16,backgroundColor:'#111827',color:'#fff',padding:11,borderWidth:1,borderColor:'#1F2937'},send:{width:46,height:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED'},sendDisabled:{opacity:.4},sendText:{color:'#fff',fontSize:23,fontWeight:'900'}
+const s=StyleSheet.create({
+  root:{flex:1},chat:{flex:1,minHeight:0},header:{minHeight:68,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:7,borderBottomWidth:1,gap:10},iconButton:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},headerText:{flex:1,alignItems:'flex-end'},title:{fontSize:18,fontWeight:'900'},statusLine:{marginTop:2,flexDirection:'row-reverse',alignItems:'center',gap:5},dot:{width:6,height:6,borderRadius:3},accountState:{fontSize:9,fontWeight:'800'},context:{marginTop:2,maxWidth:'96%',fontSize:9,textAlign:'right'},aiBadge:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},
+  loginBanner:{margin:12,padding:14,borderRadius:20,borderWidth:1,gap:11},loginCopy:{flexDirection:'row-reverse',alignItems:'flex-start',gap:10},loginTitle:{fontSize:13,fontWeight:'900',textAlign:'right'},loginText:{fontSize:10,lineHeight:17,textAlign:'right',marginTop:4},loginButton:{height:42,borderRadius:14,alignItems:'center',justifyContent:'center',flexDirection:'row-reverse',gap:7},loginButtonText:{color:'#fff',fontWeight:'900'},
+  listView:{flex:1,minHeight:0},list:{padding:14,gap:12,paddingBottom:18},listKeyboard:{paddingBottom:8},messageRow:{flexDirection:'row',alignItems:'flex-end',gap:7,maxWidth:'94%'},messageRowUser:{alignSelf:'flex-end',flexDirection:'row-reverse'},avatar:{width:30,height:30,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},msg:{maxWidth:'88%',paddingHorizontal:14,paddingVertical:11,borderRadius:18,borderWidth:1},msgText:{lineHeight:21,textAlign:'right',fontSize:13},thinking:{flexDirection:'row-reverse',alignItems:'center',gap:7},thinkingText:{fontSize:11,fontWeight:'800'},
+  bottomPanel:{paddingHorizontal:12,paddingTop:9,paddingBottom:9,borderTopWidth:1,gap:9},retryButton:{height:40,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center',flexDirection:'row-reverse',gap:7},retryText:{fontSize:11,fontWeight:'900'},composer:{minHeight:54,maxHeight:132,borderRadius:18,borderWidth:1,flexDirection:'row',alignItems:'flex-end',gap:9,padding:6},input:{flex:1,maxHeight:118,minHeight:40,paddingHorizontal:8,paddingVertical:9,fontSize:13},send:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},sendDisabled:{opacity:.38},privacyLine:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:5,paddingHorizontal:5},privacyText:{fontSize:8.5,textAlign:'center'},pressed:{opacity:.72,transform:[{scale:.98}]}
 });

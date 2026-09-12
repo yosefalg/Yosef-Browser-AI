@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { normalizeInput } from '@/lib/url';
 import { getBrowserTabs, getSetting, setSetting } from '@/lib/db';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { isVpnConnected } from '@/lib/vpn';
 import { HomeMenu, type HomeMenuItem } from '@/components/HomeMenu';
 import { listDownloads } from '@/features/downloads/store';
@@ -33,7 +33,7 @@ export default function HomeScreen(){
     getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
     isVpnConnected().catch(()=>false),
     getSetting<boolean>('raid_2_11_welcome_seen',false).catch(()=>false),
-  ]).then(([items,tabs,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setThemeName(saved==='cinematic'||saved==='amoled'||saved==='light'?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
+  ]).then(([items,tabs,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setThemeName(isThemeName(saved)?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
 
   const openUrl=(value:string)=>{const clean=value.trim();if(!clean)return;Keyboard.dismiss();router.push({pathname:'/browser',params:{url:normalizeInput(clean)}})};
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
@@ -41,7 +41,8 @@ export default function HomeScreen(){
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
   const dismissWelcome=()=>{setWelcomeOpen(false);void setSetting('raid_2_11_welcome_seen',true)};
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
-  const glass=themeName==='light'?'rgba(255,255,255,.76)':'rgba(255,255,255,.065)';
+  const lightSurface=themeName==='light'||themeName==='ivory';
+  const glass=lightSurface?'rgba(255,255,255,.76)':'rgba(255,255,255,.065)';
 
   const menuItems=useMemo<HomeMenuItem[]>(()=>[
     {label:'الرئيسية',icon:'home-outline',hint:'هنا البداية',onPress:()=>setMenuOpen(false)},
@@ -88,7 +89,7 @@ export default function HomeScreen(){
       <View style={[s.quickRail,{backgroundColor:glass,borderColor:theme.border}]}> 
         {dock.map((item,index)=><View key={item.label} style={s.quickSlot}>
           <Pressable onPress={item.onPress} accessibilityRole="button" accessibilityLabel={item.label} style={({pressed})=>[s.quickAction,pressed&&s.quickPressed]}>
-            <LinearGradient colors={[theme.surface2,themeName==='light'?'rgba(255,255,255,.82)':'rgba(255,255,255,.035)']} style={[s.quickIcon,{borderColor:theme.border}]}><Ionicons name={item.icon} size={21} color={theme.accent}/></LinearGradient>
+            <LinearGradient colors={[theme.surface2,lightSurface?'rgba(255,255,255,.82)':'rgba(255,255,255,.035)']} style={[s.quickIcon,{borderColor:theme.border}]}><Ionicons name={item.icon} size={21} color={theme.accent}/></LinearGradient>
             <Text style={[s.quickTitle,{color:theme.text}]} numberOfLines={1}>{item.label}</Text>
             <Text style={[s.quickSub,{color:theme.muted}]} numberOfLines={1}>{item.sub}</Text>
           </Pressable>

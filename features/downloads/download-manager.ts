@@ -66,10 +66,17 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
     paused.delete(id);
     progressStats.delete(id);
     if (!result?.uri) throw new Error('لم يرجع Android ملفًا بعد اكتمال التنزيل.');
+
+    const fileInfo = await FileSystem.getInfoAsync(result.uri, { size: true });
+    if (!fileInfo.exists) throw new Error('اكتمل الطلب لكن ملف التنزيل غير موجود على الجهاز.');
+    const finalSize = typeof fileInfo.size === 'number' && fileInfo.size > 0 ? fileInfo.size : null;
+
     await updateDownload(id, {
       state: 'completed',
       progress: 1,
       local_uri: result.uri,
+      total_bytes: finalSize,
+      written_bytes: finalSize || undefined,
       speed_bps: 0,
       eta_seconds: 0,
       resume_data: null,
@@ -123,22 +130,74 @@ export async function resumeDownload(id: number) {
   const item = await getDownload(id);
   const resumeData = memoryState?.resumeData || item?.resume_data || undefined;
   if (!item?.local_uri || !resumeData) throw new Error('لا توجد جلسة تنزيل قابلة للاستكمال. أعد التنزيل إذا كان Android قد حذف بيانات الاستئناف.');
+  const partial = await FileSystem.getInfoAsync(item.local_uri);
+  if (!partial.exists) {
+    paused.delete(id);
+    await updateDownload(id, { state: 'failed', resume_data: null, speed_bps: 0, eta_seconds: null, error: 'ملف التنزيل الجزئي لم يعد موجودًا. اضغط إعادة لبدء التنزيل من جديد.' });
+    throw new Error('ملف التنزيل الجزئي غير موجود على الجهاز. استخدم إعادة التنزيل.');
+  }
   const task = new FileSystem.DownloadResumable(item.url, item.local_uri, {}, progressHandler(id), resumeData);
   void runTask(id, task);
 }
 
 export async function reconcileInterruptedDownloads() {
   const items = await listDownloads(200);
-  const interrupted = items.filter(item => item.state === 'downloading' && !active.has(item.id));
-  await Promise.all(interrupted.map(item => updateDownload(item.id, {
-    state: item.resume_data ? 'paused' : 'failed',
-    speed_bps: 0,
-    eta_seconds: null,
-    error: item.resume_data
-      ? 'توقف التنزيل عند إغلاق التطبيق ويمكن استكماله.'
-      : 'توقف التنزيل قبل حفظ نقطة استئناف. اضغط إعادة لبدء تنزيل جديد.',
-  })));
-  return interrupted.length;
+  let reconciled = 0;
+
+  await Promise.all(items.map(async (item) => {
+    if (item.state === 'downloading' && !active.has(item.id)) {
+      reconciled += 1;
+      const partialExists = item.local_uri ? (await FileSystem.getInfoAsync(item.local_uri).catch(() => ({ exists: false }))).exists : false;
+      const resumable = Boolean(item.resume_data && partialExists);
+      await updateDownload(item.id, {
+        state: resumable ? 'paused' : 'failed',
+        speed_bps: 0,
+        eta_seconds: null,
+        resume_data: resumable ? item.resume_data : null,
+        error: resumable
+          ? 'توقف التنزيل عند إغلاق التطبيق ويمكن استكماله.'
+          : 'توقف التنزيل ولم تعد نقطة الاستئناف قابلة للاستخدام. اضغط إعادة لبدء تنزيل جديد.',
+      });
+      return;
+    }
+
+    if (item.state === 'paused' && item.local_uri) {
+      const partial = await FileSystem.getInfoAsync(item.local_uri).catch(() => ({ exists: false }));
+      if (!partial.exists) {
+        reconciled += 1;
+        paused.delete(item.id);
+        await updateDownload(item.id, {
+          state: 'failed',
+          resume_data: null,
+          speed_bps: 0,
+          eta_seconds: null,
+          error: 'ملف التنزيل الجزئي حُذف من الجهاز. اضغط إعادة لبدء تنزيل جديد.',
+        });
+      }
+      return;
+    }
+
+    if (item.state === 'completed' && item.local_uri) {
+      const info = await FileSystem.getInfoAsync(item.local_uri, { size: true }).catch(() => ({ exists: false }));
+      if (!info.exists) {
+        reconciled += 1;
+        await updateDownload(item.id, {
+          state: 'failed',
+          progress: 0,
+          speed_bps: 0,
+          eta_seconds: null,
+          error: 'الملف المكتمل لم يعد موجودًا على الجهاز. يمكنك إعادة تنزيله.',
+        });
+        return;
+      }
+      const actualSize = 'size' in info && typeof info.size === 'number' && info.size > 0 ? info.size : null;
+      if (actualSize && (item.total_bytes !== actualSize || item.written_bytes !== actualSize)) {
+        await updateDownload(item.id, { total_bytes: actualSize, written_bytes: actualSize, progress: 1 });
+      }
+    }
+  }));
+
+  return reconciled;
 }
 
 export async function cancelDownload(id: number) {
@@ -182,6 +241,11 @@ export async function retryDownload(id: number) {
 export async function openDownload(id: number) {
   const item = await getDownload(id);
   if (!item?.local_uri || item.state !== 'completed') throw new Error('الملف غير جاهز للفتح.');
+  const info = await FileSystem.getInfoAsync(item.local_uri);
+  if (!info.exists) {
+    await updateDownload(id, { state: 'failed', progress: 0, error: 'ملف التنزيل غير موجود على الجهاز. يمكنك إعادة تنزيله.' });
+    throw new Error('ملف التنزيل لم يعد موجودًا على الجهاز.');
+  }
   const uri = await FileSystem.getContentUriAsync(item.local_uri);
   const supported = await Linking.canOpenURL(uri);
   if (!supported) throw new Error('لا يوجد تطبيق مناسب لفتح هذا الملف.');
@@ -192,7 +256,10 @@ export async function shareDownload(id: number) {
   const item = await getDownload(id);
   if (!item?.local_uri || item.state !== 'completed') throw new Error('الملف غير جاهز للمشاركة.');
   const info = await FileSystem.getInfoAsync(item.local_uri);
-  if (!info.exists) throw new Error('ملف التنزيل غير موجود على الجهاز.');
+  if (!info.exists) {
+    await updateDownload(id, { state: 'failed', progress: 0, error: 'ملف التنزيل غير موجود على الجهاز. يمكنك إعادة تنزيله.' });
+    throw new Error('ملف التنزيل غير موجود على الجهاز.');
+  }
   const available = await Sharing.isAvailableAsync();
   if (!available) throw new Error('المشاركة غير متاحة على هذا الجهاز.');
   await Sharing.shareAsync(item.local_uri, { dialogTitle: `مشاركة ${item.file_name}` });

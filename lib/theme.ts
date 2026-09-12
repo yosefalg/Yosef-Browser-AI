@@ -14,16 +14,16 @@ export type ThemePalette = {
 
 export const themes: Record<ThemeName, ThemePalette> = {
   cinematic: {
-    bg: '#232625', surface: '#343735', surface2: '#41443F', text: '#F5EFE8', muted: '#C4BBB1', accent: '#D5AA88', border: '#5A5B55',
-    gradient: ['#1D201F', '#2A2D2B', '#393A36'], accentGradient: ['#D8B292', '#B98465'],
+    bg: '#0B1118', surface: 'rgba(22,31,41,.72)', surface2: 'rgba(37,49,61,.76)', text: '#F4F8FB', muted: '#9EABB7', accent: '#76D8C8', border: 'rgba(255,255,255,.13)',
+    gradient: ['#071018', '#0D1822', '#17162A'], accentGradient: ['#76D8C8', '#7767D8'],
   },
   amoled: {
-    bg: '#000000', surface: '#090A0C', surface2: '#111317', text: '#FFFFFF', muted: '#9CA3AF', accent: '#B99579', border: '#24262B',
-    gradient: ['#000000', '#020203', '#08080A'], accentGradient: ['#C5A083', '#8B6A55'],
+    bg: '#000000', surface: 'rgba(10,13,17,.80)', surface2: 'rgba(19,24,31,.84)', text: '#FFFFFF', muted: '#909AA5', accent: '#82E1D0', border: 'rgba(255,255,255,.105)',
+    gradient: ['#000000', '#030608', '#080712'], accentGradient: ['#82E1D0', '#6F5DD2'],
   },
   light: {
-    bg: '#E7DDD4', surface: '#F7F2EC', surface2: '#DDD5CD', text: '#2C2C2A', muted: '#756E68', accent: '#B88766', border: '#C8BFB6',
-    gradient: ['#EDE4DB', '#D8D3CD', '#B9B9B4'], accentGradient: ['#D8B292', '#B88766'],
+    bg: '#ECEFF1', surface: 'rgba(255,255,255,.72)', surface2: 'rgba(242,245,247,.82)', text: '#17212A', muted: '#687580', accent: '#237E77', border: 'rgba(30,52,67,.13)',
+    gradient: ['#F7F9FA', '#E8EEF0', '#E5E1EC'], accentGradient: ['#55BDB0', '#7169C7'],
   },
 };
 

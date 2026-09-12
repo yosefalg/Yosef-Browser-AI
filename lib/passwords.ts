@@ -14,6 +14,10 @@ export type VaultEntry = {
 const INDEX_KEY = 'raid.vault.index.v1';
 const PREFIX = 'raid.vault.entry.';
 const VAULT_SESSION_MS = 90_000;
+const MAX_ORIGIN_LENGTH = 300;
+const MAX_USERNAME_LENGTH = 320;
+const MAX_PASSWORD_LENGTH = 4096;
+const SECURE_OPTIONS = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY } as const;
 let unlockedUntil = 0;
 let pendingAuthentication: Promise<void> | null = null;
 
@@ -51,19 +55,52 @@ export function isVaultUnlocked() {
   return Date.now() < unlockedUntil;
 }
 
+function normalizeOrigin(value: string) {
+  const raw = value.trim();
+  if (!raw) throw new Error('أدخل موقعًا صالحًا.');
+  if (raw.length > MAX_ORIGIN_LENGTH) throw new Error('عنوان الموقع أطول من الحد المسموح.');
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) throw new Error('invalid');
+    return parsed.port ? `${parsed.hostname.toLowerCase()}:${parsed.port}` : parsed.hostname.toLowerCase();
+  } catch {
+    throw new Error('أدخل نطاق موقع صالحًا مثل example.com.');
+  }
+}
+
+function normalizeUsername(value: string) {
+  const normalized = value.trim();
+  if (!normalized) throw new Error('أدخل اسم المستخدم أو البريد.');
+  if (normalized.length > MAX_USERNAME_LENGTH) throw new Error('اسم المستخدم أطول من الحد المسموح.');
+  return normalized;
+}
+
+function validatePassword(value: string) {
+  if (!value) throw new Error('أدخل كلمة المرور.');
+  if (value.length > MAX_PASSWORD_LENGTH) throw new Error('كلمة المرور أطول من الحد المسموح.');
+  return value;
+}
+
+async function createEntryId() {
+  const bytes = await Crypto.getRandomBytesAsync(16);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 async function getIndex(): Promise<string[]> {
   const raw = await SecureStore.getItemAsync(INDEX_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string' && value.length > 0) : [];
+    return Array.isArray(parsed)
+      ? Array.from(new Set(parsed.filter((value): value is string => typeof value === 'string' && /^[a-zA-Z0-9-]{8,128}$/.test(value))))
+      : [];
   } catch {
     return [];
   }
 }
 
 async function setIndex(ids: string[]) {
-  await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(Array.from(new Set(ids))));
+  await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(Array.from(new Set(ids))), SECURE_OPTIONS);
 }
 
 export async function generateStrongPassword(length = 20) {
@@ -86,7 +123,7 @@ export async function generateStrongPassword(length = 20) {
 export async function saveVaultEntry(input: Omit<VaultEntry, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) {
   await ensureBiometric();
   const now = Date.now();
-  const id = input.id ?? `${now}-${Math.random().toString(36).slice(2, 10)}`;
+  const id = input.id ?? await createEntryId();
   const existingRaw = await SecureStore.getItemAsync(PREFIX + id);
   let createdAt = now;
   if (existingRaw) {
@@ -94,13 +131,13 @@ export async function saveVaultEntry(input: Omit<VaultEntry, 'id' | 'createdAt' 
   }
   const entry: VaultEntry = {
     id,
-    origin: input.origin.trim(),
-    username: input.username.trim(),
-    password: input.password,
+    origin: normalizeOrigin(input.origin),
+    username: normalizeUsername(input.username),
+    password: validatePassword(input.password),
     createdAt,
     updatedAt: now,
   };
-  await SecureStore.setItemAsync(PREFIX + id, JSON.stringify(entry), { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK });
+  await SecureStore.setItemAsync(PREFIX + id, JSON.stringify(entry), SECURE_OPTIONS);
   const ids = await getIndex();
   if (!ids.includes(id)) await setIndex([...ids, id]);
   return entry;
@@ -109,16 +146,34 @@ export async function saveVaultEntry(input: Omit<VaultEntry, 'id' | 'createdAt' 
 export async function listVaultEntries() {
   await ensureBiometric();
   const ids = await getIndex();
+  const validIds: string[] = [];
   const entries = await Promise.all(ids.map(async (id) => {
     const raw = await SecureStore.getItemAsync(PREFIX + id);
     if (!raw) return null;
-    try { return JSON.parse(raw) as VaultEntry; } catch { return null; }
+    try {
+      const parsed = JSON.parse(raw) as VaultEntry;
+      if (!parsed || parsed.id !== id || typeof parsed.origin !== 'string' || typeof parsed.username !== 'string' || typeof parsed.password !== 'string') return null;
+      const entry: VaultEntry = {
+        ...parsed,
+        origin: normalizeOrigin(parsed.origin),
+        username: normalizeUsername(parsed.username),
+        password: validatePassword(parsed.password),
+      };
+      validIds.push(id);
+      await SecureStore.setItemAsync(PREFIX + id, JSON.stringify(entry), SECURE_OPTIONS);
+      return entry;
+    } catch {
+      return null;
+    }
   }));
+  if (validIds.length !== ids.length) await setIndex(validIds);
+  else if (ids.length > 0) await setIndex(ids);
   return entries.filter((x): x is VaultEntry => Boolean(x)).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function deleteVaultEntry(id: string) {
   await ensureBiometric();
+  if (!/^[a-zA-Z0-9-]{8,128}$/.test(id)) throw new Error('معرّف عنصر الخزنة غير صالح.');
   await SecureStore.deleteItemAsync(PREFIX + id);
   const ids = await getIndex();
   await setIndex(ids.filter((x) => x !== id));

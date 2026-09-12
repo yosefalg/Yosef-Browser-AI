@@ -21,21 +21,22 @@ jobs:
       GRADLE_OPTS: -Dorg.gradle.caching=true -Dorg.gradle.parallel=true -Dorg.gradle.daemon=true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9.15.9
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
+          package-manager-cache: false
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -44,7 +45,7 @@ jobs:
         run: pnpm config set store-dir "$PNPM_STORE_DIR"
 
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .pnpm-store
           key: pnpm-${{ runner.os }}-${{ hashFiles('package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml') }}
@@ -90,7 +91,7 @@ jobs:
         run: npx expo prebuild --platform android --clean --no-install
 
       - name: Cache Gradle after prebuild
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches

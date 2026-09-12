@@ -173,7 +173,7 @@ export default function PasswordsScreen() {
         </View>
         <View style={s.actions}>
           <Pressable disabled={busy} onPress={()=>void generate()} style={({pressed})=>[s.secondary,{backgroundColor:theme.surface2,borderColor:theme.border},(pressed||busy)&&s.dim]}><MaterialCommunityIcons name="auto-fix" size={18} color={theme.accent}/><Text style={[s.secondaryText,{color:theme.text}]}>توليد قوية</Text></Pressable>
-          <Pressable disabled={busy} onPress={()=>void save()} style={({pressed})=>[s.primary,{backgroundColor:theme.accent},(pressed||busy)&&s.dim]}><MaterialCommunityIcons name="content-save-lock-outline" size={18} color="#fff"/><Text style={s.primaryText}>حفظ آمن</Text></Pressable>
+          <Pressable disabled={busy} onPress={()=>void save()} style={({pressed})=>[s.primary,{backgroundColor:theme.accent},(pressed||busy)&&s.dim]}><MaterialCommunityIcons name="content-save-all-outline" size={18} color="#fff"/><Text style={s.primaryText}>حفظ آمن</Text></Pressable>
         </View>
       </View>
 

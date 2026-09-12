@@ -67,7 +67,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
     progressStats.delete(id);
     if (!result?.uri) throw new Error('لم يرجع Android ملفًا بعد اكتمال التنزيل.');
 
-    const fileInfo = await FileSystem.getInfoAsync(result.uri, { size: true });
+    const fileInfo = await FileSystem.getInfoAsync(result.uri);
     if (!fileInfo.exists) throw new Error('اكتمل الطلب لكن ملف التنزيل غير موجود على الجهاز.');
     const finalSize = typeof fileInfo.size === 'number' && fileInfo.size > 0 ? fileInfo.size : null;
 
@@ -178,7 +178,7 @@ export async function reconcileInterruptedDownloads() {
     }
 
     if (item.state === 'completed' && item.local_uri) {
-      const info = await FileSystem.getInfoAsync(item.local_uri, { size: true }).catch(() => ({ exists: false }));
+      const info = await FileSystem.getInfoAsync(item.local_uri).catch(() => ({ exists: false }));
       if (!info.exists) {
         reconciled += 1;
         await updateDownload(item.id, {

@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Linking from 'expo-linking';
-import { createDownload, deleteDownloadRecord, getDownload, setDownloadState, updateDownload } from './store';
+import { createDownload, deleteDownloadRecord, getDownload, listDownloads, updateDownload } from './store';
 
 const active = new Map<number, FileSystem.DownloadResumable>();
 const paused = new Map<number, FileSystem.DownloadPauseState>();
@@ -124,6 +124,20 @@ export async function resumeDownload(id: number) {
   if (!item?.local_uri || !resumeData) throw new Error('لا توجد جلسة تنزيل قابلة للاستكمال. أعد التنزيل إذا كان Android قد حذف بيانات الاستئناف.');
   const task = new FileSystem.DownloadResumable(item.url, item.local_uri, {}, progressHandler(id), resumeData);
   void runTask(id, task);
+}
+
+export async function reconcileInterruptedDownloads() {
+  const items = await listDownloads(200);
+  const interrupted = items.filter(item => item.state === 'downloading' && !active.has(item.id));
+  await Promise.all(interrupted.map(item => updateDownload(item.id, {
+    state: item.resume_data ? 'paused' : 'failed',
+    speed_bps: 0,
+    eta_seconds: null,
+    error: item.resume_data
+      ? 'توقف التنزيل عند إغلاق التطبيق ويمكن استكماله.'
+      : 'توقف التنزيل قبل حفظ نقطة استئناف. اضغط إعادة لبدء تنزيل جديد.',
+  })));
+  return interrupted.length;
 }
 
 export async function cancelDownload(id: number) {

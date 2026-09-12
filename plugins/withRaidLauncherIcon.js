@@ -6,12 +6,13 @@ const VECTOR = `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="108dp" android:height="108dp"
   android:viewportWidth="108" android:viewportHeight="108">
-  <path android:fillColor="#070B14" android:pathData="M0,0H108V108H0Z"/>
-  <path android:fillColor="#10245C" android:pathData="M54,16A38,38 0,1 0,54,92A38,38 0,1 0,54,16"/>
-  <path android:fillColor="#00000000" android:strokeColor="#7C3AED" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M12,62C26,39 48,28 76,28C88,28 97,31 103,36"/>
-  <path android:fillColor="#00000000" android:strokeColor="#3B82F6" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M8,70C31,86 62,88 94,70"/>
-  <path android:fillColor="#F8FAFC" android:pathData="M29,25H60C75,25 84,33 84,45C84,55 77,62 66,64L85,84H68L51,65H44V84H29ZM44,38V53H58C65,53 69,50 69,45C69,40 65,38 58,38Z"/>
-  <path android:fillColor="#A78BFA" android:pathData="M50,18L58,12L66,18L58,24Z"/>
+  <path android:fillColor="#071018" android:pathData="M0,0H108V108H0Z"/>
+  <path android:fillColor="#0E2A2B" android:pathData="M54,14A40,40 0,1 0,54,94A40,40 0,1 0,54,14"/>
+  <path android:fillColor="#00000000" android:strokeColor="#8BE0CC" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M18,64C29,36 55,23 88,31"/>
+  <path android:fillColor="#00000000" android:strokeColor="#8A63D2" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M15,76C36,91 70,91 94,70"/>
+  <path android:fillColor="#F8FAFC" android:pathData="M30,25H59C74,25 83,33 83,45C83,55 77,62 66,64L84,84H67L51,65H45V84H30ZM45,38V53H58C65,53 69,50 69,45C69,40 65,38 58,38Z"/>
+  <path android:fillColor="#8BE0CC" android:pathData="M82,18A6,6 0,1 0,82,30A6,6 0,1 0,82,18"/>
+  <path android:fillColor="#FFFFFF" android:fillAlpha="0.12" android:pathData="M22,28L78,82L82,78L26,24Z"/>
 </vector>`;
 
 module.exports = function withRaidLauncherIcon(config) {

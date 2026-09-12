@@ -1,67 +1,60 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { normalizeInput } from '@/lib/url';
-import { getBrowserTabs, getRecentSites, getSetting, setSetting } from '@/lib/db';
+import { getBrowserTabs, getSetting, setSetting } from '@/lib/db';
 import { getTheme, type ThemeName } from '@/lib/theme';
 import { isVpnConnected } from '@/lib/vpn';
 import { HomeMenu, type HomeMenuItem } from '@/components/HomeMenu';
-import { ThemeSwitcher } from '@/components/ThemeSwitcher';
-import { SiteIcon } from '@/components/SiteIcon';
 import { listDownloads } from '@/features/downloads/store';
 import type { DownloadItem } from '@/features/downloads/types';
 import { HomeHeader } from '@/components/home/HomeHeader';
-import { HomeHero } from '@/components/home/HomeHero';
 import { HomeShortcuts } from '@/components/home/HomeShortcuts';
-import { HomeFeatureCards } from '@/components/home/HomeFeatureCards';
-import { HomeStatusStrip } from '@/components/home/HomeStatusStrip';
+import { RaidLogo } from '@/components/RaidLogo';
 
-type RecentSite={url:string;title:string;visited_at:number};
-function hostname(url:string){try{return new URL(url).hostname.replace(/^www\./,'')}catch{return url}}
-function looksLikeAIQuery(value:string){const q=value.trim();return /[؟?]$/.test(q)||/^(يا\s+raid|اسأل|اشرح|لخص|قارن|ما |ماذا |كيف |لماذا |هل )/i.test(q)}
+function looksLikeAIQuery(value:string){const q=value.trim();return /[؟?]$/.test(q)||/^(يا\s+raid|اسأل|اشرح|لخص|قارن|شنو |شكو |وين |ما |ماذا |كيف |لماذا |هل )/i.test(q)}
 
 export default function HomeScreen(){
   const [query,setQuery]=useState('');
-  const [recent,setRecent]=useState<RecentSite[]>([]);
   const [downloads,setDownloads]=useState<DownloadItem[]>([]);
   const [tabsCount,setTabsCount]=useState(0);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [menuOpen,setMenuOpen]=useState(false);
   const [vpnConnected,setVpnConnected]=useState(false);
+  const [welcomeOpen,setWelcomeOpen]=useState(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   useFocusEffect(useCallback(()=>{let alive=true;Promise.all([
-    getRecentSites(8).catch(()=>[] as RecentSite[]),
     listDownloads(12).catch(()=>[] as DownloadItem[]),
     getBrowserTabs().catch(()=>[]),
     getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
     isVpnConnected().catch(()=>false),
-  ]).then(([sites,items,tabs,saved,connected])=>{if(!alive)return;setRecent(sites);setDownloads(items);setTabsCount(tabs.length);setThemeName(saved==='cinematic'||saved==='amoled'||saved==='light'?saved:'cinematic');setVpnConnected(Boolean(connected));});return()=>{alive=false};},[]));
+    getSetting<boolean>('raid_2_11_welcome_seen',false).catch(()=>false),
+  ]).then(([items,tabs,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setThemeName(saved==='cinematic'||saved==='amoled'||saved==='light'?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
 
   const openUrl=(value:string)=>{const clean=value.trim();if(!clean)return;Keyboard.dismiss();router.push({pathname:'/browser',params:{url:normalizeInput(clean)}})};
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
   const submit=()=>looksLikeAIQuery(query)?askAI():openUrl(query);
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
-  const chooseTheme=async(value:ThemeName)=>{setThemeName(value);await setSetting('theme',value)};
-  const latestSite=recent[0];
+  const dismissWelcome=()=>{setWelcomeOpen(false);void setSetting('raid_2_11_welcome_seen',true)};
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
-  const completedDownloads=useMemo(()=>downloads.filter(item=>item.state==='completed').length,[downloads]);
+  const glass=themeName==='light'?'rgba(255,255,255,.76)':'rgba(255,255,255,.065)';
 
   const menuItems=useMemo<HomeMenuItem[]>(()=>[
-    {label:'الرئيسية',icon:'home-outline',hint:'الصفحة الرئيسية',onPress:()=>setMenuOpen(false)},
-    {label:'علامة تبويب جديدة',icon:'add-circle-outline',hint:'فتح تبويب جديد',onPress:()=>go('/browser')},
-    {label:'علامة تبويب خاصة',icon:'eye-off-outline',hint:'تصفح بخصوصية',onPress:()=>go('/browser?privateMode=1')},
-    {label:'التبويبات',icon:'albums-outline',hint:`${tabsCount} تبويب مفتوح`,badge:tabsCount||undefined,onPress:()=>go('/tabs')},
-    {label:'المكتبة والسجل',icon:'library-outline',hint:'المفضلة والسجل',onPress:()=>go('/library')},
-    {label:'عمليات التنزيل',icon:'download-outline',hint:activeDownloads?`${activeDownloads} تنزيل نشط`:'إدارة الملفات',badge:activeDownloads||undefined,onPress:()=>go('/downloads')},
-    {label:'RAID AI',icon:'sparkles-outline',hint:'مساعدك الذكي',onPress:()=>go('/ai')},
-    {label:'RAID VPN',icon:vpnConnected?'shield-checkmark-outline':'shield-outline',hint:vpnConnected?'متصل فعليًا':'غير متصل',onPress:()=>go('/vpn')},
+    {label:'الرئيسية',icon:'home-outline',hint:'هنا البداية',onPress:()=>setMenuOpen(false)},
+    {label:'تبويب جديد',icon:'add-circle-outline',hint:'افتح صفحة جديدة',onPress:()=>go('/browser')},
+    {label:'تبويب خاص',icon:'eye-off-outline',hint:'تصفح بخصوصية',onPress:()=>go('/browser?privateMode=1')},
+    {label:'التبويبات',icon:'albums-outline',hint:`${tabsCount} مفتوح`,badge:tabsCount||undefined,onPress:()=>go('/tabs')},
+    {label:'المكتبة والسجل',icon:'library-outline',hint:'السجل والمفضلة بمكانها',onPress:()=>go('/library')},
+    {label:'التنزيلات',icon:'download-outline',hint:activeDownloads?`${activeDownloads} شغال هسه`:'إدارة الملفات',badge:activeDownloads||undefined,onPress:()=>go('/downloads')},
+    {label:'RAID AI',icon:'sparkles-outline',hint:'كله شتريد',onPress:()=>go('/ai')},
+    {label:'RAID VPN',icon:vpnConnected?'shield-checkmark-outline':'shield-outline',hint:vpnConnected?'متصل وآمن':'غير متصل',onPress:()=>go('/vpn')},
     {label:'الخصوصية',icon:'lock-closed-outline',hint:'مركز الحماية',onPress:()=>go('/privacy')},
     {label:'الحساب',icon:'person-outline',hint:'إدارة الحساب',onPress:()=>go('/account')},
-    {label:'الإعدادات',icon:'settings-outline',hint:'تخصيص التطبيق',onPress:()=>go('/settings')},
+    {label:'الإعدادات',icon:'settings-outline',hint:'كل التخصيصات هنا',onPress:()=>go('/settings')},
   ],[activeDownloads,tabsCount,vpnConnected]);
 
   const shortcuts=[
@@ -71,31 +64,48 @@ export default function HomeScreen(){
     {label:'RAID VPN',service:'vpn' as const,onPress:()=>router.push('/vpn')},
   ];
 
+  const dock=[
+    {label:'التبويبات',sub:`${tabsCount} مفتوح`,icon:'albums-outline' as const,onPress:()=>router.push('/tabs')},
+    {label:'التنزيلات',sub:activeDownloads?`${activeDownloads} شغال`:'ماكو تنزيل نشط',icon:'download-outline' as const,onPress:()=>router.push('/downloads')},
+    {label:'المكتبة',sub:'السجل والمفضلة',icon:'library-outline' as const,onPress:()=>router.push('/library')},
+  ];
+
   return <LinearGradient colors={[...theme.gradient]} style={s.fill}><SafeAreaView edges={['top','bottom','left','right']} style={s.safe}>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <HomeHeader theme={theme} vpnConnected={vpnConnected} tabsCount={tabsCount} downloadsCount={activeDownloads} onMenu={()=>setMenuOpen(true)} onTabs={()=>router.push('/tabs')} onDownloads={()=>router.push('/downloads')} onVpn={()=>router.push('/vpn')}/>
 
-      <View style={[s.search,{backgroundColor:theme.surface,borderColor:theme.border}]}>
-        <Ionicons name="search-outline" size={22} color={theme.accent}/>
-        <TextInput value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="ابحث أو اكتب عنوان موقع" placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} autoCapitalize="none" autoCorrect={false}/>
+      <View style={s.greeting}><Text style={[s.hello,{color:theme.text}]}>هاي يولد 👋</Text><Text style={[s.question,{color:theme.muted}]}>وين تريد تروح اليوم؟</Text></View>
+
+      <View style={[s.search,{backgroundColor:glass,borderColor:theme.border}]}>
+        <View style={[s.searchIcon,{backgroundColor:theme.surface2}]}><Ionicons name="search-outline" size={21} color={theme.accent}/></View>
+        <TextInput value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="وين تريد تروح أو شتريد تبحث؟" placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} autoCapitalize="none" autoCorrect={false}/>
         <Pressable accessibilityRole="button" accessibilityLabel="اسأل RAID AI" onPress={askAI} style={({pressed})=>[s.aiQuick,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.press]}><Ionicons name="sparkles" size={18} color={theme.accent}/></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="فتح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={20} color="#fff"/></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="روح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={20} color="#fff"/></Pressable>
       </View>
 
-      <HomeStatusStrip theme={theme} vpnConnected={vpnConnected} tabsCount={tabsCount} activeDownloads={activeDownloads} onVpn={()=>router.push('/vpn')} onTabs={()=>router.push('/tabs')} onDownloads={()=>router.push('/downloads')}/>
       <HomeShortcuts theme={theme} items={shortcuts} onMore={()=>setMenuOpen(true)}/>
-      <HomeHero recent={latestSite} vpnConnected={vpnConnected} tabsCount={tabsCount} onPress={()=>openUrl(latestSite?.url||'https://www.google.com')}/>
-      <HomeFeatureCards theme={theme} activeDownloads={activeDownloads} completedDownloads={completedDownloads} vpnConnected={vpnConnected} tabsCount={tabsCount} onDownloads={()=>router.push('/downloads')} onLibrary={()=>router.push('/library')} onPrivacy={()=>router.push('/privacy')}/>
 
-      {recent.length>0&&<View style={[s.panel,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.panelHead}><Text style={[s.panelTitle,{color:theme.text}]}>المواقع الأخيرة</Text><Pressable onPress={()=>router.push('/library')}><Text style={[s.panelLink,{color:theme.accent}]}>عرض الكل</Text></Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.recentRow}>{recent.slice(0,6).map(site=><Pressable key={site.url} onPress={()=>openUrl(site.url)} style={({pressed})=>[s.recentCard,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.press]}><SiteIcon url={site.url} size={40} radius={12}/><Text numberOfLines={2} style={[s.recentTitle,{color:theme.text}]}>{site.title||hostname(site.url)}</Text><Text numberOfLines={1} style={[s.recentHost,{color:theme.muted}]}>{hostname(site.url)}</Text></Pressable>)}</ScrollView></View>}
+      <View style={s.dock}>{dock.map(item=><Pressable key={item.label} onPress={item.onPress} style={({pressed})=>[s.dockItem,{backgroundColor:glass,borderColor:theme.border},pressed&&s.press]}><View style={[s.dockIcon,{backgroundColor:theme.surface2}]}><Ionicons name={item.icon} size={20} color={theme.accent}/></View><Text style={[s.dockTitle,{color:theme.text}]}>{item.label}</Text><Text style={[s.dockSub,{color:theme.muted}]} numberOfLines={1}>{item.sub}</Text></Pressable>)}</View>
 
-      <View style={[s.panel,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.panelHead}><Text style={[s.panelTitle,{color:theme.text}]}>الأدوات الذكية</Text><Text style={[s.panelHint,{color:theme.muted}]}>وصول سريع</Text></View><View style={s.tools}><Pressable onPress={askAI} style={({pressed})=>[s.tool,{backgroundColor:theme.surface2},pressed&&s.press]}><View style={s.toolIcon}><Ionicons name="sparkles-outline" size={20} color={theme.accent}/></View><View style={s.toolCopy}><Text style={[s.toolTitle,{color:theme.text}]}>RAID AI</Text><Text style={[s.toolSub,{color:theme.muted}]}>تلخيص وشرح وترجمة</Text></View></Pressable><Pressable onPress={()=>router.push('/vpn')} style={({pressed})=>[s.tool,{backgroundColor:theme.surface2},pressed&&s.press]}><View style={s.toolIcon}><Ionicons name={vpnConnected?'shield-checkmark-outline':'shield-outline'} size={20} color={vpnConnected?'#4DB47A':theme.accent}/></View><View style={s.toolCopy}><Text style={[s.toolTitle,{color:theme.text}]}>RAID VPN</Text><Text style={[s.toolSub,{color:theme.muted}]}>{vpnConnected?'متصل فعليًا':'إدارة اتصال WireGuard'}</Text></View></Pressable></View></View>
+      <Pressable onPress={()=>router.push('/privacy')} style={({pressed})=>[s.security,{backgroundColor:glass,borderColor:theme.border},pressed&&s.press]}><View style={[s.securityIcon,{backgroundColor:vpnConnected?'rgba(76,184,132,.14)':theme.surface2}]}><Ionicons name={vpnConnected?'shield-checkmark':'shield-checkmark-outline'} size={22} color={vpnConnected?'#4CB884':theme.accent}/></View><View style={s.securityCopy}><Text style={[s.securityTitle,{color:theme.text}]}>حماية RAID</Text><Text style={[s.securitySub,{color:theme.muted}]}>{vpnConnected?'VPN متصل • الحماية شغالة':'الحماية الأساسية شغالة • اضغط للتفاصيل'}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>
 
-      <View style={[s.panel,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.panelHead}><Text style={[s.panelTitle,{color:theme.text}]}>المظهر</Text><Text style={[s.panelHint,{color:theme.muted}]}>3 ثيمات مريحة</Text></View><ThemeSwitcher value={themeName} onChange={value=>void chooseTheme(value)}/></View>
-      <View style={s.signature}><Text style={[s.signatureTitle,{color:theme.text}]}>RAID</Text><Text style={[s.signatureSub,{color:theme.muted}]}>Browse Smarter</Text></View>
+      <View style={s.signature}><Text style={[s.signatureTitle,{color:theme.text}]}>RAID</Text><Text style={[s.signatureSub,{color:theme.muted}]}>خفيف • مرتب • على كيفك</Text></View>
     </ScrollView>
+
     <HomeMenu visible={menuOpen} onClose={()=>setMenuOpen(false)} theme={theme} items={menuItems}/>
+
+    <Modal visible={welcomeOpen} transparent animationType="fade" onRequestClose={dismissWelcome}>
+      <View style={s.welcomeBackdrop}><LinearGradient colors={['rgba(8,12,20,.98)','rgba(16,25,35,.98)','rgba(24,20,42,.98)']} style={[s.welcomeCard,{borderColor:theme.border}]}><View style={s.logoGlow}><RaidLogo size={100}/></View><Text style={s.welcomeEyebrow}>RAID BROWSER</Text><Text style={s.welcomeTitle}>هلا بيك 👋</Text><Text style={s.welcomeText}>كلشي مرتب إلك: تصفح أسرع، واجهة أهدأ، وRAID AI أقرب لأوامرك داخل التطبيق.</Text><View style={s.welcomePoints}><View style={s.point}><Ionicons name="sparkles-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>تجربة أنظف وأخف</Text></View><View style={s.point}><Ionicons name="shield-checkmark-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>حماية بدون إزعاج</Text></View><View style={s.point}><Ionicons name="navigate-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>كله وين تريد وروح</Text></View></View><Pressable onPress={dismissWelcome} style={({pressed})=>[s.startButton,pressed&&s.press]}><Text style={s.startText}>يلا نبدأ</Text><Ionicons name="arrow-back" size={19} color="#071412"/></Pressable></LinearGradient></View>
+    </Modal>
   </SafeAreaView></LinearGradient>;
 }
 
-const s=StyleSheet.create({fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:18,paddingBottom:38,gap:14},search:{height:62,borderRadius:24,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:10,gap:7},input:{flex:1,fontSize:16,textAlign:'right',paddingHorizontal:4},aiQuick:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:46,height:46,borderRadius:16,alignItems:'center',justifyContent:'center'},panel:{borderRadius:26,borderWidth:1,padding:16,gap:12},panelHead:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},panelTitle:{fontSize:17,fontWeight:'900'},panelLink:{fontSize:11,fontWeight:'800'},panelHint:{fontSize:10},recentRow:{gap:10},recentCard:{width:142,padding:12,borderRadius:18,borderWidth:1,gap:8},recentTitle:{fontSize:12,fontWeight:'800',textAlign:'right',minHeight:32},recentHost:{fontSize:10,textAlign:'right'},tools:{flexDirection:'row-reverse',gap:10},tool:{flex:1,minHeight:82,borderRadius:18,padding:12,flexDirection:'row-reverse',alignItems:'center',gap:10},toolIcon:{width:36,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(255,255,255,.05)'},toolCopy:{flex:1},toolTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},toolSub:{fontSize:10,marginTop:4,textAlign:'right'},signature:{alignItems:'center',paddingVertical:18},signatureTitle:{fontWeight:'900',letterSpacing:5},signatureSub:{fontSize:10,marginTop:7,letterSpacing:1.4},press:{transform:[{scale:.985}],opacity:.84}});
+const s=StyleSheet.create({
+  fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:18,paddingBottom:34,gap:16},
+  greeting:{alignItems:'flex-end',paddingTop:4},hello:{fontSize:28,fontWeight:'900',textAlign:'right'},question:{fontSize:13,fontWeight:'700',textAlign:'right',marginTop:4},
+  search:{minHeight:66,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:9,gap:7,shadowColor:'#000',shadowOpacity:.12,shadowRadius:18,elevation:3},searchIcon:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center'},input:{flex:1,fontSize:15,textAlign:'right',paddingHorizontal:3},aiQuick:{width:42,height:42,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:46,height:46,borderRadius:17,alignItems:'center',justifyContent:'center'},
+  dock:{flexDirection:'row-reverse',gap:9},dockItem:{flex:1,minHeight:118,borderRadius:23,borderWidth:1,padding:11,alignItems:'flex-end',justifyContent:'space-between'},dockIcon:{width:38,height:38,borderRadius:13,alignItems:'center',justifyContent:'center'},dockTitle:{fontSize:12,fontWeight:'900',textAlign:'right'},dockSub:{fontSize:9,textAlign:'right',width:'100%'},
+  security:{minHeight:72,borderRadius:23,borderWidth:1,paddingHorizontal:13,paddingVertical:11,flexDirection:'row-reverse',alignItems:'center',gap:11},securityIcon:{width:46,height:46,borderRadius:16,alignItems:'center',justifyContent:'center'},securityCopy:{flex:1,alignItems:'flex-end'},securityTitle:{fontSize:13,fontWeight:'900'},securitySub:{fontSize:9.5,marginTop:4,textAlign:'right'},
+  signature:{alignItems:'center',paddingVertical:18},signatureTitle:{fontWeight:'900',letterSpacing:5},signatureSub:{fontSize:10,marginTop:7},press:{transform:[{scale:.98}],opacity:.84},
+  welcomeBackdrop:{flex:1,backgroundColor:'rgba(0,0,0,.72)',alignItems:'center',justifyContent:'center',padding:22},welcomeCard:{width:'100%',maxWidth:430,borderRadius:36,borderWidth:1,paddingHorizontal:25,paddingVertical:32,alignItems:'center',overflow:'hidden'},logoGlow:{padding:18,borderRadius:38,backgroundColor:'rgba(255,255,255,.035)'},welcomeEyebrow:{color:'#8BE0CC',fontSize:10,fontWeight:'900',letterSpacing:3,marginTop:18},welcomeTitle:{color:'#F7FAFC',fontSize:31,fontWeight:'900',marginTop:8},welcomeText:{color:'#AEB9C7',fontSize:13,lineHeight:22,textAlign:'center',marginTop:9,maxWidth:310},welcomePoints:{alignSelf:'stretch',gap:9,marginTop:22},point:{height:42,borderRadius:15,backgroundColor:'rgba(255,255,255,.045)',flexDirection:'row-reverse',alignItems:'center',gap:9,paddingHorizontal:12},pointText:{color:'#DCE5EC',fontSize:11,fontWeight:'800',textAlign:'right',flex:1},startButton:{height:54,alignSelf:'stretch',borderRadius:18,backgroundColor:'#8BE0CC',marginTop:24,flexDirection:'row-reverse',gap:8,alignItems:'center',justifyContent:'center'},startText:{color:'#071412',fontSize:14,fontWeight:'900'}
+});

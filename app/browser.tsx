@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, BackHandler, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
@@ -74,6 +74,32 @@ const SILENT_STREAM_ASSIST_JS = `(() => {
       });
       window.__raidMediaObserver.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
     }
+  } catch {}
+  true;
+})();`;
+const DOWNLOAD_CAPTURE_JS = `(() => {
+  try {
+    if (window.__raidDownloadCaptureInstalled) return true;
+    window.__raidDownloadCaptureInstalled = true;
+    const fileRe = /\.(?:apk|aab|zip|rar|7z|pdf|docx?|xlsx?|pptx?|csv|txt|exe|msi|dmg|deb|rpm|iso|tar|gz|tgz|bz2|xz|mp3|wav|flac|ogg)(?:$|[?#])/i;
+    const mediaRe = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
+    document.addEventListener('click', (event) => {
+      try {
+        const target = event.target;
+        const anchor = target && target.closest ? target.closest('a[href]') : null;
+        if (!anchor) return;
+        const raw = anchor.href || anchor.getAttribute('href') || '';
+        if (!raw) return;
+        const absolute = new URL(raw, location.href).href;
+        if (!/^https:\/\//i.test(absolute) || mediaRe.test(absolute)) return;
+        const explicit = anchor.hasAttribute('download');
+        if (!explicit && !fileRe.test(absolute)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        window.ReactNativeWebView?.postMessage('RAID_DOWNLOAD:' + absolute);
+      } catch {}
+    }, true);
   } catch {}
   true;
 })();`;
@@ -177,6 +203,18 @@ export default function BrowserScreen() {
     refreshVpnStatus();
     return () => {};
   }, [refreshVpnStatus]));
+
+  useFocusEffect(useCallback(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (reader) { setReader(null); return true; }
+      if (mediaOpen) { setMediaOpen(false); return true; }
+      if (siteInfoOpen) { setSiteInfoOpen(false); return true; }
+      if (menuOpen) { setMenuOpen(false); return true; }
+      if (canBack) { web.current?.goBack(); return true; }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [canBack, mediaOpen, menuOpen, reader, siteInfoOpen]));
 
   useEffect(() => {
     let alive = true;
@@ -350,8 +388,8 @@ export default function BrowserScreen() {
           return;
         }
         Alert.alert(
-          'بدأ التنزيل',
-          'تم إرسال الملف إلى مدير تنزيلات RAID ويمكنك متابعة التصفح بينما يكتمل.',
+          'بدأ التنزيل داخل RAID',
+          'يمكنك متابعة التصفح ومراقبة السرعة والحجم والوقت المتبقي من مدير تنزيلات RAID.',
           [
             { text: 'متابعة', style: 'cancel' },
             { text: 'فتح التنزيلات', onPress: openDownloads },
@@ -363,6 +401,11 @@ export default function BrowserScreen() {
 
   const onMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
+    if (raw.startsWith('RAID_DOWNLOAD:')) {
+      const candidate = raw.slice('RAID_DOWNLOAD:'.length).trim();
+      if (/^https:\/\//i.test(candidate)) handleFileDownload(candidate);
+      return;
+    }
     if (raw.startsWith('RAID_MEDIA:')) {
       try {
         const parsed = JSON.parse(raw.slice('RAID_MEDIA:'.length));
@@ -495,6 +538,7 @@ export default function BrowserScreen() {
           originWhitelist={['http://*', 'https://*']}
           allowFileAccess={false}
           allowUniversalAccessFromFileURLs={false}
+          injectedJavaScriptBeforeContentLoaded={DOWNLOAD_CAPTURE_JS}
           onNavigationStateChange={changed}
           onLoadStart={() => { setLoading(true); setLoadProgress(0.05); setLoadError(''); setMediaUrls([]); }}
           onLoadProgress={(event) => setLoadProgress(event.nativeEvent.progress)}
@@ -503,6 +547,7 @@ export default function BrowserScreen() {
             setLoadProgress(1);
             captureContext();
             scanMedia();
+            web.current?.injectJavaScript(DOWNLOAD_CAPTURE_JS);
             if (isLikelyStreamPage(event.nativeEvent.url)) {
               web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS);
               setTimeout(() => web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS), 900);

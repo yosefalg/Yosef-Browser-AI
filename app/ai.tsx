@@ -12,7 +12,7 @@ import { AIQuickActions } from '@/components/ai/AIQuickActions';
 
 export default function AIScreen() {
   const params = useLocalSearchParams<{ prompt?: string; url?: string; title?: string }>();
-  const [messages,setMessages]=useState<AgentMessage[]>([{role:'assistant',content:'مرحباً، أنا RAID AI. أستطيع تلخيص الصفحة، شرحها، استخراج أهم المعلومات أو تنفيذ أوامر RAID المحلية المدعومة.'}]);
+  const [messages,setMessages]=useState<AgentMessage[]>([{role:'assistant',content:'هاي يولد 👋 آني RAID AI. كلي شتريد: أفتحلك تبويب، التنزيلات، الإعدادات، أدورلك على موقع، أو أساعدك بالصفحة.'}]);
   const [text,setText]=useState('');
   const [busy,setBusy]=useState(false);
   const [signedIn,setSignedIn]=useState<boolean|null>(null);
@@ -49,15 +49,19 @@ export default function AIScreen() {
     const next=[...messages,{role:'user',content:value} as AgentMessage];
     setMessages(next);setText('');setLastFailedText('');setBusy(true);
     try{
+      const local=await executeLocalAgentCommand(value);
+      if(local.handled){
+        setMessages([...next,{role:'assistant',content:local.message||'تم، حاضر.'}]);
+        return;
+      }
+
       const session=await getCurrentSession();
       if(!session){
         setSignedIn(false);setLastFailedText(value);
-        setMessages([...next,{role:'assistant',content:'RAID AI السحابي يحتاج تسجيل الدخول لحماية الجلسة ومفاتيح المزود. الأوامر المحلية في التطبيق تبقى منفصلة عن ذلك.'}]);
+        setMessages([...next,{role:'assistant',content:'الأوامر داخل RAID تشتغل بدون تسجيل دخول. إذا تريد جواب AI سحابي أو تحليل محتوى، سجّل دخول حتى تنحمي الجلسة ومفاتيح المزود.'}]);
         return;
       }
       setSignedIn(true);
-      const local=await executeLocalAgentCommand(value);
-      if(local.handled){setMessages([...next,{role:'assistant',content:local.message||'تم التنفيذ.'}]);return;}
       const [page,memories]=await Promise.all([getLatestPageContext().catch(()=>null),getMemories(6).catch(()=>[])]);
       const memoryText=memories.length?`ذاكرة محلية مفيدة:\n${memories.map(m=>`- ${m.kind}: ${m.value}`).join('\n')}`.slice(0,1500):'';
       const pageText=page?`${memoryText?`${memoryText}\n\n`:''}الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text.slice(0,6500)}`:memoryText||undefined;
@@ -66,7 +70,7 @@ export default function AIScreen() {
       setMessages([...next,{role:'assistant',content:answer}]);
     }catch(error){
       setLastFailedText(value);
-      setMessages([...next,{role:'assistant',content:error instanceof Error?error.message:'تعذر تشغيل RAID AI الآن.'}]);
+      setMessages([...next,{role:'assistant',content:error instanceof Error?error.message:'صار خلل بتشغيل RAID AI هسه.'}]);
       void refreshState();
     }finally{setBusy(false);}
   },[busy,messages,refreshState]);
@@ -85,26 +89,26 @@ export default function AIScreen() {
   return <SafeAreaView edges={['top','bottom','left','right']} style={[s.root,{backgroundColor:theme.bg}]}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable onPress={()=>router.back()} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="رجوع"><Ionicons name="chevron-forward" size={23} color={theme.text}/></Pressable>
-      <View style={s.headerText}><Text style={[s.title,{color:theme.text}]}>RAID AI</Text><View style={s.statusLine}><View style={[s.dot,{backgroundColor:signedIn?'#4CB884':theme.muted}]}/><Text style={[s.accountState,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn===null?'جارٍ التحقق':signedIn?'الحساب متصل':'يتطلب حسابًا للخدمة السحابية'}</Text></View>{hasContext?<Text style={[s.context,{color:theme.muted}]} numberOfLines={1}>{params.title||params.url}</Text>:null}</View>
+      <View style={s.headerText}><Text style={[s.title,{color:theme.text}]}>RAID AI</Text><View style={s.statusLine}><View style={[s.dot,{backgroundColor:signedIn?'#4CB884':theme.muted}]}/><Text style={[s.accountState,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn===null?'دا أتحقق':signedIn?'الحساب متصل':'الأوامر المحلية جاهزة'}</Text></View>{hasContext?<Text style={[s.context,{color:theme.muted}]} numberOfLines={1}>{params.title||params.url}</Text>:null}</View>
       <View style={[s.aiBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="sparkles" size={20} color={theme.accent}/></View>
     </View>
 
     <KeyboardAvoidingView style={s.chat} behavior={Platform.OS==='ios'?'padding':'height'} keyboardVerticalOffset={0}>
-      {signedIn===false&&<View style={[s.loginBanner,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.loginCopy}><Ionicons name="lock-closed-outline" size={20} color={theme.accent}/><View style={{flex:1}}><Text style={[s.loginTitle,{color:theme.text}]}>RAID AI السحابي غير متصل</Text><Text style={[s.loginText,{color:theme.muted}]}>سجّل الدخول لتشغيل المزود السحابي. لن يتم ادعاء أن AI يعمل قبل توفر جلسة صالحة.</Text></View></View><Pressable onPress={()=>router.push('/login')} style={[s.loginButton,{backgroundColor:theme.accent}]}><Ionicons name="log-in-outline" size={18} color="#fff"/><Text style={s.loginButtonText}>تسجيل الدخول</Text></Pressable></View>}
+      {signedIn===false&&<View style={[s.loginBanner,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.loginCopy}><Ionicons name="sparkles-outline" size={20} color={theme.accent}/><View style={{flex:1}}><Text style={[s.loginTitle,{color:theme.text}]}>RAID يفهم أوامرك داخل التطبيق</Text><Text style={[s.loginText,{color:theme.muted}]}>كله «وديني للتنزيلات» أو «افتح يوتيوب» ويشتغل محليًا. تسجيل الدخول مطلوب فقط للذكاء السحابي وتحليل المحتوى.</Text></View></View><Pressable onPress={()=>router.push('/login')} style={[s.loginButton,{backgroundColor:theme.accent}]}><Ionicons name="log-in-outline" size={18} color="#fff"/><Text style={s.loginButtonText}>تسجيل الدخول</Text></Pressable></View>}
 
       <FlatList ref={listRef} style={s.listView} data={messages} keyExtractor={(_,i)=>String(i)} contentContainerStyle={[s.list,keyboardOpen&&s.listKeyboard]} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'} onContentSizeChange={()=>{if(keyboardOpen||busy)listRef.current?.scrollToEnd({animated:false});}} renderItem={({item})=>{
         const user=item.role==='user';
         return <View style={[s.messageRow,user&&s.messageRowUser]}><View style={[s.avatar,{backgroundColor:user?theme.surface2:theme.surface,borderColor:theme.border}]}><Ionicons name={user?'person-outline':'sparkles-outline'} size={15} color={user?theme.text:theme.accent}/></View><View style={[s.msg,{backgroundColor:user?theme.accent:theme.surface,borderColor:user?theme.accent:theme.border}]}><Text selectable style={[s.msgText,{color:user?'#fff':theme.text}]}>{item.content}</Text></View></View>;
-      }} ListFooterComponent={busy?<View style={s.messageRow}><View style={[s.avatar,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="sparkles-outline" size={15} color={theme.accent}/></View><View style={[s.msg,s.thinking,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="ellipsis-horizontal" size={20} color={theme.accent}/><Text style={[s.thinkingText,{color:theme.muted}]}>جاري معالجة الطلب</Text></View></View>:null}/>
+      }} ListFooterComponent={busy?<View style={s.messageRow}><View style={[s.avatar,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="sparkles-outline" size={15} color={theme.accent}/></View><View style={[s.msg,s.thinking,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="ellipsis-horizontal" size={20} color={theme.accent}/><Text style={[s.thinkingText,{color:theme.muted}]}>دا أرتب طلبك</Text></View></View>:null}/>
 
       <View style={[s.bottomPanel,{backgroundColor:theme.bg,borderTopColor:theme.border}]}>
-        {!keyboardOpen&&<AIQuickActions theme={theme} disabled={busy||signedIn===false} onSelect={prompt=>void sendValue(prompt)}/>} 
-        {!!lastFailedText&&!busy&&signedIn!==false&&<Pressable onPress={()=>void sendValue(lastFailedText)} style={[s.retryButton,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="refresh" size={17} color={theme.accent}/><Text style={[s.retryText,{color:theme.text}]}>إعادة آخر طلب</Text></Pressable>}
+        {!keyboardOpen&&<AIQuickActions theme={theme} disabled={busy} onSelect={prompt=>void sendValue(prompt)}/>} 
+        {!!lastFailedText&&!busy&&signedIn!==false&&<Pressable onPress={()=>void sendValue(lastFailedText)} style={[s.retryButton,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="refresh" size={17} color={theme.accent}/><Text style={[s.retryText,{color:theme.text}]}>عيد آخر طلب</Text></Pressable>}
         <View style={[s.composer,{backgroundColor:theme.surface,borderColor:theme.border}]}>
-          <TextInput value={text} onChangeText={setText} onFocus={()=>setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),70)} onSubmitEditing={send} placeholder="اسأل RAID AI عن الصفحة..." placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} multiline textAlign="right" maxLength={4000} accessibilityLabel="رسالة RAID AI"/>
+          <TextInput value={text} onChangeText={setText} onFocus={()=>setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),70)} onSubmitEditing={send} placeholder="كلي شتريد أسويلك داخل RAID..." placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} multiline textAlign="right" maxLength={4000} accessibilityLabel="رسالة RAID AI"/>
           <Pressable onPress={send} disabled={busy||!text.trim()} style={[s.send,{backgroundColor:theme.accent},(busy||!text.trim())&&s.sendDisabled]} accessibilityLabel="إرسال إلى RAID AI"><Ionicons name={busy?'hourglass-outline':'arrow-up'} size={20} color="#fff"/></Pressable>
         </View>
-        <View style={s.privacyLine}><Ionicons name="shield-checkmark-outline" size={13} color={theme.muted}/><Text style={[s.privacyText,{color:theme.muted}]}>يُرسل سياق الصفحة فقط عند استخدام المساعد، والوضع الخاص لا يشارك السياق.</Text></View>
+        <View style={s.privacyLine}><Ionicons name="shield-checkmark-outline" size={13} color={theme.muted}/><Text style={[s.privacyText,{color:theme.muted}]}>أوامر التطبيق محلية. سياق الصفحة ينرسل فقط عند طلب الذكاء السحابي، والوضع الخاص ما يشارك السياق.</Text></View>
       </View>
     </KeyboardAvoidingView>
   </SafeAreaView>;

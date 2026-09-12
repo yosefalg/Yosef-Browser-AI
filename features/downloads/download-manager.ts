@@ -153,7 +153,30 @@ export async function cancelDownload(id: number) {
 export async function retryDownload(id: number) {
   const item = await getDownload(id);
   if (!item) throw new Error('التنزيل غير موجود.');
-  return startDownload(item.url);
+  if (!/^https:\/\//i.test(item.url)) throw new Error('RAID يسمح بالتنزيل الآمن عبر HTTPS فقط.');
+  if (!item.local_uri) throw new Error('مسار ملف التنزيل غير متاح. احذف العنصر وابدأ التنزيل من جديد.');
+
+  const running = active.get(id);
+  if (running) await running.pauseAsync().catch(() => {});
+  active.delete(id);
+  paused.delete(id);
+  progressStats.delete(id);
+
+  await FileSystem.deleteAsync(item.local_uri, { idempotent: true }).catch(() => {});
+  await updateDownload(id, {
+    state: 'queued',
+    progress: 0,
+    total_bytes: null,
+    written_bytes: 0,
+    speed_bps: 0,
+    eta_seconds: null,
+    resume_data: null,
+    error: null,
+  });
+
+  const task = FileSystem.createDownloadResumable(item.url, item.local_uri, {}, progressHandler(id));
+  void runTask(id, task);
+  return id;
 }
 
 export async function openDownload(id: number) {

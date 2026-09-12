@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { listDownloads } from '@/features/downloads/store';
-import { cancelDownload, openDownload, pauseDownload, reconcileInterruptedDownloads, removeDownload, resumeDownload, retryDownload } from '@/features/downloads/download-manager';
+import { cancelDownload, openDownload, pauseDownload, reconcileInterruptedDownloads, removeDownload, resumeDownload, retryDownload, shareDownload } from '@/features/downloads/download-manager';
 import type { DownloadItem } from '@/features/downloads/types';
 import { getSetting } from '@/lib/db';
 import { getTheme, type ThemeName } from '@/lib/theme';
@@ -143,6 +143,7 @@ export default function DownloadsScreen() {
               {!!item.error && <View style={s.errorRow}><Ionicons name="warning-outline" size={15} color="#E1A091" /><Text style={s.error} numberOfLines={3}>{item.error}</Text></View>}
               <View style={s.actions}>
                 {item.state === 'completed' && <Pressable onPress={() => void perform(() => openDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="open-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>فتح</Text></Pressable>}
+                {item.state === 'completed' && <Pressable onPress={() => void perform(() => shareDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="share-social-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>مشاركة</Text></Pressable>}
                 {item.state === 'downloading' && <Pressable onPress={() => void perform(() => pauseDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pause" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إيقاف</Text></Pressable>}
                 {item.state === 'paused' && <Pressable onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}
                 {(item.state === 'failed' || item.state === 'cancelled') && <Pressable onPress={() => void perform(() => retryDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="refresh" size={16} color="#fff" /><Text style={s.primaryText}>إعادة</Text></Pressable>}

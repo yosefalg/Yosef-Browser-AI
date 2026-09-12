@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Linking from 'expo-linking';
+import * as Sharing from 'expo-sharing';
 import { createDownload, deleteDownloadRecord, getDownload, listDownloads, updateDownload } from './store';
 
 const active = new Map<number, FileSystem.DownloadResumable>();
@@ -162,6 +163,16 @@ export async function openDownload(id: number) {
   const supported = await Linking.canOpenURL(uri);
   if (!supported) throw new Error('لا يوجد تطبيق مناسب لفتح هذا الملف.');
   await Linking.openURL(uri);
+}
+
+export async function shareDownload(id: number) {
+  const item = await getDownload(id);
+  if (!item?.local_uri || item.state !== 'completed') throw new Error('الملف غير جاهز للمشاركة.');
+  const info = await FileSystem.getInfoAsync(item.local_uri);
+  if (!info.exists) throw new Error('ملف التنزيل غير موجود على الجهاز.');
+  const available = await Sharing.isAvailableAsync();
+  if (!available) throw new Error('المشاركة غير متاحة على هذا الجهاز.');
+  await Sharing.shareAsync(item.local_uri, { dialogTitle: `مشاركة ${item.file_name}` });
 }
 
 export async function removeDownload(id: number, deleteFile = false) {

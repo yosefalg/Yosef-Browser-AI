@@ -2,21 +2,21 @@
   "expo": {
     "name": "RAID Browser",
     "slug": "raid-browser",
-    "version": "2.10.21",
+    "version": "2.11.0",
     "orientation": "portrait",
     "scheme": "raidbrowser",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
       "package": "com.yosef.raidbrowser",
-      "versionCode": 59,
+      "versionCode": 60,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#232625"
+        "backgroundColor": "#071018"
       }
     },
     "plugins": [

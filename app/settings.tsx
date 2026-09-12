@@ -32,6 +32,7 @@ export default function SettingsScreen(){
   const choose=async(t:ThemeName)=>{setThemeName(t);await setSetting('theme',t)};
 
   const browsing:SettingsRow[]=[
+    {title:'RAID Performance',hint:'Boost ومودات التصفح للشبكات العراقية والمتذبذبة',icon:'speedometer',route:'/performance',badge:'جديد'},
     {title:'التنزيلات',hint:'الملفات النشطة والمكتملة',icon:'download-circle-outline',route:'/downloads'},
     {title:'المكتبة',hint:'المفضلة والسجل والمحتوى المحفوظ',icon:'bookshelf',route:'/library'},
     {title:'التبويبات',hint:'إدارة جلسات التصفح واستعادتها',icon:'tab-multiple',route:'/tabs'},
@@ -59,11 +60,11 @@ export default function SettingsScreen(){
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
       <View style={[s.hero,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={[s.heroIcon,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="tune-variant" size={28} color={theme.accent}/></View>
-        <View style={s.heroCopy}><Text style={[s.heroKicker,{color:theme.accent}]}>RAID Browser</Text><Text style={[s.heroTitle,{color:theme.text}]}>إعدادات مرتبة بدون ازدحام</Text><Text style={[s.heroText,{color:theme.muted}]}>التصفح، الحساب، الحماية، الذكاء الاصطناعي والمظهر من مركز واحد.</Text></View>
+        <View style={s.heroCopy}><Text style={[s.heroKicker,{color:theme.accent}]}>RAID Browser</Text><Text style={[s.heroTitle,{color:theme.text}]}>إعدادات مرتبة بدون ازدحام</Text><Text style={[s.heroText,{color:theme.muted}]}>التصفح، الحساب، الحماية، الأداء، الذكاء الاصطناعي والمظهر من مركز واحد.</Text></View>
       </View>
 
       <StatusStrip theme={theme} signedIn={signedIn} vpnConnected={vpnConnected}/>
-      <Section title="التصفح والبيانات" rows={browsing} theme={theme}/>
+      <Section title="التصفح والأداء والبيانات" rows={browsing} theme={theme}/>
       <Section title="الحساب والخدمات" rows={services} theme={theme}/>
 
       <View style={s.sectionWrap}>

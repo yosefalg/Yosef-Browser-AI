@@ -7,6 +7,9 @@ export type TabContext = { id:number; workspace_id:number|null; url:string; titl
 export type BrowserTab = { id:number; url:string; title:string; private_mode:number; created_at:number; updated_at:number };
 export type ClosedBrowserTab = { id:number; url:string; title:string; closed_at:number };
 
+const MAX_OPEN_TABS = 50;
+const MAX_RECENTLY_CLOSED = 30;
+
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 async function db() {
   if (!dbPromise) dbPromise = SQLite.openDatabaseAsync('raid-browser.db');
@@ -34,6 +37,15 @@ async function db() {
   return d;
 }
 
+async function trimRecentlyClosed(d: SQLite.SQLiteDatabase) {
+  await d.runAsync('DELETE FROM closed_browser_tabs WHERE id NOT IN (SELECT id FROM closed_browser_tabs ORDER BY closed_at DESC LIMIT ?)', MAX_RECENTLY_CLOSED);
+}
+
+async function archiveClosedTab(d: SQLite.SQLiteDatabase, tab: Pick<BrowserTab,'url'|'title'|'private_mode'>, closedAt = Date.now()) {
+  if (tab.private_mode !== 0 || !/^https?:\/\//i.test(tab.url)) return;
+  await d.runAsync('INSERT INTO closed_browser_tabs (url,title,closed_at) VALUES (?,?,?)',tab.url,tab.title||tab.url,closedAt);
+}
+
 export async function addHistory(url:string,title?:string){const d=await db();await d.runAsync('INSERT INTO history (url,title,visited_at) VALUES (?,?,?)',url,title??'',Date.now());await d.runAsync('DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY visited_at DESC LIMIT 2000)');}
 export async function clearHistory(){const d=await db();await d.execAsync('DELETE FROM history');}
 export async function getHistory(limit=100){const d=await db();return d.getAllAsync<{id:number;url:string;title:string;visited_at:number}>('SELECT * FROM history ORDER BY visited_at DESC LIMIT ?',limit);}
@@ -57,11 +69,20 @@ export async function upsertTabContext(url:string,title:string,text:string,works
 export async function assignTabToWorkspace(url:string,workspaceId:number){const d=await db();await d.runAsync('UPDATE tab_contexts SET workspace_id=? WHERE url=?',workspaceId,url);}
 export async function getTabContexts(workspaceId?:number|null,limit=12){const d=await db();if(workspaceId==null)return d.getAllAsync<TabContext>('SELECT * FROM tab_contexts ORDER BY updated_at DESC LIMIT ?',limit);return d.getAllAsync<TabContext>('SELECT * FROM tab_contexts WHERE workspace_id=? ORDER BY updated_at DESC LIMIT ?',workspaceId,limit);}
 
-export async function createBrowserTab(url:string,title='علامة تبويب جديدة',privateMode=false){const d=await db();const now=Date.now();const result=await d.runAsync('INSERT INTO browser_tabs (url,title,private_mode,created_at,updated_at) VALUES (?,?,?,?,?)',url,title.trim().slice(0,300)||'علامة تبويب جديدة',privateMode?1:0,now,now);await d.runAsync('DELETE FROM browser_tabs WHERE id NOT IN (SELECT id FROM browser_tabs ORDER BY updated_at DESC LIMIT 50)');return result.lastInsertRowId;}
-export async function updateBrowserTab(id:number,url:string,title?:string){if(!Number.isFinite(id)||id<=0)return;const d=await db();await d.runAsync('UPDATE browser_tabs SET url=?,title=?,updated_at=? WHERE id=?',url,(title||url).trim().slice(0,300),Date.now(),id);}
-export async function getBrowserTabs(limit=50){const d=await db();return d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC LIMIT ?',limit);}
-export async function getRecentlyClosedTabs(limit=12){const d=await db();return d.getAllAsync<ClosedBrowserTab>('SELECT * FROM closed_browser_tabs ORDER BY closed_at DESC LIMIT ?',limit);}
+export async function createBrowserTab(url:string,title='علامة تبويب جديدة',privateMode=false){
+  const d=await db();const now=Date.now();
+  const result=await d.runAsync('INSERT INTO browser_tabs (url,title,private_mode,created_at,updated_at) VALUES (?,?,?,?,?)',url,title.trim().slice(0,300)||'علامة تبويب جديدة',privateMode?1:0,now,now);
+  if(!privateMode){
+    const overflow=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC LIMIT -1 OFFSET ?',MAX_OPEN_TABS);
+    for(const tab of overflow)await archiveClosedTab(d,tab,now);
+    if(overflow.length){await d.runAsync('DELETE FROM browser_tabs WHERE id IN ('+overflow.map(()=>'?').join(',')+')',...overflow.map(tab=>tab.id));await trimRecentlyClosed(d);}
+  }
+  return result.lastInsertRowId;
+}
+export async function updateBrowserTab(id:number,url:string,title?:string){if(!Number.isFinite(id)||id<=0||!/^https?:\/\//i.test(url))return;const d=await db();await d.runAsync('UPDATE browser_tabs SET url=?,title=?,updated_at=? WHERE id=? AND private_mode=0',url,(title||url).trim().slice(0,300),Date.now(),id);}
+export async function getBrowserTabs(limit=50){const d=await db();return d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC LIMIT ?',Math.min(Math.max(1,limit),MAX_OPEN_TABS));}
+export async function getRecentlyClosedTabs(limit=12){const d=await db();return d.getAllAsync<ClosedBrowserTab>('SELECT * FROM closed_browser_tabs ORDER BY closed_at DESC LIMIT ?',Math.min(Math.max(1,limit),MAX_RECENTLY_CLOSED));}
 export async function clearRecentlyClosedTabs(){const d=await db();await d.execAsync('DELETE FROM closed_browser_tabs');}
-export async function closeBrowserTab(id:number){const d=await db();const tab=await d.getFirstAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE id=?',id);if(tab){await d.runAsync('INSERT INTO closed_browser_tabs (url,title,closed_at) VALUES (?,?,?)',tab.url,tab.title||tab.url,Date.now());await d.runAsync('DELETE FROM closed_browser_tabs WHERE id NOT IN (SELECT id FROM closed_browser_tabs ORDER BY closed_at DESC LIMIT 20)');}await d.runAsync('DELETE FROM browser_tabs WHERE id=?',id);}
-export async function restoreClosedBrowserTab(id:number){const d=await db();const tab=await d.getFirstAsync<ClosedBrowserTab>('SELECT * FROM closed_browser_tabs WHERE id=?',id);if(!tab)return null;const newId=await createBrowserTab(tab.url,tab.title);await d.runAsync('DELETE FROM closed_browser_tabs WHERE id=?',id);return {id:newId,url:tab.url,title:tab.title};}
-export async function closeAllBrowserTabs(){const d=await db();const tabs=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC');const now=Date.now();for(const tab of tabs.slice(0,20)){await d.runAsync('INSERT INTO closed_browser_tabs (url,title,closed_at) VALUES (?,?,?)',tab.url,tab.title||tab.url,now);}await d.runAsync('DELETE FROM closed_browser_tabs WHERE id NOT IN (SELECT id FROM closed_browser_tabs ORDER BY closed_at DESC LIMIT 20)');await d.runAsync('DELETE FROM browser_tabs WHERE private_mode=0');}
+export async function closeBrowserTab(id:number){const d=await db();const tab=await d.getFirstAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE id=?',id);if(!tab)return;await archiveClosedTab(d,tab);await d.runAsync('DELETE FROM browser_tabs WHERE id=?',id);await trimRecentlyClosed(d);}
+export async function restoreClosedBrowserTab(id:number){const d=await db();const tab=await d.getFirstAsync<ClosedBrowserTab>('SELECT * FROM closed_browser_tabs WHERE id=?',id);if(!tab||!/^https?:\/\//i.test(tab.url))return null;const newId=await createBrowserTab(tab.url,tab.title);await d.runAsync('DELETE FROM closed_browser_tabs WHERE id=?',id);return {id:newId,url:tab.url,title:tab.title};}
+export async function closeAllBrowserTabs(){const d=await db();const tabs=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC');const now=Date.now();for(const tab of tabs.slice(0,MAX_RECENTLY_CLOSED))await archiveClosedTab(d,tab,now);await d.runAsync('DELETE FROM browser_tabs WHERE private_mode=0');await trimRecentlyClosed(d);}

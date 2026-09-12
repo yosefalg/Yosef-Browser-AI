@@ -6,7 +6,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { getSetting, setSetting } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { isVpnConnected } from '@/lib/vpn';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 
 type SettingsRow={title:string;hint:string;icon:string;route:string;badge?:string};
@@ -23,7 +23,7 @@ export default function SettingsScreen(){
       getCurrentSession().catch(()=>null),
       isVpnConnected().catch(()=>false),
     ]);
-    setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
+    setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
     setSignedIn(Boolean(session?.user));
     setVpnConnected(vpn);
   },[]);
@@ -67,8 +67,8 @@ export default function SettingsScreen(){
       <Section title="الحساب والخدمات" rows={services} theme={theme}/>
 
       <View style={s.sectionWrap}>
-        <View style={s.sectionHead}><MaterialCommunityIcons name="palette-outline" size={18} color={theme.accent}/><Text style={[s.sectionTitle,{color:theme.accent}]}>المظهر</Text></View>
-        <View style={[s.themeCard,{backgroundColor:theme.surface,borderColor:theme.border}]}><ThemeSwitcher value={themeName} onChange={value=>void choose(value)}/><Text style={[s.themeNote,{color:theme.muted}]}>الثيم يطبق على الواجهات الحديثة مع الحفاظ على هوية RAID الهادئة.</Text></View>
+        <View style={s.sectionHead}><MaterialCommunityIcons name="palette-outline" size={18} color={theme.accent}/><Text style={[s.sectionTitle,{color:theme.accent}]}>المظهر Premium</Text></View>
+        <View style={[s.themeCard,{backgroundColor:theme.surface,borderColor:theme.border}]}><ThemeSwitcher value={themeName} onChange={value=>void choose(value)}/><Text style={[s.themeNote,{color:theme.muted}]}>6 ثيمات مصممة لـRAID: سينمائي، Graphite، Deep Teal، AMOLED، Light وWarm Ivory. الاختيار يُحفظ مباشرة.</Text></View>
       </View>
 
       <Section title="النظام والدعم" rows={system} theme={theme}/>

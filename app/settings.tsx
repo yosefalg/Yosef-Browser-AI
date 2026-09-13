@@ -39,6 +39,7 @@ export default function SettingsScreen(){
   ];
   const services:SettingsRow[]=[
     {title:'حساب RAID',hint:signedIn?'الحساب متصل ويمكن مزامنته':'غير مسجل الدخول',icon:signedIn?'account-check-outline':'account-outline',route:'/account',badge:signedIn?'متصل':'غير مسجل'},
+    {title:'قفل RAID',hint:'قفل اختياري ببصمة أو وجه الجهاز',icon:'shield-lock-outline',route:'/app-lock',badge:'حماية'},
     {title:'RAID AI',hint:'المساعد الذكي وسياق الصفحة',icon:'creation',route:'/ai'},
     {title:'RAID VPN',hint:vpnConnected?'النفق متصل فعليًا':'إدارة WireGuard والاتصال',icon:vpnConnected?'shield-check':'shield-outline',route:'/vpn',badge:vpnConnected?'متصل':'غير متصل'},
     {title:'مركز الخصوصية',hint:'الحماية والبيانات المحلية',icon:'shield-lock-outline',route:'/privacy'},

@@ -42,6 +42,7 @@ export default function SettingsScreen(){
     {title:'RAID AI',hint:'المساعد الذكي وسياق الصفحة',icon:'creation',route:'/ai'},
     {title:'RAID VPN',hint:vpnConnected?'النفق متصل فعليًا':'إدارة WireGuard والاتصال',icon:vpnConnected?'shield-check':'shield-outline',route:'/vpn',badge:vpnConnected?'متصل':'غير متصل'},
     {title:'مركز الخصوصية',hint:'الحماية والبيانات المحلية',icon:'shield-lock-outline',route:'/privacy'},
+    {title:'قفل RAID',hint:'بصمة أو وجه وقفل تلقائي عند مغادرة التطبيق',icon:'fingerprint',route:'/app-lock',badge:'حماية'},
     {title:'مدير كلمات المرور',hint:'بيانات الدخول المحفوظة',icon:'key-chain-variant',route:'/passwords'},
   ];
   const system:SettingsRow[]=[

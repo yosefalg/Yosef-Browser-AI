@@ -18,6 +18,18 @@ export const DEFAULT_SITE_PREFERENCES: SitePreferences = {
 const STORE_KEY = 'browser_site_preferences_v1';
 const MAX_SITES = 250;
 
+// Authentication, checkout and payment flows are unusually sensitive to blocked
+// third-party resources. RAID keeps protection enabled everywhere else, while
+// these narrowly-scoped hosts default to compatibility mode. A user's explicit
+// per-site preference still wins because saved preferences are returned first.
+const COMPATIBILITY_HOSTS = [
+  'accounts.google.com',
+  'login.microsoftonline.com',
+  'appleid.apple.com',
+  'paypal.com',
+  'checkout.stripe.com',
+] as const;
+
 type SitePreferenceRecord = SitePreferences & { updatedAt: number };
 type SitePreferenceStore = Record<string, SitePreferenceRecord>;
 
@@ -27,6 +39,15 @@ export function sitePreferenceHost(value: string) {
   } catch {
     return '';
   }
+}
+
+function hostMatches(host: string, candidate: string) {
+  return host === candidate || host.endsWith(`.${candidate}`);
+}
+
+export function isCompatibilitySensitiveHost(value: string) {
+  const host = sitePreferenceHost(value);
+  return !!host && COMPATIBILITY_HOSTS.some((candidate) => hostMatches(host, candidate));
 }
 
 function sanitize(value: Partial<SitePreferences> | null | undefined): SitePreferences {
@@ -70,11 +91,22 @@ export async function getSitePreferences(url: string): Promise<SitePreferences> 
   const saved = store[host];
   if (saved) return sanitize(saved);
 
-  const base = { ...DEFAULT_SITE_PREFERENCES };
+  // Prefer compatibility only for the initial visit to sensitive identity/payment
+  // hosts. Users can explicitly turn blocking back on for any of them.
+  const base = isCompatibilitySensitiveHost(url)
+    ? { ...DEFAULT_SITE_PREFERENCES, thirdPartyCookies: true, adBlock: false }
+    : { ...DEFAULT_SITE_PREFERENCES };
   const performance = await getPerformanceSettings().catch(() => null);
   if (!performance) return base;
   const effectiveProfile = resolveBrowsingProfile(url, performance);
-  return applyProfileDefaults(base, effectiveProfile, performance.enabled);
+  const profiled = applyProfileDefaults(base, effectiveProfile, performance.enabled);
+
+  // Performance profiles must never silently re-enable blocking on compatibility
+  // hosts; that would make adaptive mode capable of breaking sign-in/checkout.
+  if (isCompatibilitySensitiveHost(url)) {
+    return { ...profiled, thirdPartyCookies: true, adBlock: false };
+  }
+  return profiled;
 }
 
 export async function saveSitePreferences(url: string, value: SitePreferences) {

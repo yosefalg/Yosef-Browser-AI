@@ -27,19 +27,15 @@ function safePageReferer(value: string) {
   try {
     const parsed = new URL(value);
     if (!/^https?:$/.test(parsed.protocol)) return null;
-    return `${parsed.protocol}//${parsed.host}/`;
+    // Keep the real page path/query for hosts that validate hotlink/download
+    // referers, while never forwarding credentials or fragment data.
+    parsed.username = '';
+    parsed.password = '';
+    parsed.hash = '';
+    return parsed.toString();
   } catch {
     return null;
   }
-}
-
-function recentDownload(url: string) {
-  const now = Date.now();
-  for (const [key, value] of recentDownloads) {
-    if (now - value.at > DEDUPE_WINDOW_MS) recentDownloads.delete(key);
-  }
-  const existing = recentDownloads.get(url);
-  return existing && now - existing.at <= DEDUPE_WINDOW_MS ? existing.id : null;
 }
 
 /**

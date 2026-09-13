@@ -5,10 +5,36 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AgentMessage, askAgent } from '@/lib/ai';
 import { executeLocalAgentCommand } from '@/lib/agent';
-import { getLatestPageContext, getMemories, getSetting } from '@/lib/db';
+import { getLatestPageContext, getMemories, getSetting, type StoredPageContext } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { getTheme, type ThemeName } from '@/lib/theme';
 import { AIQuickActions } from '@/components/ai/AIQuickActions';
+
+const SENSITIVE_PATH_RE = /(?:^|\/)(?:login|log-in|signin|sign-in|signup|sign-up|auth|oauth|checkout|payment|billing|password|reset-password|verify|verification|otp|2fa|mfa)(?:\/|$)/i;
+const SENSITIVE_QUERY_KEYS = ['code','token','access_token','id_token','session','session_token','otp','password','passcode'];
+
+function normalizedContextUrl(value: string | undefined) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (!/^https?:$/i.test(parsed.protocol)) return null;
+    return {
+      origin: parsed.origin.toLowerCase(),
+      pathname: (parsed.pathname.replace(/\/+$/,'') || '/').toLowerCase(),
+      sensitive: SENSITIVE_PATH_RE.test(parsed.pathname) || SENSITIVE_QUERY_KEYS.some((key)=>parsed.searchParams.has(key)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function safeMatchingPageContext(currentUrl: string | undefined, page: StoredPageContext | null) {
+  const current = normalizedContextUrl(currentUrl);
+  const stored = page ? normalizedContextUrl(page.url) : null;
+  if (!current || !stored || current.sensitive || stored.sensitive) return null;
+  if (current.origin !== stored.origin || current.pathname !== stored.pathname) return null;
+  return page;
+}
 
 export default function AIScreen() {
   const params = useLocalSearchParams<{ prompt?: string; url?: string; title?: string }>();
@@ -62,7 +88,9 @@ export default function AIScreen() {
         return;
       }
       setSignedIn(true);
-      const [page,memories]=await Promise.all([getLatestPageContext().catch(()=>null),getMemories(6).catch(()=>[])]);
+      const [latestPage,memories]=await Promise.all([getLatestPageContext().catch(()=>null),getMemories(6).catch(()=>[])]);
+      const currentUrl=typeof params.url==='string'?params.url:undefined;
+      const page=safeMatchingPageContext(currentUrl,latestPage);
       const memoryText=memories.length?`ذاكرة محلية مفيدة:\n${memories.map(m=>`- ${m.kind}: ${m.value}`).join('\n')}`.slice(0,1500):'';
       const pageText=page?`${memoryText?`${memoryText}\n\n`:''}الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text.slice(0,6500)}`:memoryText||undefined;
       const aiMessages=local.aiPrompt?[...messages.slice(-8),{role:'user',content:local.aiPrompt} as AgentMessage]:next.slice(-9);
@@ -73,7 +101,7 @@ export default function AIScreen() {
       setMessages([...next,{role:'assistant',content:error instanceof Error?error.message:'صار خلل بتشغيل RAID AI هسه.'}]);
       void refreshState();
     }finally{setBusy(false);}
-  },[busy,messages,refreshState]);
+  },[busy,messages,params.url,refreshState]);
 
   useEffect(()=>{
     const prompt=typeof params.prompt==='string'?params.prompt.trim():'';
@@ -85,11 +113,12 @@ export default function AIScreen() {
 
   const send=()=>void sendValue(text);
   const hasContext=Boolean(params.title||params.url);
+  const contextProtected=Boolean(params.url&&normalizedContextUrl(params.url)?.sensitive);
 
   return <SafeAreaView edges={['top','bottom','left','right']} style={[s.root,{backgroundColor:theme.bg}]}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable onPress={()=>router.back()} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="رجوع"><Ionicons name="chevron-forward" size={23} color={theme.text}/></Pressable>
-      <View style={s.headerText}><Text style={[s.title,{color:theme.text}]}>RAID AI</Text><View style={s.statusLine}><View style={[s.dot,{backgroundColor:signedIn?'#4CB884':theme.muted}]}/><Text style={[s.accountState,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn===null?'دا أتحقق':signedIn?'الحساب متصل':'الأوامر المحلية جاهزة'}</Text></View>{hasContext?<Text style={[s.context,{color:theme.muted}]} numberOfLines={1}>{params.title||params.url}</Text>:null}</View>
+      <View style={s.headerText}><Text style={[s.title,{color:theme.text}]}>RAID AI</Text><View style={s.statusLine}><View style={[s.dot,{backgroundColor:signedIn?'#4CB884':theme.muted}]}/><Text style={[s.accountState,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn===null?'دا أتحقق':signedIn?'الحساب متصل':'الأوامر المحلية جاهزة'}</Text></View>{hasContext?<Text style={[s.context,{color:contextProtected?'#D8A56F':theme.muted}]} numberOfLines={1}>{contextProtected?'السياق محمي لهذه الصفحة':params.title||params.url}</Text>:null}</View>
       <View style={[s.aiBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="sparkles" size={20} color={theme.accent}/></View>
     </View>
 
@@ -108,7 +137,7 @@ export default function AIScreen() {
           <TextInput value={text} onChangeText={setText} onFocus={()=>setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),70)} onSubmitEditing={send} placeholder="كلي شتريد أسويلك داخل RAID..." placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} multiline textAlign="right" maxLength={4000} accessibilityLabel="رسالة RAID AI"/>
           <Pressable onPress={send} disabled={busy||!text.trim()} style={[s.send,{backgroundColor:theme.accent},(busy||!text.trim())&&s.sendDisabled]} accessibilityLabel="إرسال إلى RAID AI"><Ionicons name={busy?'hourglass-outline':'arrow-up'} size={20} color="#fff"/></Pressable>
         </View>
-        <View style={s.privacyLine}><Ionicons name="shield-checkmark-outline" size={13} color={theme.muted}/><Text style={[s.privacyText,{color:theme.muted}]}>أوامر التطبيق محلية. سياق الصفحة ينرسل فقط عند طلب الذكاء السحابي، والوضع الخاص ما يشارك السياق.</Text></View>
+        <View style={s.privacyLine}><Ionicons name="shield-checkmark-outline" size={13} color={contextProtected?'#D8A56F':theme.muted}/><Text style={[s.privacyText,{color:contextProtected?'#D8A56F':theme.muted}]}>{contextProtected?'هذه صفحة حساسة؛ RAID AI لن يرسل محتوى الصفحة.':'أوامر التطبيق محلية. سياق الصفحة ينرسل فقط إذا طابق الصفحة الحالية وما كانت صفحة تسجيل دخول أو دفع حساسة.'}</Text></View>
       </View>
     </KeyboardAvoidingView>
   </SafeAreaView>;

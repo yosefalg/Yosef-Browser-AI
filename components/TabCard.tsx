@@ -17,13 +17,13 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
   const path=pathOf(tab.url);
   const activityLabel=recent?'آخر نشاط • ':'';
   const gridWidth=width<380?'100%':width>=700?'31.5%':'48.4%';
-  return <Pressable disabled={busy} onPress={onOpen} onLongPress={onLongPress} delayLongPress={320} style={({pressed})=>[
+  return <Pressable disabled={busy} onPress={onOpen} onLongPress={selectionMode?onOpen:onLongPress} delayLongPress={320} style={({pressed})=>[
     grid?s.grid:s.list,
     grid&&{width:gridWidth},
     {backgroundColor:selected?theme.surface2:theme.surface,borderColor:selected||recent?theme.accent:theme.border},
     pressed&&s.press,
     busy&&s.disabled,
-  ]} accessibilityRole="button" accessibilityState={{selected,disabled:busy}} accessibilityLabel={`${activityLabel}${tab.title||hostOf(tab.url)}${selected?'، محدد':''}`}>
+  ]} accessibilityRole="button" accessibilityState={{selected,disabled:busy}} accessibilityLabel={`${activityLabel}${tab.title||hostOf(tab.url)}${selected?'، محدد':''}`} accessibilityHint={selectionMode?'اضغط أو اضغط مطولًا لتبديل تحديد هذا التبويب':'اضغط للفتح، واضغط مطولًا لبدء التحديد المتعدد'}>
     {(selected||recent)&&<View style={[s.accentRail,{backgroundColor:theme.accent}]}/>} 
     {selected&&<View style={[s.selectedBadge,{backgroundColor:theme.accent}]}><Ionicons name="checkmark" size={14} color="#fff"/></View>}
     {grid?<>

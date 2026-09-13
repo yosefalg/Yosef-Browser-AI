@@ -39,10 +39,21 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
 
 const KEY = 'raid_performance_settings_v1';
 
-const VIDEO_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'vimeo.com', 'dailymotion.com'];
-const READING_HOSTS = ['wikipedia.org', 'wikimedia.org', 'developer.mozilla.org', 'medium.com', 'substack.com', 'arxiv.org'];
-const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm)(?:$|[?#])/i;
-const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?)(?:\/|$)/i;
+const VIDEO_HOSTS = [
+  'youtube.com', 'youtu.be', 'twitch.tv', 'vimeo.com', 'dailymotion.com',
+  'shahid.net', 'tiktok.com', 'kick.com', 'rumble.com',
+];
+const READING_HOSTS = [
+  'wikipedia.org', 'wikimedia.org', 'developer.mozilla.org', 'medium.com',
+  'substack.com', 'arxiv.org', 'github.com', 'stackoverflow.com',
+];
+const DOWNLOAD_HOSTS = [
+  'githubusercontent.com', 'sourceforge.net', 'fosshub.com', 'apkpure.com',
+];
+const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
+const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?|attachments?)(?:\/|$)/i;
+const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|reels?)(?:\/|$)/i;
+const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read)(?:\/|$)/i;
 
 export function isBrowsingProfile(value: unknown): value is BrowsingProfile {
   return value === 'balanced' || value === 'boost' || value === 'video' || value === 'reading' || value === 'downloads' || value === 'low-data';
@@ -73,15 +84,23 @@ export async function savePerformanceSettings(value: PerformanceSettings) {
   return safe;
 }
 
+function hostMatches(host: string, candidates: readonly string[]) {
+  return candidates.some((item) => host === item || host.endsWith(`.${item}`));
+}
+
 export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    const path = `${parsed.pathname}${parsed.search}`;
-    if (VIDEO_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))) return 'video';
-    if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname)) return 'downloads';
-    if (READING_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))) return 'reading';
-    if (/\/(?:article|articles|news|blog|docs|documentation|guide|guides)(?:\/|$)/i.test(parsed.pathname)) return 'reading';
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+
+    if (hostMatches(host, VIDEO_HOSTS) || VIDEO_PATH_RE.test(parsed.pathname)) return 'video';
+    if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname) || hostMatches(host, DOWNLOAD_HOSTS)) return 'downloads';
+    if (hostMatches(host, READING_HOSTS) || READING_PATH_RE.test(parsed.pathname)) return 'reading';
+
+    const query = parsed.searchParams;
+    if (query.has('download') || query.get('action') === 'download') return 'downloads';
+    if (query.has('video') || query.has('stream') || query.has('watch')) return 'video';
   } catch {}
   return 'balanced';
 }

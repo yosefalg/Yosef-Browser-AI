@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AppState } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, Linking } from 'react-native';
 import { Stack, router, useGlobalSearchParams, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,6 +14,7 @@ export default function RootLayout() {
   const params = useGlobalSearchParams<{ url?: string | string[] }>();
   const [freezeInactiveScreens, setFreezeInactiveScreens] = useState(false);
   const [lightweightNavigation, setLightweightNavigation] = useState(false);
+  const lastExternalUrl = useRef('');
 
   const browserContextUrl = useMemo(() => {
     if (pathname !== '/browser') return undefined;
@@ -39,6 +40,24 @@ export default function RootLayout() {
     return () => { cancelled = true; };
   }, [browserContextUrl]);
 
+  const openExternalWebUrl = useCallback((candidate?: string | null) => {
+    const value = typeof candidate === 'string' ? candidate.trim() : '';
+    if (!/^https?:\/\//i.test(value)) return;
+    if (lastExternalUrl.current === value) return;
+    lastExternalUrl.current = value;
+    void isOnboardingComplete()
+      .then((complete) => {
+        if (!complete) {
+          router.replace('/onboarding');
+          return;
+        }
+        router.replace({ pathname: '/browser', params: { url: value } });
+      })
+      .catch(() => {
+        router.replace({ pathname: '/browser', params: { url: value } });
+      });
+  }, []);
+
   useEffect(() => refreshPerformancePolicy(), [pathname, browserContextUrl, refreshPerformancePolicy]);
 
   useEffect(() => {
@@ -50,6 +69,20 @@ export default function RootLayout() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [pathname]);
+
+  useEffect(() => {
+    let active = true;
+    void Linking.getInitialURL()
+      .then((initialUrl) => {
+        if (active) openExternalWebUrl(initialUrl);
+      })
+      .catch(() => {});
+    const subscription = Linking.addEventListener('url', (event) => openExternalWebUrl(event.url));
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [openExternalWebUrl]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {

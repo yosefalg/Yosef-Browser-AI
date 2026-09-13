@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Linking } from 'react-native';
+import { AppState, Linking, View } from 'react-native';
 import { Stack, router, useGlobalSearchParams, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AppLockGate } from '@/components/AppLockGate';
+import { DownloadShelf } from '@/components/DownloadShelf';
 import { deriveBrowserPerformancePolicy, getPerformanceSettings } from '@/lib/performance';
 import { isOnboardingComplete } from '@/lib/onboarding';
 
@@ -99,13 +100,16 @@ export default function RootLayout() {
         <StatusBar style="light" backgroundColor="#070B14" />
         <AppErrorBoundary>
           <AppLockGate>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                animation: lightweightNavigation ? 'none' : 'fade',
-                freezeOnBlur: freezeInactiveScreens,
-              }}
-            />
+            <View style={{ flex: 1 }}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  animation: lightweightNavigation ? 'none' : 'fade',
+                  freezeOnBlur: freezeInactiveScreens,
+                }}
+              />
+              <DownloadShelf visible={pathname === '/browser'} />
+            </View>
           </AppLockGate>
         </AppErrorBoundary>
       </SafeAreaProvider>

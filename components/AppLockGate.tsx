@@ -10,6 +10,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
   const [message, setMessage] = useState('');
   const backgroundAt = useRef<number | null>(null);
   const mounted = useRef(true);
+  const busyRef = useRef(false);
 
   const refreshSettings = useCallback(async () => {
     const next = await getAppLockSettings().catch(() => null);
@@ -19,9 +20,12 @@ export function AppLockGate({ children }: PropsWithChildren) {
   }, []);
 
   const unlock = useCallback(async () => {
-    if (busy) return;
-    setBusy(true);
-    setMessage('');
+    if (busyRef.current) return;
+    busyRef.current = true;
+    if (mounted.current) {
+      setBusy(true);
+      setMessage('');
+    }
     try {
       const success = await authenticateAppLock();
       if (!mounted.current) return;
@@ -30,9 +34,10 @@ export function AppLockGate({ children }: PropsWithChildren) {
     } catch {
       if (mounted.current) setMessage('تعذر تشغيل حماية الجهاز الآن.');
     } finally {
+      busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
-  }, [busy]);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;

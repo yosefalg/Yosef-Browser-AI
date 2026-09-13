@@ -81,9 +81,9 @@ export function HomeMenu({ visible, onClose, theme, items }: { visible: boolean;
       <Animated.View style={[s.overlay,{opacity:overlay}]}>
         <BlurView intensity={12} tint="dark" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}/>
         <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
-        <Animated.View style={[s.card,{borderColor:theme.border,opacity:panel,transform:[{perspective:900},{translateX:panel.interpolate({inputRange:[0,1],outputRange:[44,0]})},{scale:panel.interpolate({inputRange:[0,1],outputRange:[.985,1]})}]}]}>
-          <BlurView intensity={42} tint="dark" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}/>
-          <LinearGradient colors={['rgba(255,255,255,.095)','rgba(255,255,255,.035)','rgba(255,255,255,.015)']} start={{x:0,y:0}} end={{x:1,y:1}} style={StyleSheet.absoluteFill}/>
+        <Animated.View style={[s.card,{borderColor:theme.border,opacity:panel,transform:[{translateX:panel.interpolate({inputRange:[0,1],outputRange:[30,0]})}]}]}>
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill,s.cardGlass]} />
+          <LinearGradient colors={['rgba(255,255,255,.11)','rgba(255,255,255,.045)','rgba(255,255,255,.02)']} start={{x:0,y:0}} end={{x:1,y:1}} style={StyleSheet.absoluteFill}/>
           <View style={s.topShine}/>
           <View style={s.header}>
             <View style={s.brandCopy}><Text style={[s.brand,{color:theme.text}]}>RAID Browser</Text><Text style={[s.brandHint,{color:theme.muted}]}>سريع • مرتب • واضح</Text></View>
@@ -110,7 +110,7 @@ export function HomeMenu({ visible, onClose, theme, items }: { visible: boolean;
 
 const s=StyleSheet.create({
   overlay:{flex:1,backgroundColor:'rgba(4,8,14,.40)',justifyContent:'flex-start',alignItems:'flex-end',paddingTop:54,paddingRight:10,paddingLeft:10},
-  card:{width:'86%',maxWidth:346,maxHeight:'90%',borderRadius:30,borderWidth:1,padding:10,shadowColor:'#000',shadowOpacity:.28,shadowRadius:26,shadowOffset:{width:0,height:14},elevation:16,overflow:'hidden',backgroundColor:'rgba(15,20,28,.66)'},topShine:{position:'absolute',top:0,left:26,right:26,height:1,backgroundColor:'rgba(255,255,255,.30)'},
+  card:{width:'86%',maxWidth:346,maxHeight:'90%',borderRadius:30,borderWidth:1,padding:10,shadowColor:'#000',shadowOpacity:.28,shadowRadius:26,shadowOffset:{width:0,height:14},elevation:16,overflow:'hidden',backgroundColor:'rgba(15,20,28,.88)'},cardGlass:{backgroundColor:'rgba(255,255,255,.025)'},topShine:{position:'absolute',top:0,left:26,right:26,height:1,backgroundColor:'rgba(255,255,255,.30)'},
   header:{minHeight:66,paddingHorizontal:8,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},brandCopy:{alignItems:'flex-start'},brand:{fontSize:19,fontWeight:'900',textAlign:'right'},brandHint:{fontSize:10,fontWeight:'700',marginTop:3,textAlign:'right'},logoDepth:{shadowColor:'#8BE0CC',shadowOpacity:.16,shadowRadius:10,shadowOffset:{width:0,height:4},elevation:5},divider:{height:1,backgroundColor:'rgba(255,255,255,.10)',marginHorizontal:5,marginBottom:5},content:{paddingBottom:8},
   row:{minHeight:56,borderRadius:17,paddingHorizontal:9,paddingVertical:7,flexDirection:'row',alignItems:'center',gap:10,borderWidth:1,borderColor:'transparent'},rowPressed:{backgroundColor:'rgba(255,255,255,.065)',borderColor:'rgba(255,255,255,.07)',transform:[{scale:.985}]},disabled:{opacity:.42},iconBox:{width:40,height:40,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center',overflow:'hidden',backgroundColor:'rgba(255,255,255,.02)'},copy:{flex:1},labelRow:{flexDirection:'row-reverse',alignItems:'center',gap:7},label:{fontSize:14,fontWeight:'800',textAlign:'right'},hint:{fontSize:10.5,fontWeight:'600',textAlign:'right',marginTop:2},badge:{minWidth:22,height:22,paddingHorizontal:6,borderRadius:11,alignItems:'center',justifyContent:'center'},badgeText:{color:'#fff',fontSize:10,fontWeight:'900'}
 });

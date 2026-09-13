@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,19 +12,28 @@ export default function RootLayout() {
   const pathname = usePathname();
   const [freezeInactiveScreens, setFreezeInactiveScreens] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
+  const refreshPerformancePolicy = useCallback(() => {
+    let cancelled = false;
     void getPerformanceSettings()
       .then((settings) => {
-        if (!alive) return;
+        if (cancelled) return;
         const policy = deriveBrowserPerformancePolicy(settings);
         setFreezeInactiveScreens(policy.suspendBackgroundTabs);
       })
       .catch(() => {
-        if (alive) setFreezeInactiveScreens(false);
+        if (!cancelled) setFreezeInactiveScreens(false);
       });
-    return () => { alive = false; };
-  }, [pathname]);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => refreshPerformancePolicy(), [pathname, refreshPerformancePolicy]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshPerformancePolicy();
+    });
+    return () => subscription.remove();
+  }, [refreshPerformancePolicy]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

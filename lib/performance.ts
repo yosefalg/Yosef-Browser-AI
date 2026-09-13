@@ -132,24 +132,25 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
 }
 
 function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
-  if (!aggressiveRetry) return [2200] as const;
+  if (!aggressiveRetry) return [2600] as const;
 
-  // Backoff is deliberately staggered. On unstable/mobile Iraqi links this avoids a
-  // burst of immediate retries competing with the active request while still recovering
-  // quickly from short packet-loss or route-change windows.
+  // Conservative staggered backoff is deliberate for mobile Iraqi routes (including
+  // congested/variable last-mile links). RAID retries quickly enough to recover from
+  // short packet loss, but avoids a burst of overlapping reloads that can make a weak
+  // connection worse. This optimizes app behavior only; it never changes ISP bandwidth.
   switch (profile) {
     case 'boost':
-      return [550, 1600, 3900] as const;
+      return [650, 1800, 4400] as const;
     case 'video':
-      return [900, 2600, 6500] as const;
+      return [1100, 3100, 7600] as const;
     case 'downloads':
-      return [1100, 3200, 8200] as const;
+      return [1400, 3900, 9800] as const;
     case 'low-data':
-      return [1300, 3600, 9000] as const;
+      return [1600, 4500, 11000] as const;
     case 'reading':
-      return [750, 2200, 5600] as const;
+      return [850, 2500, 6200] as const;
     default:
-      return [700, 2000, 5000] as const;
+      return [800, 2300, 5800] as const;
   }
 }
 
@@ -164,7 +165,7 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
       preferCache: true,
       deferNonCriticalWork: false,
       lowBandwidthImages: false,
-      retryDelaysMs: [1500],
+      retryDelaysMs: [1800],
       visualDensity: 'full',
       mediaBias: 'normal',
       lightweightNavigation: false,
@@ -178,11 +179,11 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
     case 'boost':
       return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal', lightweightNavigation:true };
     case 'video':
-      return { profile:'video', activeTabPriority:true, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:false, retryDelaysMs, visualDensity:'reduced', mediaBias:'video', lightweightNavigation:true };
+      return { profile:'video', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:false, retryDelaysMs, visualDensity:'reduced', mediaBias:'video', lightweightNavigation:true };
     case 'reading':
-      return { profile:'reading', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
+      return { profile:'reading', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     case 'downloads':
-      return { profile:'downloads', activeTabPriority:false, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'downloads', lightweightNavigation:true };
+      return { profile:'downloads', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'downloads', lightweightNavigation:true };
     case 'low-data':
       return { profile:'low-data', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:true, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     default:
@@ -196,6 +197,8 @@ export function policySummary(policy: BrowserPerformancePolicy) {
   if (policy.suspendBackgroundTabs) parts.push('تعليق الخلفية');
   if (policy.reduceBackgroundWork) parts.push('مهام خلفية أقل');
   if (policy.lightweightNavigation) parts.push('تنقل أخف');
+  if (policy.preferCache) parts.push('استفادة من الكاش');
+  if (policy.retryDelaysMs.length > 1) parts.push('Retry متدرج');
   if (policy.lowBandwidthImages) parts.push('صور أخف');
   if (policy.mediaBias === 'video') parts.push('مهيأ للفيديو');
   if (policy.mediaBias === 'downloads') parts.push('مهيأ للتنزيل');
@@ -216,10 +219,10 @@ export function profileLabel(profile: BrowsingProfile) {
 export function profileDescription(profile: BrowsingProfile) {
   switch (profile) {
     case 'boost': return 'يركّز موارد RAID على الصفحة الحالية ويخفف الشغل الخلفي بدون ادعاء زيادة سرعة الاشتراك.';
-    case 'video': return 'يقلل المؤثرات والعمل الخلفي ويستخدم Retry متدرج أهدأ حتى لا ينافس تدفق الفيديو على الشبكات المتذبذبة.';
-    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع نشاط خلفي أقل، ويشمل صفحات AMP والموبايل تلقائيًا.';
-    case 'downloads': return 'يخفف التصفح الخلفي ويباعد إعادة المحاولة حتى تبقى التنزيلات داخل RAID أكثر استقرارًا.';
-    case 'low-data': return 'للشبكات المتذبذبة: يقلل الصور الثقيلة والعمل غير الضروري ويستخدم Backoff محافظ لتقليل الطلبات المكررة.';
-    default: return 'الوضع الافتراضي السلس: يجمّد الشاشات غير النشطة ويحافظ على الأنيميشن الطبيعي مع توازن السرعة والذاكرة.';
+    case 'video': return 'يثبت أولوية الصفحة الحالية ويخفف الخلفية مع Retry متدرج أهدأ حتى لا تنافس الطلبات تدفق الفيديو على الاتصال المتذبذب.';
+    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع تعليق الخلفية، ويشمل صفحات AMP والموبايل تلقائيًا.';
+    case 'downloads': return 'يعطي أولوية للجلسة الحالية ويجمّد الخلفية ويباعد إعادة المحاولة حتى تبقى تنزيلات RAID أكثر استقرارًا.';
+    case 'low-data': return 'للشبكات الضعيفة أو المتذبذبة: يخفف الصور والعمل غير الضروري ويستخدم Backoff محافظ لتقليل الطلبات المتكررة واستهلاك البيانات.';
+    default: return 'الوضع الافتراضي السلس: يجمّد الشاشات غير النشطة ويوازن السرعة والذاكرة مع Retry متدرج للشبكات غير المستقرة.';
   }
 }

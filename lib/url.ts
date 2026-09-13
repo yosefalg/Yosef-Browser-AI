@@ -3,6 +3,59 @@ const HTTP_SCHEME = /^https?:\/\//i;
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 const MAX_OMNIBOX_INPUT_LENGTH = 8192;
 
+type SearchShortcut = {
+  prefix: string;
+  label: string;
+  aliases: readonly string[];
+  home: string;
+  build: (query: string) => string;
+};
+
+export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
+  {
+    prefix: '!g',
+    label: 'Google',
+    aliases: ['!g', '!google'],
+    home: 'https://www.google.com',
+    build: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!yt',
+    label: 'YouTube',
+    aliases: ['!yt', '!youtube', '!يوتيوب'],
+    home: 'https://www.youtube.com',
+    build: (query) => `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!ddg',
+    label: 'DuckDuckGo',
+    aliases: ['!d', '!ddg', '!duck', '!duckduckgo'],
+    home: 'https://duckduckgo.com',
+    build: (query) => `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!b',
+    label: 'Bing',
+    aliases: ['!b', '!bing'],
+    home: 'https://www.bing.com',
+    build: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!brave',
+    label: 'Brave',
+    aliases: ['!brave'],
+    home: 'https://search.brave.com',
+    build: (query) => `https://search.brave.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!wiki',
+    label: 'Wikipedia',
+    aliases: ['!w', '!wiki', '!wikipedia', '!ويكي'],
+    home: 'https://ar.wikipedia.org',
+    build: (query) => `https://ar.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`,
+  },
+] as const;
+
 function looksLikeHost(value: string) {
   return (
     /^[\w-]+(\.[\w-]+)+(?::\d{1,5})?([/?#].*)?$/i.test(value) ||
@@ -69,6 +122,17 @@ function isReasonableInputLength(value: string) {
   return value.length <= MAX_OMNIBOX_INPUT_LENGTH;
 }
 
+function shortcutTarget(value: string) {
+  if (!value.startsWith('!')) return null;
+  const match = value.match(/^(\S+)(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  const alias = match[1].toLowerCase();
+  const shortcut = SEARCH_SHORTCUTS.find((item) => item.aliases.some((candidate) => candidate.toLowerCase() === alias));
+  if (!shortcut) return null;
+  const query = (match[2] || '').trim();
+  return query ? shortcut.build(query) : shortcut.home;
+}
+
 export function safeExternalUrl(url: string) {
   const value = url.trim();
   if (!value || !isReasonableInputLength(value) || CONTROL_CHARS.test(value) || !HTTP_SCHEME.test(value)) return false;
@@ -91,6 +155,9 @@ export function normalizeInput(input: string) {
   if (!value) return 'https://www.google.com';
   if (!isReasonableInputLength(value)) throw new Error('Input too long');
   if (CONTROL_CHARS.test(value)) throw new Error('Unsafe URL characters');
+
+  const shortcut = shortcutTarget(value);
+  if (shortcut) return shortcut;
 
   if (HTTP_SCHEME.test(value)) {
     if (!safeExternalUrl(value)) throw new Error('Invalid URL');

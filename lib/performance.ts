@@ -28,7 +28,7 @@ export type BrowserPerformancePolicy = {
 };
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
-  enabled: false,
+  enabled: true,
   profile: 'balanced',
   adaptiveMode: true,
   suspendBackgroundTabs: true,
@@ -68,7 +68,7 @@ export function isBrowsingProfile(value: unknown): value is BrowsingProfile {
 export function sanitizePerformanceSettings(value: Partial<PerformanceSettings> | null | undefined): PerformanceSettings {
   const profile = isBrowsingProfile(value?.profile) ? value.profile : 'balanced';
   return {
-    enabled: value?.enabled === true,
+    enabled: value?.enabled !== false,
     profile,
     adaptiveMode: value?.adaptiveMode !== false,
     suspendBackgroundTabs: value?.suspendBackgroundTabs !== false,
@@ -149,7 +149,9 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
     return {
       profile: 'balanced',
       activeTabPriority: false,
-      suspendBackgroundTabs: false,
+      // Baseline memory protection stays enabled even when Boost is off. It only freezes
+      // inactive React Native screens; active downloads/network work continue outside them.
+      suspendBackgroundTabs: true,
       reduceBackgroundWork: false,
       preferCache: true,
       deferNonCriticalWork: false,
@@ -176,7 +178,7 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
     case 'low-data':
       return { profile:'low-data', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:true, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     default:
-      return { profile:'balanced', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:value.reduceBackgroundWork, preferCache:true, deferNonCriticalWork:value.reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'full', mediaBias:'normal', lightweightNavigation:value.reduceBackgroundWork };
+      return { profile:'balanced', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:value.reduceBackgroundWork, preferCache:true, deferNonCriticalWork:value.reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'full', mediaBias:'normal', lightweightNavigation:false };
   }
 }
 
@@ -210,6 +212,6 @@ export function profileDescription(profile: BrowsingProfile) {
     case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع نشاط خلفي أقل.';
     case 'downloads': return 'يخفف التصفح الخلفي حتى تبقى التنزيلات داخل RAID أكثر استقرارًا.';
     case 'low-data': return 'للشبكات المتذبذبة: يقلل الصور الثقيلة والعمل غير الضروري ويحافظ على استهلاك أخف.';
-    default: return 'توازن بين السرعة، البطارية، الذاكرة وجودة الصفحات.';
+    default: return 'الوضع الافتراضي السلس: يجمّد الشاشات غير النشطة ويحافظ على الأنيميشن الطبيعي مع توازن السرعة والذاكرة.';
   }
 }

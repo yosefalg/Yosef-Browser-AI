@@ -16,7 +16,7 @@ export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
   {
     prefix: '!g',
     label: 'Google',
-    aliases: ['!g', '!google'],
+    aliases: ['!g', '!google', '!كوكل', '!جوجل'],
     home: 'https://www.google.com',
     build: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
   },
@@ -93,21 +93,21 @@ export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
   {
     prefix: '!ddg',
     label: 'DuckDuckGo',
-    aliases: ['!d', '!ddg', '!duck', '!duckduckgo'],
+    aliases: ['!d', '!ddg', '!duck', '!duckduckgo', '!دك'],
     home: 'https://duckduckgo.com',
     build: (query) => `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
   },
   {
     prefix: '!b',
     label: 'Bing',
-    aliases: ['!b', '!bing'],
+    aliases: ['!b', '!bing', '!بنك'],
     home: 'https://www.bing.com',
     build: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
   },
   {
     prefix: '!brave',
     label: 'Brave',
-    aliases: ['!brave'],
+    aliases: ['!brave', '!بريف'],
     home: 'https://search.brave.com',
     build: (query) => `https://search.brave.com/search?q=${encodeURIComponent(query)}`,
   },
@@ -121,6 +121,10 @@ export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
 ] as const;
 
 const COLON_SHORTCUTS: Readonly<Record<string, string>> = {
+  'g:': '!g',
+  'google:': '!g',
+  'كوكل:': '!g',
+  'جوجل:': '!g',
   'yt:': '!yt',
   'youtube:': '!yt',
   'يوتيوب:': '!yt',
@@ -146,7 +150,17 @@ const COLON_SHORTCUTS: Readonly<Record<string, string>> = {
   'tr:': '!tr',
   'translate:': '!tr',
   'ترجمة:': '!tr',
+  'ddg:': '!ddg',
+  'duck:': '!ddg',
+  'duckduckgo:': '!ddg',
+  'دك:': '!ddg',
+  'b:': '!b',
+  'bing:': '!b',
+  'بنك:': '!b',
+  'brave:': '!brave',
+  'بريف:': '!brave',
   'wiki:': '!wiki',
+  'wikipedia:': '!wiki',
   'ويكي:': '!wiki',
 };
 

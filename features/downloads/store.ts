@@ -3,6 +3,18 @@ import type { DownloadItem, DownloadState } from './types';
 
 let promise: Promise<SQLite.SQLiteDatabase> | null = null;
 let migrated = false;
+const downloadListeners = new Set<() => void>();
+
+function emitDownloadsChanged() {
+  for (const listener of downloadListeners) {
+    try { listener(); } catch {}
+  }
+}
+
+export function subscribeDownloads(listener: () => void) {
+  downloadListeners.add(listener);
+  return () => downloadListeners.delete(listener);
+}
 
 async function migrate(d: SQLite.SQLiteDatabase) {
   if (migrated) return;
@@ -50,6 +62,7 @@ export async function createDownload(url: string, fileName: string, localUri: st
     'INSERT INTO downloads (url,file_name,local_uri,referer,state,progress,total_bytes,written_bytes,speed_bps,eta_seconds,resume_data,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     url, fileName, localUri, referer, 'queued', 0, null, 0, 0, null, null, null, now, now,
   );
+  emitDownloadsChanged();
   return Number(result.lastInsertRowId);
 }
 
@@ -70,6 +83,7 @@ export async function updateDownload(id: number, patch: Partial<Pick<DownloadIte
     patch.local_uri === undefined ? current.local_uri : patch.local_uri,
     Date.now(), id,
   );
+  emitDownloadsChanged();
 }
 
 export async function listDownloads(limit = 100) {
@@ -89,4 +103,5 @@ export async function setDownloadState(id: number, state: DownloadState, error: 
 export async function deleteDownloadRecord(id: number) {
   const d = await db();
   await d.runAsync('DELETE FROM downloads WHERE id=?', id);
+  emitDownloadsChanged();
 }

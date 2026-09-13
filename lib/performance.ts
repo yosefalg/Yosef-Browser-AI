@@ -24,6 +24,7 @@ export type BrowserPerformancePolicy = {
   retryDelaysMs: readonly number[];
   visualDensity: 'full' | 'reduced' | 'minimal';
   mediaBias: 'normal' | 'video' | 'downloads';
+  lightweightNavigation: boolean;
 };
 
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
@@ -139,6 +140,7 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
       retryDelaysMs: [1200],
       visualDensity: 'full',
       mediaBias: 'normal',
+      lightweightNavigation: false,
     };
   }
 
@@ -148,17 +150,17 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
   const retryDelaysMs = value.aggressiveRetry ? [500, 1400, 3600] as const : [1600] as const;
   switch (profile) {
     case 'boost':
-      return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal' };
+      return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal', lightweightNavigation:true };
     case 'video':
-      return { profile:'video', activeTabPriority:true, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:false, retryDelaysMs, visualDensity:'reduced', mediaBias:'video' };
+      return { profile:'video', activeTabPriority:true, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:false, retryDelaysMs, visualDensity:'reduced', mediaBias:'video', lightweightNavigation:true };
     case 'reading':
-      return { profile:'reading', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal' };
+      return { profile:'reading', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     case 'downloads':
-      return { profile:'downloads', activeTabPriority:false, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'downloads' };
+      return { profile:'downloads', activeTabPriority:false, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'downloads', lightweightNavigation:true };
     case 'low-data':
-      return { profile:'low-data', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:true, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal' };
+      return { profile:'low-data', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:true, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     default:
-      return { profile:'balanced', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:value.reduceBackgroundWork, preferCache:true, deferNonCriticalWork:value.reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'full', mediaBias:'normal' };
+      return { profile:'balanced', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:value.reduceBackgroundWork, preferCache:true, deferNonCriticalWork:value.reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'full', mediaBias:'normal', lightweightNavigation:value.reduceBackgroundWork };
   }
 }
 
@@ -167,6 +169,7 @@ export function policySummary(policy: BrowserPerformancePolicy) {
   if (policy.activeTabPriority) parts.push('أولوية للصفحة الحالية');
   if (policy.suspendBackgroundTabs) parts.push('تعليق الخلفية');
   if (policy.reduceBackgroundWork) parts.push('مهام خلفية أقل');
+  if (policy.lightweightNavigation) parts.push('تنقل أخف');
   if (policy.lowBandwidthImages) parts.push('صور أخف');
   if (policy.mediaBias === 'video') parts.push('مهيأ للفيديو');
   if (policy.mediaBias === 'downloads') parts.push('مهيأ للتنزيل');
@@ -186,11 +189,11 @@ export function profileLabel(profile: BrowsingProfile) {
 
 export function profileDescription(profile: BrowsingProfile) {
   switch (profile) {
-    case 'boost': return 'يركّز موارد RAID على الصفحة الحالية ويخفف الشغل الخلفي.';
-    case 'video': return 'يقلل المؤثرات ويعطي أولوية للاستقرار أثناء الفيديو.';
-    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة.';
-    case 'downloads': return 'يقلل نشاط التصفح الخلفي حتى تبقى التنزيلات مستقرة.';
-    case 'low-data': return 'للشبكات المتذبذبة: يقلل الصور الثقيلة والعمل غير الضروري.';
+    case 'boost': return 'يركّز موارد RAID على الصفحة الحالية ويخفف الشغل الخلفي بدون ادعاء زيادة سرعة الاشتراك.';
+    case 'video': return 'يقلل المؤثرات والعمل الخلفي ويعطي أولوية للاستقرار أثناء الفيديو.';
+    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع نشاط خلفي أقل.';
+    case 'downloads': return 'يخفف التصفح الخلفي حتى تبقى التنزيلات داخل RAID أكثر استقرارًا.';
+    case 'low-data': return 'للشبكات المتذبذبة: يقلل الصور الثقيلة والعمل غير الضروري ويحافظ على استهلاك أخف.';
     default: return 'توازن بين السرعة، البطارية، الذاكرة وجودة الصفحات.';
   }
 }

@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from './db';
+import { getPerformanceSettings, type BrowsingProfile } from './performance';
 
 export type SitePreferences = {
   desktopMode: boolean;
@@ -37,6 +38,25 @@ function sanitize(value: Partial<SitePreferences> | null | undefined): SitePrefe
   };
 }
 
+function applyProfileDefaults(base: SitePreferences, profile: BrowsingProfile, enabled: boolean): SitePreferences {
+  if (!enabled) return base;
+
+  switch (profile) {
+    case 'video':
+      return { ...base, autoplayMedia: true };
+    case 'reading':
+      return { ...base, autoplayMedia: false, adBlock: true };
+    case 'downloads':
+      return { ...base, autoplayMedia: false, adBlock: true };
+    case 'low-data':
+      return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
+    case 'boost':
+      return { ...base, autoplayMedia: false, adBlock: true };
+    default:
+      return base;
+  }
+}
+
 async function readStore() {
   return getSetting<SitePreferenceStore>(STORE_KEY, {});
 }
@@ -45,7 +65,13 @@ export async function getSitePreferences(url: string): Promise<SitePreferences> 
   const host = sitePreferenceHost(url);
   if (!host) return { ...DEFAULT_SITE_PREFERENCES };
   const store = await readStore();
-  return sanitize(store[host]);
+  const saved = store[host];
+  if (saved) return sanitize(saved);
+
+  const base = { ...DEFAULT_SITE_PREFERENCES };
+  const performance = await getPerformanceSettings().catch(() => null);
+  if (!performance) return base;
+  return applyProfileDefaults(base, performance.profile, performance.enabled);
 }
 
 export async function saveSitePreferences(url: string, value: SitePreferences) {

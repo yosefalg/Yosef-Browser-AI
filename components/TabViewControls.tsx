@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ThemePalette } from '@/lib/theme';
 
@@ -14,6 +14,8 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
   onSortMode: (mode: TabSortMode) => void;
   theme: ThemePalette;
 }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 390;
   const sortItems: SortItem[] = [
     { key: 'recent', label: 'الأحدث', icon: 'time-outline' },
     { key: 'oldest', label: 'الأقدم', icon: 'hourglass-outline' },
@@ -21,12 +23,13 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
     { key: 'title', label: 'الاسم', icon: 'text-outline' },
   ];
 
-  return <View style={s.wrap}>
+  return <View style={[s.wrap,compact&&s.wrapCompact]}>
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={s.sortRow}
       keyboardShouldPersistTaps="handled"
+      style={s.sortScroller}
     >
       {sortItems.map(item => {
         const active = sortMode === item.key;
@@ -38,6 +41,7 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
           accessibilityLabel={`ترتيب حسب ${item.label}`}
           style={({pressed})=>[
             s.chip,
+            compact&&s.chipCompact,
             {backgroundColor:active?theme.surface2:theme.surface,borderColor:active?theme.accent:theme.border},
             pressed&&s.press,
           ]}
@@ -47,7 +51,7 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
         </Pressable>;
       })}
     </ScrollView>
-    <View style={[s.modeRow,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+    <View style={[s.modeRow,{backgroundColor:theme.surface,borderColor:theme.border},compact&&s.modeRowCompact]}>
       <Pressable
         onPress={() => onViewMode('grid')}
         style={[s.mode,viewMode==='grid'&&{backgroundColor:theme.accent}]}
@@ -68,10 +72,14 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
 
 const s=StyleSheet.create({
   wrap:{marginTop:12,flexDirection:'row-reverse',alignItems:'center',gap:9},
+  wrapCompact:{alignItems:'stretch',flexDirection:'column',gap:8},
+  sortScroller:{flex:1},
   sortRow:{flexDirection:'row-reverse',gap:7,paddingVertical:1,paddingHorizontal:1},
   chip:{height:36,minWidth:78,paddingHorizontal:10,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:5},
+  chipCompact:{minWidth:72},
   chipText:{fontSize:10,fontWeight:'900'},
-  modeRow:{flexDirection:'row',borderRadius:13,padding:3,borderWidth:1},
+  modeRow:{flexDirection:'row',borderRadius:13,padding:3,borderWidth:1,flexShrink:0},
+  modeRowCompact:{alignSelf:'flex-end'},
   mode:{width:37,height:30,borderRadius:10,alignItems:'center',justifyContent:'center'},
   press:{opacity:.82,transform:[{scale:.97}]}
 });

@@ -43,15 +43,17 @@ function applyProfileDefaults(base: SitePreferences, profile: BrowsingProfile, e
 
   switch (profile) {
     case 'video':
-      return { ...base, autoplayMedia: true, adBlock: true };
+      // Video sites often rely on cross-site auth/CDN flows, so keep cookie compatibility.
+      return { ...base, autoplayMedia: true, thirdPartyCookies: true, adBlock: true };
     case 'reading':
       return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
     case 'downloads':
-      return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
+      // Release/download hosts commonly redirect through authenticated mirrors; avoid breaking them.
+      return { ...base, autoplayMedia: false, thirdPartyCookies: true, adBlock: true };
     case 'low-data':
       return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
     case 'boost':
-      return { ...base, autoplayMedia: false, adBlock: true };
+      return { ...base, autoplayMedia: false, thirdPartyCookies: true, adBlock: true };
     default:
       return base;
   }

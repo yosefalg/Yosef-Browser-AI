@@ -9,7 +9,7 @@ import { SiteIcon } from '@/components/SiteIcon';
 import { TabSortMode, TabViewControls, TabViewMode } from '@/components/TabViewControls';
 import { getTheme, ThemeName } from '@/lib/theme';
 import {
-  BrowserTab, ClosedBrowserTab, clearRecentlyClosedTabs, closeAllBrowserTabs, closeBrowserTab,
+  BrowserTab, ClosedBrowserTab, clearRecentlyClosedTabs, closeAllBrowserTabs, closeBrowserTab, closeBrowserTabs,
   createBrowserTab, getBrowserTabs, getRecentlyClosedTabs, getSetting, restoreClosedBrowserTab, setSetting,
 } from '@/lib/db';
 
@@ -127,7 +127,7 @@ export default function TabsScreen(){
     if(busy||selectedIds.length===0)return;
     Alert.alert('إغلاق التبويبات المحددة؟',`سيتم إغلاق ${selectedIds.length} تبويب ويمكن استعادتها من «المغلقة مؤخرًا».`,[
       {text:'إلغاء',style:'cancel'},
-      {text:'إغلاق',style:'destructive',onPress:async()=>{setBusy(true);try{for(const id of selectedIds)await closeBrowserTab(id);exitSelection();await refresh();}finally{setBusy(false);}}},
+      {text:'إغلاق',style:'destructive',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(selectedIds);exitSelection();await refresh();}finally{setBusy(false);}}},
     ]);
   };
 
@@ -136,7 +136,7 @@ export default function TabsScreen(){
     if(busy||tabs.length<2)return;
     Alert.alert('إغلاق التبويبات الأخرى؟',`سيبقى «${tab.title||hostOf(tab.url)}» فقط.`,[
       {text:'إلغاء',style:'cancel'},
-      {text:'إغلاق الأخرى',style:'destructive',onPress:async()=>{setBusy(true);try{for(const item of tabs){if(item.id!==tab.id)await closeBrowserTab(item.id);}setQuery('');await refresh();}finally{setBusy(false);}}},
+      {text:'إغلاق الأخرى',style:'destructive',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(tabs.filter(item=>item.id!==tab.id).map(item=>item.id));setQuery('');await refresh();}finally{setBusy(false);}}},
     ]);
   };
 
@@ -152,7 +152,7 @@ export default function TabsScreen(){
     if(!duplicates.length){Alert.alert('التبويبات مرتبة','لا توجد نسخ مكررة الآن.');return;}
     Alert.alert('تنظيف التبويبات المكررة؟',`سيتم الاحتفاظ بأحدث نسخة وإغلاق ${duplicates.length} تبويب مكرر.`,[
       {text:'إلغاء',style:'cancel'},
-      {text:'تنظيف',onPress:async()=>{setBusy(true);try{for(const tab of duplicates)await closeBrowserTab(tab.id);await refresh();}finally{setBusy(false);}}},
+      {text:'تنظيف',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(duplicates.map(tab=>tab.id));await refresh();}finally{setBusy(false);}}},
     ]);
   };
 

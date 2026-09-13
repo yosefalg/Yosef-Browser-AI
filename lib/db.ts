@@ -83,6 +83,25 @@ export async function updateBrowserTab(id:number,url:string,title?:string){if(!N
 export async function getBrowserTabs(limit=50){const d=await db();return d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC LIMIT ?',Math.min(Math.max(1,limit),MAX_OPEN_TABS));}
 export async function getRecentlyClosedTabs(limit=12){const d=await db();return d.getAllAsync<ClosedBrowserTab>('SELECT * FROM closed_browser_tabs ORDER BY closed_at DESC LIMIT ?',Math.min(Math.max(1,limit),MAX_RECENTLY_CLOSED));}
 export async function clearRecentlyClosedTabs(){const d=await db();await d.execAsync('DELETE FROM closed_browser_tabs');}
-export async function closeBrowserTab(id:number){const d=await db();const tab=await d.getFirstAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE id=?',id);if(!tab)return;await archiveClosedTab(d,tab);await d.runAsync('DELETE FROM browser_tabs WHERE id=?',id);await trimRecentlyClosed(d);}
+export async function closeBrowserTabs(ids:number[]){
+  const cleanIds=Array.from(new Set(ids.filter(id=>Number.isInteger(id)&&id>0)));
+  if(!cleanIds.length)return 0;
+  const d=await db();
+  const placeholders=cleanIds.map(()=>'?').join(',');
+  await d.execAsync('BEGIN IMMEDIATE TRANSACTION');
+  try{
+    const tabs=await d.getAllAsync<BrowserTab>(`SELECT * FROM browser_tabs WHERE private_mode=0 AND id IN (${placeholders}) ORDER BY updated_at DESC`,...cleanIds);
+    const closedAt=Date.now();
+    for(const tab of tabs)await archiveClosedTab(d,tab,closedAt);
+    if(tabs.length)await d.runAsync(`DELETE FROM browser_tabs WHERE private_mode=0 AND id IN (${placeholders})`,...cleanIds);
+    await trimRecentlyClosed(d);
+    await d.execAsync('COMMIT');
+    return tabs.length;
+  }catch(error){
+    await d.execAsync('ROLLBACK').catch(()=>{});
+    throw error;
+  }
+}
+export async function closeBrowserTab(id:number){await closeBrowserTabs([id]);}
 export async function restoreClosedBrowserTab(id:number){const d=await db();const tab=await d.getFirstAsync<ClosedBrowserTab>('SELECT * FROM closed_browser_tabs WHERE id=?',id);if(!tab||!/^https?:\/\//i.test(tab.url))return null;const newId=await createBrowserTab(tab.url,tab.title);await d.runAsync('DELETE FROM closed_browser_tabs WHERE id=?',id);return {id:newId,url:tab.url,title:tab.title};}
-export async function closeAllBrowserTabs(){const d=await db();const tabs=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC');const now=Date.now();for(const tab of tabs.slice(0,MAX_RECENTLY_CLOSED))await archiveClosedTab(d,tab,now);await d.runAsync('DELETE FROM browser_tabs WHERE private_mode=0');await trimRecentlyClosed(d);}
+export async function closeAllBrowserTabs(){const d=await db();const tabs=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC');return closeBrowserTabs(tabs.map(tab=>tab.id));}

@@ -18,6 +18,7 @@ const RENDERER_RECOVERY_WINDOW_MS = 30_000;
 const MAX_RENDERER_RECOVERIES = 2;
 const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
+const DOWNLOAD_URL_HINT_RE = /(?:^|[\/?&#=_-])(?:download|downloads|attachment|attachments|export|file|files|getfile|get-file|dl|save)(?:$|[\/?&#=_-])/i;
 const MEDIA_SCAN_JS = `(() => {
   try {
     const urls = [];
@@ -81,25 +82,55 @@ const DOWNLOAD_CAPTURE_JS = `(() => {
   try {
     if (window.__raidDownloadCaptureInstalled) return true;
     window.__raidDownloadCaptureInstalled = true;
-    const fileRe = /\.(?:apk|aab|zip|rar|7z|pdf|docx?|xlsx?|pptx?|csv|txt|exe|msi|dmg|deb|rpm|iso|tar|gz|tgz|bz2|xz|mp3|wav|flac|ogg)(?:$|[?#])/i;
+    const fileRe = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|csv|txt|exe|msi|dmg|deb|rpm|iso|tar|gz|tgz|bz2|xz|mp3|wav|flac|ogg)(?:$|[?#])/i;
     const mediaRe = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
+    const intentRe = /(?:^|[\\/?&#=_-])(?:download|downloads|attachment|attachments|export|file|files|getfile|get-file|dl|save)(?:$|[\\/?&#=_-])/i;
+    const textRe = /(?:تنزيل|تحميل|احفظ|حفظ|download|save|export|get file)/i;
+    const report = (value) => {
+      try {
+        const absolute = new URL(value, location.href).href;
+        if (!/^https:\/\//i.test(absolute) || mediaRe.test(absolute)) return false;
+        window.ReactNativeWebView?.postMessage('RAID_DOWNLOAD:' + absolute);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const likelyDownload = (absolute, element) => {
+      if (!absolute || !/^https:\/\//i.test(absolute) || mediaRe.test(absolute)) return false;
+      if (fileRe.test(absolute) || intentRe.test(absolute)) return true;
+      if (!element) return false;
+      const label = [element.textContent, element.getAttribute?.('aria-label'), element.getAttribute?.('title'), element.getAttribute?.('class'), element.getAttribute?.('id')].filter(Boolean).join(' ');
+      if (textRe.test(label)) return true;
+      return Boolean(element.hasAttribute?.('download') || element.getAttribute?.('data-download') || element.getAttribute?.('data-file') || element.getAttribute?.('data-url'));
+    };
     document.addEventListener('click', (event) => {
       try {
         const target = event.target;
-        const anchor = target && target.closest ? target.closest('a[href]') : null;
-        if (!anchor) return;
-        const raw = anchor.href || anchor.getAttribute('href') || '';
+        const element = target && target.closest ? target.closest('a[href],button,[role="button"],[data-url],[data-href],[data-download]') : null;
+        if (!element) return;
+        const raw = element.href || element.getAttribute?.('href') || element.getAttribute?.('data-url') || element.getAttribute?.('data-href') || element.getAttribute?.('data-download') || '';
         if (!raw) return;
         const absolute = new URL(raw, location.href).href;
-        if (!/^https:\/\//i.test(absolute) || mediaRe.test(absolute)) return;
-        const explicit = anchor.hasAttribute('download');
-        if (!explicit && !fileRe.test(absolute)) return;
+        if (!likelyDownload(absolute, element)) return;
         event.preventDefault();
         event.stopPropagation();
         if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        window.ReactNativeWebView?.postMessage('RAID_DOWNLOAD:' + absolute);
+        report(absolute);
       } catch {}
     }, true);
+    const originalOpen = window.open;
+    if (typeof originalOpen === 'function') {
+      window.open = function(url, ...args) {
+        try {
+          if (typeof url === 'string') {
+            const absolute = new URL(url, location.href).href;
+            if (likelyDownload(absolute, null) && report(absolute)) return null;
+          }
+        } catch {}
+        return originalOpen.call(this, url, ...args);
+      };
+    }
   } catch {}
   true;
 })();`;
@@ -137,6 +168,16 @@ function isDirectMediaUrl(value: string) {
   return /^https?:\/\//i.test(value) && DIRECT_MEDIA_RE.test(value);
 }
 
+function isLikelyDownloadRequest(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:' || isDirectMediaUrl(value)) return false;
+    return DOWNLOAD_URL_HINT_RE.test(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+  } catch {
+    return false;
+  }
+}
+
 function isLikelyStreamPage(value: string) {
   try {
     const parsed = new URL(value);
@@ -148,7 +189,7 @@ function mediaPlayerHtml(mediaUrl: string) {
   const source = JSON.stringify(mediaUrl).replace(/</g, '\\u003c');
   return `<!doctype html>
 <html dir="rtl"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><style>
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;background:#03060a;color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}body{display:flex;align-items:center;justify-content:center}.shell{position:relative;width:100%;height:100%;background:radial-gradient(circle at 50% 20%,#111827 0,#03060a 58%,#000 100%)}video{width:100%;height:100%;background:#000;object-fit:contain}.chrome{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;transition:opacity .2s ease}.chrome.hidden{opacity:0}.bar{pointer-events:auto;background:linear-gradient(180deg,rgba(0,0,0,.82),rgba(0,0,0,0));padding:14px 16px}.bottom{background:linear-gradient(0deg,rgba(0,0,0,.88),rgba(0,0,0,0));padding-top:52px}.title{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f8fafc}.sub{font-size:10px;color:#94a3b8;margin-top:3px}.seek{width:100%;accent-color:#d5aa88}.row{display:flex;align-items:center;justify-content:center;gap:10;margin-top:8px;direction:ltr}.btn{border:1px solid rgba(255,255,255,.15);background:rgba(15,23,42,.72);color:#fff;border-radius:13px;height:40px;min-width:44px;padding:0 11px;font-weight:800}.btn.primary{background:#8b654e}.time{font-size:11px;color:#cbd5e1;min-width:92px;text-align:center}.toast{position:absolute;left:16px;right:16px;bottom:86px;background:rgba(15,23,42,.92);border:1px solid rgba(255,255,255,.10);padding:10px 14px;border-radius:14px;text-align:center;font-size:11px;color:#e2e8f0;display:none}.center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}.big{pointer-events:auto;width:66px;height:66px;border-radius:50%;border:1px solid rgba(255,255,255,.16);background:rgba(2,6,23,.72);color:white;font-size:27px}.status{position:absolute;top:72px;left:14px;padding:7px 10px;border-radius:12px;background:rgba(15,23,42,.74);font-size:10px;color:#cbd5e1;pointer-events:none}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;background:#03060a;color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}body{display:flex;align-items:center;justify-content:center}.shell{position:relative;width:100%;height:100%;background:radial-gradient(circle at 50% 20%,#111827 0,#03060a 58%,#000 100%)}video{width:100%;height:100%;background:#000;object-fit:contain}.chrome{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;transition:opacity .2s ease}.chrome.hidden{opacity:0}.bar{pointer-events:auto;background:linear-gradient(180deg,rgba(0,0,0,.82),rgba(0,0,0,0));padding:14px 16px}.bottom{background:linear-gradient(0deg,rgba(0,0,0,.88),rgba(0,0,0,0));padding-top:52px}.title{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f8fafc}.sub{font-size:10px;color:#94a3b8;margin-top:3px}.seek{width:100%;accent-color:#d5aa88}.row{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;direction:ltr}.btn{border:1px solid rgba(255,255,255,.15);background:rgba(15,23,42,.72);color:#fff;border-radius:13px;height:40px;min-width:44px;padding:0 11px;font-weight:800}.btn.primary{background:#8b654e}.time{font-size:11px;color:#cbd5e1;min-width:92px;text-align:center}.toast{position:absolute;left:16px;right:16px;bottom:86px;background:rgba(15,23,42,.92);border:1px solid rgba(255,255,255,.10);padding:10px 14px;border-radius:14px;text-align:center;font-size:11px;color:#e2e8f0;display:none}.center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}.big{pointer-events:auto;width:66px;height:66px;border-radius:50%;border:1px solid rgba(255,255,255,.16);background:rgba(2,6,23,.72);color:white;font-size:27px}.status{position:absolute;top:72px;left:14px;padding:7px 10px;border-radius:12px;background:rgba(15,23,42,.74);font-size:10px;color:#cbd5e1;pointer-events:none}
 </style></head><body><div class="shell"><video id="raidVideo" autoplay playsinline webkit-playsinline preload="metadata"></video><div id="chrome" class="chrome"><div class="bar"><div class="title">RAID Media Player</div><div class="sub" id="host"></div></div><div class="center"><button id="big" class="big">❚❚</button></div><div class="bar bottom"><input id="seek" class="seek" type="range" min="0" max="1000" value="0"><div class="row"><button id="back" class="btn">-10</button><button id="play" class="btn primary">إيقاف</button><button id="fwd" class="btn">+10</button><span id="time" class="time">00:00 / --:--</span><button id="speed" class="btn">1×</button><button id="pip" class="btn">PiP</button><button id="full" class="btn">⛶</button><button id="download" class="btn">تنزيل</button></div></div></div><div id="status" class="status">جاري تجهيز الفيديو…</div><div id="toast" class="toast"></div></div><script>
 const video=document.getElementById('raidVideo');const chrome=document.getElementById('chrome');const play=document.getElementById('play');const big=document.getElementById('big');const seek=document.getElementById('seek');const time=document.getElementById('time');const speed=document.getElementById('speed');const pip=document.getElementById('pip');const status=document.getElementById('status');const toast=document.getElementById('toast');const src=${source};video.src=src;try{document.getElementById('host').textContent=new URL(src).hostname}catch{}
 let hideTimer=0;const speeds=[.5,.75,1,1.25,1.5,1.75,2];let speedIndex=2;const fmt=(s)=>{if(!Number.isFinite(s))return'--:--';s=Math.max(0,Math.floor(s));const m=Math.floor(s/60),x=s%60;return String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};const show=()=>{chrome.classList.remove('hidden');clearTimeout(hideTimer);hideTimer=setTimeout(()=>{if(!video.paused)chrome.classList.add('hidden')},2600)};const flash=(m)=>{toast.textContent=m;toast.style.display='block';setTimeout(()=>toast.style.display='none',1600)};const sync=()=>{play.textContent=video.paused?'تشغيل':'إيقاف';big.textContent=video.paused?'▶':'❚❚';time.textContent=fmt(video.currentTime)+' / '+fmt(video.duration);if(Number.isFinite(video.duration)&&video.duration>0)seek.value=String(Math.round((video.currentTime/video.duration)*1000));status.textContent=video.paused?'متوقف مؤقتًا':'يعمل داخل RAID'};
@@ -481,6 +522,10 @@ export default function BrowserScreen() {
       setMediaUrl(requestUrl);
       setMediaUrls((current) => current.includes(requestUrl) ? current : [requestUrl, ...current].slice(0, 12));
       setMediaOpen(true);
+      return false;
+    }
+    if (isLikelyDownloadRequest(requestUrl)) {
+      handleFileDownload(requestUrl);
       return false;
     }
     if (safeExternalUrl(requestUrl)) return true;

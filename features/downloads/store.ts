@@ -13,7 +13,7 @@ function emitDownloadsChanged() {
 
 export function subscribeDownloads(listener: () => void) {
   downloadListeners.add(listener);
-  return () => downloadListeners.delete(listener);
+  return () => { downloadListeners.delete(listener); };
 }
 
 async function migrate(d: SQLite.SQLiteDatabase) {

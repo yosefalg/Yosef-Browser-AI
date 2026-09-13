@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AppLockGate } from '@/components/AppLockGate';
 import { deriveBrowserPerformancePolicy, getPerformanceSettings } from '@/lib/performance';
+import { isOnboardingComplete } from '@/lib/onboarding';
 
 export default function RootLayout() {
   const pathname = usePathname();
@@ -32,6 +33,16 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => refreshPerformancePolicy(), [pathname, refreshPerformancePolicy]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isOnboardingComplete()
+      .then((complete) => {
+        if (!cancelled && !complete && pathname !== '/onboarding') router.replace('/onboarding');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {

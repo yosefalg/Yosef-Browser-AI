@@ -1,6 +1,7 @@
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const HTTP_SCHEME = /^https?:\/\//i;
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+const DECEPTIVE_FORMAT_CHARS = /[\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/;
 const MAX_OMNIBOX_INPUT_LENGTH = 8192;
 
 type SearchShortcut = {
@@ -25,6 +26,27 @@ export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
     aliases: ['!yt', '!youtube', '!يوتيوب'],
     home: 'https://www.youtube.com',
     build: (query) => `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!maps',
+    label: 'Google Maps',
+    aliases: ['!maps', '!map', '!خرائط'],
+    home: 'https://www.google.com/maps',
+    build: (query) => `https://www.google.com/maps/search/${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!gh',
+    label: 'GitHub',
+    aliases: ['!gh', '!github', '!جتهاب'],
+    home: 'https://github.com',
+    build: (query) => `https://github.com/search?q=${encodeURIComponent(query)}&type=repositories`,
+  },
+  {
+    prefix: '!tr',
+    label: 'Google Translate',
+    aliases: ['!tr', '!translate', '!ترجمة'],
+    home: 'https://translate.google.com',
+    build: (query) => `https://translate.google.com/?sl=auto&tl=ar&text=${encodeURIComponent(query)}&op=translate`,
   },
   {
     prefix: '!ddg',
@@ -55,6 +77,23 @@ export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
     build: (query) => `https://ar.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`,
   },
 ] as const;
+
+const COLON_SHORTCUTS: Readonly<Record<string, string>> = {
+  'yt:': '!yt',
+  'youtube:': '!yt',
+  'يوتيوب:': '!yt',
+  'maps:': '!maps',
+  'map:': '!maps',
+  'خرائط:': '!maps',
+  'gh:': '!gh',
+  'github:': '!gh',
+  'جتهاب:': '!gh',
+  'tr:': '!tr',
+  'translate:': '!tr',
+  'ترجمة:': '!tr',
+  'wiki:': '!wiki',
+  'ويكي:': '!wiki',
+};
 
 function looksLikeHost(value: string) {
   return (
@@ -133,14 +172,32 @@ function shortcutTarget(value: string) {
   return query ? shortcut.build(query) : shortcut.home;
 }
 
+function colonShortcutTarget(value: string) {
+  const lower = value.toLowerCase();
+  const alias = Object.keys(COLON_SHORTCUTS).find((candidate) => lower.startsWith(candidate));
+  if (!alias) return null;
+  const shortcutPrefix = COLON_SHORTCUTS[alias];
+  const shortcut = SEARCH_SHORTCUTS.find((item) => item.prefix === shortcutPrefix);
+  if (!shortcut) return null;
+  const query = value.slice(alias.length).trim();
+  return query ? shortcut.build(query) : shortcut.home;
+}
+
 export function safeExternalUrl(url: string) {
   const value = url.trim();
-  if (!value || !isReasonableInputLength(value) || CONTROL_CHARS.test(value) || !HTTP_SCHEME.test(value)) return false;
+  if (
+    !value ||
+    !isReasonableInputLength(value) ||
+    CONTROL_CHARS.test(value) ||
+    DECEPTIVE_FORMAT_CHARS.test(value) ||
+    !HTTP_SCHEME.test(value)
+  ) return false;
 
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
     if (!parsed.hostname || !validIpv4(parsed.hostname)) return false;
+    if (DECEPTIVE_FORMAT_CHARS.test(parsed.hostname)) return false;
     // Credentials embedded in URLs are easy to disguise in the omnibox and can
     // make a malicious destination look trusted. RAID never navigates to them.
     if (parsed.username || parsed.password) return false;
@@ -154,9 +211,9 @@ export function normalizeInput(input: string) {
   const value = input.trim();
   if (!value) return 'https://www.google.com';
   if (!isReasonableInputLength(value)) throw new Error('Input too long');
-  if (CONTROL_CHARS.test(value)) throw new Error('Unsafe URL characters');
+  if (CONTROL_CHARS.test(value) || DECEPTIVE_FORMAT_CHARS.test(value)) throw new Error('Unsafe URL characters');
 
-  const shortcut = shortcutTarget(value);
+  const shortcut = shortcutTarget(value) || colonShortcutTarget(value);
   if (shortcut) return shortcut;
 
   if (HTTP_SCHEME.test(value)) {

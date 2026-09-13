@@ -11,6 +11,7 @@ import { deriveBrowserPerformancePolicy, getPerformanceSettings } from '@/lib/pe
 export default function RootLayout() {
   const pathname = usePathname();
   const [freezeInactiveScreens, setFreezeInactiveScreens] = useState(false);
+  const [lightweightNavigation, setLightweightNavigation] = useState(false);
 
   const refreshPerformancePolicy = useCallback(() => {
     let cancelled = false;
@@ -19,9 +20,13 @@ export default function RootLayout() {
         if (cancelled) return;
         const policy = deriveBrowserPerformancePolicy(settings);
         setFreezeInactiveScreens(policy.suspendBackgroundTabs);
+        setLightweightNavigation(policy.lightweightNavigation);
       })
       .catch(() => {
-        if (!cancelled) setFreezeInactiveScreens(false);
+        if (!cancelled) {
+          setFreezeInactiveScreens(false);
+          setLightweightNavigation(false);
+        }
       });
     return () => { cancelled = true; };
   }, []);
@@ -44,7 +49,7 @@ export default function RootLayout() {
             <Stack
               screenOptions={{
                 headerShown: false,
-                animation: 'fade',
+                animation: lightweightNavigation ? 'none' : 'fade',
                 freezeOnBlur: freezeInactiveScreens,
               }}
             />

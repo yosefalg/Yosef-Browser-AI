@@ -35,11 +35,53 @@ export const SEARCH_SHORTCUTS: readonly SearchShortcut[] = [
     build: (query) => `https://www.google.com/maps/search/${encodeURIComponent(query)}`,
   },
   {
+    prefix: '!img',
+    label: 'Google Images',
+    aliases: ['!img', '!images', '!image', '!صور'],
+    home: 'https://images.google.com',
+    build: (query) => `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!news',
+    label: 'Google News',
+    aliases: ['!news', '!اخبار', '!أخبار'],
+    home: 'https://news.google.com',
+    build: (query) => `https://news.google.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
     prefix: '!gh',
     label: 'GitHub',
     aliases: ['!gh', '!github', '!جتهاب'],
     home: 'https://github.com',
     build: (query) => `https://github.com/search?q=${encodeURIComponent(query)}&type=repositories`,
+  },
+  {
+    prefix: '!so',
+    label: 'Stack Overflow',
+    aliases: ['!so', '!stackoverflow', '!ستاك'],
+    home: 'https://stackoverflow.com',
+    build: (query) => `https://stackoverflow.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!npm',
+    label: 'npm',
+    aliases: ['!npm'],
+    home: 'https://www.npmjs.com',
+    build: (query) => `https://www.npmjs.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!mdn',
+    label: 'MDN Web Docs',
+    aliases: ['!mdn'],
+    home: 'https://developer.mozilla.org',
+    build: (query) => `https://developer.mozilla.org/en-US/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    prefix: '!reddit',
+    label: 'Reddit',
+    aliases: ['!reddit', '!r', '!ريديت'],
+    home: 'https://www.reddit.com',
+    build: (query) => `https://www.reddit.com/search/?q=${encodeURIComponent(query)}`,
   },
   {
     prefix: '!tr',
@@ -85,9 +127,22 @@ const COLON_SHORTCUTS: Readonly<Record<string, string>> = {
   'maps:': '!maps',
   'map:': '!maps',
   'خرائط:': '!maps',
+  'img:': '!img',
+  'images:': '!img',
+  'صور:': '!img',
+  'news:': '!news',
+  'اخبار:': '!news',
+  'أخبار:': '!news',
   'gh:': '!gh',
   'github:': '!gh',
   'جتهاب:': '!gh',
+  'so:': '!so',
+  'stackoverflow:': '!so',
+  'ستاك:': '!so',
+  'npm:': '!npm',
+  'mdn:': '!mdn',
+  'reddit:': '!reddit',
+  'ريديت:': '!reddit',
   'tr:': '!tr',
   'translate:': '!tr',
   'ترجمة:': '!tr',
@@ -198,8 +253,6 @@ export function safeExternalUrl(url: string) {
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
     if (!parsed.hostname || !validIpv4(parsed.hostname)) return false;
     if (DECEPTIVE_FORMAT_CHARS.test(parsed.hostname)) return false;
-    // Credentials embedded in URLs are easy to disguise in the omnibox and can
-    // make a malicious destination look trusted. RAID never navigates to them.
     if (parsed.username || parsed.password) return false;
     return true;
   } catch {
@@ -221,23 +274,14 @@ export function normalizeInput(input: string) {
     return value;
   }
 
-  // Host:port input (for example localhost:3000 or example.com:8443) is
-  // syntactically similar to a URI scheme. Resolve valid web hosts first so
-  // development servers and explicit web ports are not rejected as schemes.
-  // URL parsing also recognizes internationalized domains (IDN), including
-  // Arabic domains, and converts them to their canonical ASCII representation.
   if (looksLikeHost(value) || looksLikeInternationalHost(value)) {
     const rawHost = hostOnly(value);
     if (!validIpv4(rawHost)) throw new Error('Invalid IP address');
-    // Local/private development services commonly do not provide TLS. Public hosts
-    // still default to HTTPS, while loopback/RFC1918/link-local addresses use HTTP.
     const scheme = isLocalDevelopmentHost(value) ? 'http' : 'https';
     const candidate = `${scheme}://${value}`;
     if (safeExternalUrl(candidate)) return candidate;
   }
 
-  // Never pass non-web schemes (javascript:, data:, file:, intent:, custom apps, etc.)
-  // into the WebView. This also protects future schemes without maintaining a blocklist.
   if (EXPLICIT_SCHEME.test(value)) throw new Error('Unsupported URL scheme');
 
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`;

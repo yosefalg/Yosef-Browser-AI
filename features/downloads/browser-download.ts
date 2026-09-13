@@ -29,16 +29,25 @@ function isLikelyStreamPage(value: string) {
   }
 }
 
-function safePageReferer(value: string) {
+/**
+ * Mirrors the privacy shape of modern browser referrer policies without
+ * inventing a fake source page. Same-origin downloads keep the real page URL
+ * because some authenticated endpoints depend on it. Cross-origin downloads
+ * receive only the source origin, preventing search terms, IDs and signed
+ * query parameters from leaking to an unrelated download host/CDN.
+ */
+function safePageReferer(value: string, targetUrl: string) {
   try {
-    const parsed = new URL(value);
-    if (!/^https?:$/.test(parsed.protocol)) return null;
-    // Keep the real page path/query for hosts that validate hotlink/download
-    // referers, while never forwarding credentials or fragment data.
-    parsed.username = '';
-    parsed.password = '';
-    parsed.hash = '';
-    return parsed.toString();
+    const page = new URL(value);
+    const target = new URL(targetUrl);
+    if (!/^https?:$/.test(page.protocol) || !/^https:$/.test(target.protocol)) return null;
+
+    page.username = '';
+    page.password = '';
+    page.hash = '';
+
+    if (page.origin === target.origin) return page.toString();
+    return `${page.origin}/`;
   } catch {
     return null;
   }
@@ -87,7 +96,7 @@ async function startDownloadOnce(url: string, pageUrl: string) {
   const existing = inFlightDownloads.get(key);
   if (existing) return existing;
 
-  const pending = startDownload(key, safePageReferer(pageUrl))
+  const pending = startDownload(key, safePageReferer(pageUrl, key))
     .then((id) => {
       rememberDownload(key, id);
       return id;

@@ -14,12 +14,13 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
   const grid=viewMode==='grid';
   const secure=isSecure(tab.url);
   const path=pathOf(tab.url);
+  const activityLabel=recent?'آخر نشاط • ':'';
   return <Pressable disabled={busy} onPress={onOpen} onLongPress={onLongPress} delayLongPress={320} style={({pressed})=>[
     grid?s.grid:s.list,
     {backgroundColor:selected?theme.surface2:theme.surface,borderColor:selected||recent?theme.accent:theme.border},
     pressed&&s.press,
     busy&&s.disabled,
-  ]} accessibilityRole="button" accessibilityLabel={`${tab.title||hostOf(tab.url)}${selected?'، محدد':''}`}>
+  ]} accessibilityRole="button" accessibilityState={{selected,disabled:busy}} accessibilityLabel={`${activityLabel}${tab.title||hostOf(tab.url)}${selected?'، محدد':''}`}>
     {(selected||recent)&&<View style={[s.accentRail,{backgroundColor:theme.accent}]}/>} 
     {selected&&<View style={[s.selectedBadge,{backgroundColor:theme.accent}]}><Ionicons name="checkmark" size={14} color="#fff"/></View>}
     {grid?<>
@@ -37,13 +38,13 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
       </View>
       <View style={s.footer}>
         <View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>
-        {recent&&<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><View style={[s.recentDot,{backgroundColor:theme.accent}]}/><Text style={[s.recentText,{color:theme.accent}]}>نشط الآن</Text></View>}
+        {recent&&<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pulse-outline" size={11} color={theme.accent}/><Text style={[s.recentText,{color:theme.accent}]}>آخر نشاط</Text></View>}
       </View>
     </>:<>
       <View style={s.siteWrap}><SiteIcon url={tab.url} size={50} radius={16}/><View style={[s.securityBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name={secure?'lock-closed':'warning-outline'} size={10} color={secure?theme.accent:theme.muted}/></View></View>
       <View style={s.copy}>
-        <View style={s.listTitleRow}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{tab.title||hostOf(tab.url)}</Text>{recent&&<View style={[s.recentDot,{backgroundColor:theme.accent}]}/>}</View>
-        <View style={s.domainRow}><Text numberOfLines={1} style={[s.host,{color:theme.muted}]}>{hostOf(tab.url)}</Text></View>
+        <View style={s.listTitleRow}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{tab.title||hostOf(tab.url)}</Text>{recent&&<View style={[s.activityPill,{backgroundColor:theme.surface2,borderColor:theme.border}]}><View style={[s.recentDot,{backgroundColor:theme.accent}]}/><Text style={[s.activityText,{color:theme.accent}]}>آخر نشاط</Text></View>}</View>
+        <View style={s.domainRow}><Ionicons name={secure?'lock-closed-outline':'globe-outline'} size={11} color={secure?theme.accent:theme.muted}/><Text numberOfLines={1} style={[s.host,{color:theme.muted}]}>{hostOf(tab.url)}</Text></View>
         <View style={s.listMetaRow}><View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>{!!path&&<Text numberOfLines={1} style={[s.listPath,{color:theme.muted}]}>{path}</Text>}</View>
       </View>
       {!selectionMode&&<View style={s.actions}>
@@ -67,5 +68,6 @@ const s=StyleSheet.create({
   domainRow:{marginTop:5,flexDirection:'row-reverse',alignItems:'center',gap:5,maxWidth:'100%'},listMetaRow:{marginTop:7,width:'100%',flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:10},listPath:{fontSize:8,flex:1,textAlign:'left',opacity:.72},
   footer:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:7},meta:{flexDirection:'row-reverse',alignItems:'center',gap:4},time:{fontSize:9,fontWeight:'700'},
   recentBadge:{minHeight:25,paddingHorizontal:8,borderRadius:9,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:5},recentDot:{width:6,height:6,borderRadius:3},recentText:{fontSize:8,fontWeight:'900'},
+  activityPill:{minHeight:22,paddingHorizontal:7,borderRadius:8,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:4,flexShrink:0},activityText:{fontSize:8,fontWeight:'900'},
   press:{opacity:.84,transform:[{scale:.985}]},disabled:{opacity:.5}
 });

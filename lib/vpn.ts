@@ -43,6 +43,13 @@ async function localProfile():Promise<{ownerId:string;config:string}|null>{
   if(!config) return null;
   try{return {ownerId,config:validateConfig(config)}}catch{return null;}
 }
+async function cachedServiceProfile():Promise<{ownerId:string;config:string}|null>{
+  const ownerId=await owner();
+  if(!ownerId||ownerId===LOCAL_OWNER||await isLocal(ownerId)) return null;
+  const config=await load(ownerId);
+  if(!config) return null;
+  try{return {ownerId,config:validateConfig(config)}}catch{return null;}
+}
 async function saveService(userId:string,configText:string){
   const value=validateConfig(configText);
   const secure={keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY} as const;
@@ -76,17 +83,18 @@ export async function syncVpnProfileFromAccount():Promise<VpnProvisioningState>{
 export async function getVpnProvisioningState():Promise<VpnProvisioningState>{
   const local=await localProfile();
   if(local) return {configured:true,source:'local'};
-  const ownerId=await owner();
-  if(ownerId&&ownerId!==LOCAL_OWNER){
-    const cached=await load(ownerId);
-    if(cached){try{validateConfig(cached);return {configured:true,source:'cache'}}catch{}}
-  }
+  const cached=await cachedServiceProfile();
+  if(cached) return {configured:true,source:'cache'};
   return syncVpnProfileFromAccount().catch(()=>({configured:false,source:'none'}));
 }
 
 export async function connectVpn(){
   const local=await localProfile();
   if(local) return native().connect(local.config);
+
+  const cached=await cachedServiceProfile();
+  if(cached) return native().connect(cached.config);
+
   const state=await syncVpnProfileFromAccount();
   if(!state.configured) throw new Error('لا يوجد إعداد VPN صالح. افتح مزود VPN وأضف إعداد WireGuard أولًا.');
   const ownerId=await owner();

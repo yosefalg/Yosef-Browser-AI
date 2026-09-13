@@ -26,8 +26,8 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
       <View style={s.gridTop}>
         <View style={s.siteWrap}><SiteIcon url={tab.url} size={46} radius={15}/><View style={[s.securityBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name={secure?'lock-closed':'warning-outline'} size={10} color={secure?theme.accent:theme.muted}/></View></View>
         {!selectionMode&&<View style={s.actions}>
-          <Pressable onPress={event=>{event.stopPropagation();onMenu();}} hitSlop={8} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityLabel="خيارات التبويب"><Ionicons name="ellipsis-horizontal" size={18} color={theme.muted}/></Pressable>
-          <Pressable onPress={event=>{event.stopPropagation();onClose();}} hitSlop={8} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityLabel="إغلاق التبويب"><Ionicons name="close" size={18} color={theme.muted}/></Pressable>
+          <Pressable onPress={event=>{event.stopPropagation();onMenu();}} hitSlop={10} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="خيارات التبويب"><Ionicons name="ellipsis-horizontal" size={18} color={theme.muted}/></Pressable>
+          <Pressable onPress={event=>{event.stopPropagation();onClose();}} hitSlop={10} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="إغلاق التبويب"><Ionicons name="close" size={19} color={theme.muted}/></Pressable>
         </View>}
       </View>
       <View style={s.gridCopy}>
@@ -47,8 +47,8 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
         <View style={s.listMetaRow}><View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>{!!path&&<Text numberOfLines={1} style={[s.listPath,{color:theme.muted}]}>{path}</Text>}</View>
       </View>
       {!selectionMode&&<View style={s.actions}>
-        <Pressable onPress={event=>{event.stopPropagation();onDuplicate();}} hitSlop={8} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityLabel="تكرار التبويب"><Ionicons name="copy-outline" size={16} color={theme.muted}/></Pressable>
-        <Pressable onPress={event=>{event.stopPropagation();onMenu();}} hitSlop={8} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityLabel="خيارات التبويب"><Ionicons name="ellipsis-horizontal" size={18} color={theme.muted}/></Pressable>
+        <Pressable onPress={event=>{event.stopPropagation();onClose();}} hitSlop={10} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="إغلاق التبويب"><Ionicons name="close" size={19} color={theme.muted}/></Pressable>
+        <Pressable onPress={event=>{event.stopPropagation();onMenu();}} hitSlop={10} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="خيارات التبويب"><Ionicons name="ellipsis-horizontal" size={18} color={theme.muted}/></Pressable>
       </View>}
     </>}
   </Pressable>;
@@ -56,12 +56,12 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
 
 const s=StyleSheet.create({
   grid:{width:'48.4%',minHeight:198,borderRadius:24,borderWidth:1,padding:13,gap:10,position:'relative',overflow:'hidden'},
-  list:{width:'100%',minHeight:96,borderRadius:22,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'center',gap:12,position:'relative',overflow:'hidden'},
+  list:{width:'100%',minHeight:98,borderRadius:22,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'center',gap:12,position:'relative',overflow:'hidden'},
   accentRail:{position:'absolute',right:0,top:18,bottom:18,width:3,borderTopLeftRadius:4,borderBottomLeftRadius:4},
   selectedBadge:{position:'absolute',top:8,right:8,width:25,height:25,borderRadius:13,alignItems:'center',justifyContent:'center',zIndex:4},
   siteWrap:{position:'relative'},securityBadge:{position:'absolute',right:-4,bottom:-4,width:22,height:22,borderRadius:8,borderWidth:1,alignItems:'center',justifyContent:'center'},
   gridTop:{flexDirection:'row-reverse',justifyContent:'space-between',alignItems:'center'},
-  actions:{flexDirection:'row',gap:6},action:{width:32,height:32,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},
+  actions:{flexDirection:'row',gap:7},action:{width:36,height:36,borderRadius:12,borderWidth:1,alignItems:'center',justifyContent:'center'},
   gridCopy:{flex:1,justifyContent:'center'},copy:{flex:1,alignItems:'flex-end'},listTitleRow:{maxWidth:'100%',flexDirection:'row-reverse',alignItems:'center',gap:7},
   title:{fontSize:14,fontWeight:'900',textAlign:'right',lineHeight:20,flexShrink:1},host:{fontSize:10,textAlign:'right',flexShrink:1},path:{fontSize:9,marginTop:6,textAlign:'right',opacity:.8},
   domainRow:{marginTop:5,flexDirection:'row-reverse',alignItems:'center',gap:5,maxWidth:'100%'},listMetaRow:{marginTop:7,width:'100%',flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:10},listPath:{fontSize:8,flex:1,textAlign:'left',opacity:.72},

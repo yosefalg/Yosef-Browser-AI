@@ -38,6 +38,18 @@ function safePageReferer(value: string) {
   }
 }
 
+function recentDownload(url: string) {
+  const entry = recentDownloads.get(url);
+  if (!entry) return null;
+
+  if (Date.now() - entry.at > DEDUPE_WINDOW_MS) {
+    recentDownloads.delete(url);
+    return null;
+  }
+
+  return entry.id;
+}
+
 /**
  * Routes WebView download events without hijacking inline video playback.
  * Ordinary files are handed to RAID Download Manager; direct media remains

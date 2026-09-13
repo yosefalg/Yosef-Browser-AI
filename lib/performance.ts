@@ -49,15 +49,16 @@ const READING_HOSTS = [
   'wikipedia.org', 'wikimedia.org', 'developer.mozilla.org', 'medium.com',
   'substack.com', 'arxiv.org', 'github.com', 'stackoverflow.com',
   'bbc.com', 'reuters.com', 'apnews.com', 'aljazeera.net', 'rudaw.net',
+  'shafaq.com', 'alsumaria.tv', 'ina.iq',
 ];
 const DOWNLOAD_HOSTS = [
   'githubusercontent.com', 'sourceforge.net', 'fosshub.com', 'apkpure.com',
   'archive.org', 'cdn.discordapp.com',
 ];
-const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
+const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
 const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?|attachments?|packages?|artifacts?)(?:\/|$)/i;
 const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|reels?|episodes?|movies?)(?:\/|$)/i;
-const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories)(?:\/|$)/i;
+const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp)(?:\/|$)/i;
 const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'file', 'artifact'];
 const VIDEO_QUERY_KEYS = ['video', 'stream', 'watch', 'play', 'episode'];
 
@@ -98,6 +99,12 @@ function queryHasAny(params: URLSearchParams, keys: readonly string[]) {
   return keys.some((key) => params.has(key) || params.get('action')?.toLowerCase() === key || params.get('type')?.toLowerCase() === key);
 }
 
+function looksLikeReadingVariant(parsed: URL) {
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname.toLowerCase();
+  return host.startsWith('m.') || host.startsWith('mobile.') || path.startsWith('/amp/') || path.endsWith('/amp') || parsed.searchParams.get('output') === '1';
+}
+
 export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
   try {
     const parsed = new URL(url);
@@ -108,7 +115,7 @@ export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
     if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname) || queryHasAny(query, DOWNLOAD_QUERY_KEYS)) return 'downloads';
     if (isGithubReleaseAsset(host, parsed.pathname) || hostMatches(host, DOWNLOAD_HOSTS)) return 'downloads';
     if (hostMatches(host, VIDEO_HOSTS) || VIDEO_PATH_RE.test(parsed.pathname) || queryHasAny(query, VIDEO_QUERY_KEYS)) return 'video';
-    if (hostMatches(host, READING_HOSTS) || READING_PATH_RE.test(parsed.pathname)) return 'reading';
+    if (hostMatches(host, READING_HOSTS) || READING_PATH_RE.test(parsed.pathname) || looksLikeReadingVariant(parsed)) return 'reading';
   } catch {}
   return 'balanced';
 }
@@ -125,21 +132,24 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
 }
 
 function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
-  if (!aggressiveRetry) return [1800] as const;
+  if (!aggressiveRetry) return [2200] as const;
 
+  // Backoff is deliberately staggered. On unstable/mobile Iraqi links this avoids a
+  // burst of immediate retries competing with the active request while still recovering
+  // quickly from short packet-loss or route-change windows.
   switch (profile) {
     case 'boost':
-      return [450, 1300, 3200] as const;
+      return [550, 1600, 3900] as const;
     case 'video':
-      return [700, 2000, 5000] as const;
-    case 'downloads':
-      return [800, 2500, 7000] as const;
-    case 'low-data':
       return [900, 2600, 6500] as const;
+    case 'downloads':
+      return [1100, 3200, 8200] as const;
+    case 'low-data':
+      return [1300, 3600, 9000] as const;
     case 'reading':
-      return [650, 1800, 4800] as const;
+      return [750, 2200, 5600] as const;
     default:
-      return [600, 1700, 4400] as const;
+      return [700, 2000, 5000] as const;
   }
 }
 
@@ -149,14 +159,12 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
     return {
       profile: 'balanced',
       activeTabPriority: false,
-      // Baseline memory protection stays enabled even when Boost is off. It only freezes
-      // inactive React Native screens; active downloads/network work continue outside them.
       suspendBackgroundTabs: true,
       reduceBackgroundWork: false,
       preferCache: true,
       deferNonCriticalWork: false,
       lowBandwidthImages: false,
-      retryDelaysMs: [1200],
+      retryDelaysMs: [1500],
       visualDensity: 'full',
       mediaBias: 'normal',
       lightweightNavigation: false,
@@ -208,10 +216,10 @@ export function profileLabel(profile: BrowsingProfile) {
 export function profileDescription(profile: BrowsingProfile) {
   switch (profile) {
     case 'boost': return 'يركّز موارد RAID على الصفحة الحالية ويخفف الشغل الخلفي بدون ادعاء زيادة سرعة الاشتراك.';
-    case 'video': return 'يقلل المؤثرات والعمل الخلفي ويعطي أولوية للاستقرار أثناء الفيديو.';
-    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع نشاط خلفي أقل.';
-    case 'downloads': return 'يخفف التصفح الخلفي حتى تبقى التنزيلات داخل RAID أكثر استقرارًا.';
-    case 'low-data': return 'للشبكات المتذبذبة: يقلل الصور الثقيلة والعمل غير الضروري ويحافظ على استهلاك أخف.';
+    case 'video': return 'يقلل المؤثرات والعمل الخلفي ويستخدم Retry متدرج أهدأ حتى لا ينافس تدفق الفيديو على الشبكات المتذبذبة.';
+    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع نشاط خلفي أقل، ويشمل صفحات AMP والموبايل تلقائيًا.';
+    case 'downloads': return 'يخفف التصفح الخلفي ويباعد إعادة المحاولة حتى تبقى التنزيلات داخل RAID أكثر استقرارًا.';
+    case 'low-data': return 'للشبكات المتذبذبة: يقلل الصور الثقيلة والعمل غير الضروري ويستخدم Backoff محافظ لتقليل الطلبات المكررة.';
     default: return 'الوضع الافتراضي السلس: يجمّد الشاشات غير النشطة ويحافظ على الأنيميشن الطبيعي مع توازن السرعة والذاكرة.';
   }
 }

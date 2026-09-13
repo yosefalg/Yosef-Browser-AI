@@ -5,6 +5,7 @@ export type BrowsingProfile = 'balanced' | 'boost' | 'video' | 'reading' | 'down
 export type PerformanceSettings = {
   enabled: boolean;
   profile: BrowsingProfile;
+  adaptiveMode: boolean;
   suspendBackgroundTabs: boolean;
   prioritizeActiveTab: boolean;
   reduceBackgroundWork: boolean;
@@ -28,6 +29,7 @@ export type BrowserPerformancePolicy = {
 export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
   enabled: false,
   profile: 'balanced',
+  adaptiveMode: true,
   suspendBackgroundTabs: true,
   prioritizeActiveTab: true,
   reduceBackgroundWork: true,
@@ -36,6 +38,11 @@ export const DEFAULT_PERFORMANCE_SETTINGS: PerformanceSettings = {
 };
 
 const KEY = 'raid_performance_settings_v1';
+
+const VIDEO_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'vimeo.com', 'dailymotion.com'];
+const READING_HOSTS = ['wikipedia.org', 'wikimedia.org', 'developer.mozilla.org', 'medium.com', 'substack.com', 'arxiv.org'];
+const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm)(?:$|[?#])/i;
+const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?)(?:\/|$)/i;
 
 export function isBrowsingProfile(value: unknown): value is BrowsingProfile {
   return value === 'balanced' || value === 'boost' || value === 'video' || value === 'reading' || value === 'downloads' || value === 'low-data';
@@ -46,6 +53,7 @@ export function sanitizePerformanceSettings(value: Partial<PerformanceSettings> 
   return {
     enabled: value?.enabled === true,
     profile,
+    adaptiveMode: value?.adaptiveMode !== false,
     suspendBackgroundTabs: value?.suspendBackgroundTabs !== false,
     prioritizeActiveTab: value?.prioritizeActiveTab !== false,
     reduceBackgroundWork: value?.reduceBackgroundWork !== false,
@@ -65,7 +73,27 @@ export async function savePerformanceSettings(value: PerformanceSettings) {
   return safe;
 }
 
-export function deriveBrowserPerformancePolicy(input: PerformanceSettings): BrowserPerformancePolicy {
+export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const path = `${parsed.pathname}${parsed.search}`;
+    if (VIDEO_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))) return 'video';
+    if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname)) return 'downloads';
+    if (READING_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))) return 'reading';
+    if (/\/(?:article|articles|news|blog|docs|documentation|guide|guides)(?:\/|$)/i.test(parsed.pathname)) return 'reading';
+  } catch {}
+  return 'balanced';
+}
+
+export function resolveBrowsingProfile(url: string, settings: PerformanceSettings): BrowsingProfile {
+  const value = sanitizePerformanceSettings(settings);
+  if (!value.enabled) return 'balanced';
+  if (value.profile !== 'balanced' || !value.adaptiveMode) return value.profile;
+  return inferBrowsingProfileForUrl(url);
+}
+
+export function deriveBrowserPerformancePolicy(input: PerformanceSettings, contextUrl?: string): BrowserPerformancePolicy {
   const value = sanitizePerformanceSettings(input);
   if (!value.enabled) {
     return {
@@ -82,8 +110,9 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings): Brow
     };
   }
 
+  const profile = contextUrl ? resolveBrowsingProfile(contextUrl, value) : value.profile;
   const retryDelaysMs = value.aggressiveRetry ? [450, 1200, 2800] as const : [1400] as const;
-  switch (value.profile) {
+  switch (profile) {
     case 'boost':
       return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal' };
     case 'video':

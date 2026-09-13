@@ -8,25 +8,36 @@ import { getSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { APP_LOCK_GRACE_OPTIONS, DEFAULT_APP_LOCK_SETTINGS, appLockGraceLabel, getAppLockSettings, saveAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
 
+function securityLevelLabel(level: LocalAuthentication.SecurityLevel) {
+  if (level >= LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG) return 'بصمة/وجه قوي';
+  if (level >= LocalAuthentication.SecurityLevel.BIOMETRIC_WEAK) return 'بصمة/وجه متوفر';
+  if (level >= LocalAuthentication.SecurityLevel.SECRET) return 'رمز أو نمط الجهاز';
+  return 'غير مهيأ';
+}
+
 export default function AppLockScreen(){
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [settings,setSettings]=useState<AppLockSettings>(DEFAULT_APP_LOCK_SETTINGS);
   const [supported,setSupported]=useState(false);
   const [enrolled,setEnrolled]=useState(false);
+  const [securityLevel,setSecurityLevel]=useState<LocalAuthentication.SecurityLevel>(LocalAuthentication.SecurityLevel.NONE);
   const [busy,setBusy]=useState(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
+  const deviceLockReady=securityLevel>=LocalAuthentication.SecurityLevel.SECRET;
 
   const refresh=useCallback(async()=>{
-    const [savedTheme,current,hardware,hasEnrollment]=await Promise.all([
+    const [savedTheme,current,hardware,hasEnrollment,level]=await Promise.all([
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
       getAppLockSettings().catch(()=>DEFAULT_APP_LOCK_SETTINGS),
       LocalAuthentication.hasHardwareAsync().catch(()=>false),
       LocalAuthentication.isEnrolledAsync().catch(()=>false),
+      LocalAuthentication.getEnrolledLevelAsync().catch(()=>LocalAuthentication.SecurityLevel.NONE),
     ]);
     setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
     setSettings(current);
     setSupported(hardware);
     setEnrolled(hasEnrollment);
+    setSecurityLevel(level);
   },[]);
 
   useFocusEffect(useCallback(()=>{void refresh();return()=>{};},[refresh]));
@@ -44,8 +55,8 @@ export default function AppLockScreen(){
 
   const toggleEnabled=async(value:boolean)=>{
     if(busy)return;
-    if(value&&(!supported||!enrolled)){
-      Alert.alert('قفل RAID','فعّل بصمة أو وجه الجهاز من إعدادات Android أولًا، وبعدها ارجع وفعّل القفل.');
+    if(value&&!deviceLockReady){
+      Alert.alert('قفل RAID','فعّل قفل شاشة آمن في Android أولًا (رمز PIN أو نمط أو كلمة مرور أو بصمة/وجه)، ثم ارجع وفعّل القفل.');
       return;
     }
     setBusy(true);
@@ -55,7 +66,7 @@ export default function AppLockScreen(){
       const next={...settings,enabled:value};
       setSettings(next);
       await saveAppLockSettings(next);
-      Alert.alert('RAID',value?'تم تفعيل قفل التطبيق.':'تم إيقاف قفل التطبيق.');
+      Alert.alert('RAID',value?'تم تفعيل قفل التطبيق باستخدام حماية الجهاز.':'تم إيقاف قفل التطبيق.');
     }catch{
       Alert.alert('RAID','تعذر تغيير إعداد القفل الآن. حاول مرة ثانية.');
     }finally{setBusy(false)}
@@ -69,32 +80,33 @@ export default function AppLockScreen(){
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.head,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
-      <Pressable onPress={()=>router.back()} style={[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityLabel="رجوع"><MaterialCommunityIcons name="chevron-right" size={25} color={theme.text}/></Pressable>
-      <View style={s.headCopy}><Text style={[s.title,{color:theme.text}]}>قفل RAID</Text><Text style={[s.sub,{color:theme.muted}]}>بصمة أو وجه الجهاز</Text></View>
+      <Pressable onPress={()=>router.back()} style={[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="رجوع"><MaterialCommunityIcons name="chevron-right" size={25} color={theme.text}/></Pressable>
+      <View style={s.headCopy}><Text style={[s.title,{color:theme.text}]}>قفل RAID</Text><Text style={[s.sub,{color:theme.muted}]}>بصمة، وجه، أو قفل الجهاز</Text></View>
       <View style={[s.stateDot,{backgroundColor:settings.enabled?'#4CB884':theme.muted}]}/>
     </View>
 
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
       <View style={[s.hero,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={[s.heroIcon,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="shield-lock-outline" size={31} color={theme.accent}/></View>
-        <View style={s.heroCopy}><Text style={[s.kicker,{color:theme.accent}]}>APP LOCK</Text><Text style={[s.heroTitle,{color:theme.text}]}>{settings.enabled?'الحماية مفعلة':'الحماية اختيارية'}</Text><Text style={[s.heroText,{color:theme.muted}]}>يستخدم RAID نظام التحقق الموجود في Android نفسه. لا يحفظ التطبيق بصمتك أو صورة وجهك.</Text></View>
+        <View style={s.heroCopy}><Text style={[s.kicker,{color:theme.accent}]}>APP LOCK</Text><Text style={[s.heroTitle,{color:theme.text}]}>{settings.enabled?'الحماية مفعلة':'الحماية اختيارية'}</Text><Text style={[s.heroText,{color:theme.muted}]}>يستخدم RAID التحقق الموجود في Android نفسه. يعمل مع PIN أو النمط أو كلمة المرور، ومع البصمة/الوجه عند توفرها. لا يحفظ RAID بياناتك البيومترية.</Text></View>
       </View>
 
       <View style={[s.statusCard,{backgroundColor:theme.surface,borderColor:theme.border}]}>
-        <Status icon="fingerprint" title="دعم التحقق" value={supported?'متوفر':'غير متوفر'} ok={supported} theme={theme}/>
-        <Status icon="account-lock-outline" title="هوية مسجلة بالجهاز" value={enrolled?'جاهزة':'غير مسجلة'} ok={enrolled} theme={theme}/>
+        <Status icon="shield-key-outline" title="قفل شاشة آمن" value={deviceLockReady?securityLevelLabel(securityLevel):'غير مهيأ'} ok={deviceLockReady} theme={theme}/>
+        <Status icon="fingerprint" title="عتاد البصمة/الوجه" value={supported?'متوفر':'غير متوفر'} ok={supported} theme={theme}/>
+        <Status icon="account-lock-outline" title="هوية بيومترية مسجلة" value={enrolled?'جاهزة':'اختيارية / غير مسجلة'} ok={enrolled||deviceLockReady} theme={theme}/>
       </View>
 
       <View style={[s.group,{backgroundColor:theme.surface,borderColor:theme.border}]}>
-        <View style={s.row}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>قفل التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>اطلب تحقق الجهاز قبل فتح محتوى RAID.</Text></View><Switch value={settings.enabled} disabled={busy} onValueChange={value=>void toggleEnabled(value)} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
+        <View style={s.row}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>قفل التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>اطلب تحقق Android قبل فتح محتوى RAID.</Text></View><Switch value={settings.enabled} disabled={busy} onValueChange={value=>void toggleEnabled(value)} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
         <View style={[s.row,{borderTopWidth:1,borderTopColor:theme.border}]}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>القفل بعد مغادرة التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>يعيد القفل عند الرجوع بعد المدة المحددة.</Text></View><Switch value={settings.lockOnBackground} disabled={!settings.enabled} onValueChange={value=>void patch({lockOnBackground:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
       </View>
 
       <View style={s.section}><Text style={[s.sectionTitle,{color:theme.accent}]}>مهلة الرجوع</Text><View style={s.graceGrid}>{APP_LOCK_GRACE_OPTIONS.map(ms=>{
         const active=settings.gracePeriodMs===ms;
-        return <Pressable key={ms} disabled={!settings.enabled||!settings.lockOnBackground} onPress={()=>void patch({gracePeriodMs:ms})} style={({pressed})=>[s.grace,{backgroundColor:theme.surface,borderColor:active?theme.accent:theme.border},(!settings.enabled||!settings.lockOnBackground)&&s.disabled,pressed&&s.pressed]}><MaterialCommunityIcons name={active?'check-circle':'clock-outline'} size={19} color={active?theme.accent:theme.muted}/><Text style={[s.graceText,{color:theme.text}]}>{appLockGraceLabel(ms)}</Text></Pressable>})}</View></View>
+        return <Pressable key={ms} disabled={!settings.enabled||!settings.lockOnBackground} onPress={()=>void patch({gracePeriodMs:ms})} style={({pressed})=>[s.grace,{backgroundColor:theme.surface,borderColor:active?theme.accent:theme.border},(!settings.enabled||!settings.lockOnBackground)&&s.disabled,pressed&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!settings.enabled||!settings.lockOnBackground,selected:active}} accessibilityLabel={`مهلة القفل ${appLockGraceLabel(ms)}`}><MaterialCommunityIcons name={active?'check-circle':'clock-outline'} size={19} color={active?theme.accent:theme.muted}/><Text style={[s.graceText,{color:theme.text}]}>{appLockGraceLabel(ms)}</Text></Pressable>})}</View></View>
 
-      <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="information-outline" size={20} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>إذا ألغيت نافذة التحقق يبقى RAID مقفولًا. ويمكن لـAndroid إظهار رمز الجهاز كخيار احتياطي حسب إعدادات هاتفك.</Text></View>
+      <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="information-outline" size={20} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>إذا لم يكن هاتفك يحتوي بصمة أو وجه، يمكن لقفل RAID الاعتماد على رمز PIN/النمط/كلمة مرور Android بدل رفض التفعيل. إذا ألغيت نافذة التحقق يبقى RAID مقفولًا.</Text></View>
     </ScrollView>
   </SafeAreaView>;
 }

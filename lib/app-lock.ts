@@ -1,3 +1,4 @@
+import * as SecureStore from 'expo-secure-store';
 import { getSetting, setSetting } from './db';
 
 export type AppLockSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_APP_LOCK_SETTINGS: AppLockSettings = {
 };
 
 const KEY = 'raid_app_lock_v1';
+const SECURE_KEY = 'raid_app_lock_secure_v2';
 
 export function sanitizeAppLockSettings(value: Partial<AppLockSettings> | null | undefined): AppLockSettings {
   const gracePeriodMs = APP_LOCK_GRACE_OPTIONS.includes(value?.gracePeriodMs as (typeof APP_LOCK_GRACE_OPTIONS)[number])
@@ -26,14 +28,31 @@ export function sanitizeAppLockSettings(value: Partial<AppLockSettings> | null |
   };
 }
 
+function parseStored(raw: string | null) {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<AppLockSettings>;
+    return sanitizeAppLockSettings(value);
+  } catch {
+    return null;
+  }
+}
+
 export async function getAppLockSettings() {
-  const value = await getSetting<AppLockSettings>(KEY, DEFAULT_APP_LOCK_SETTINGS);
-  return sanitizeAppLockSettings(value);
+  const secure = await SecureStore.getItemAsync(SECURE_KEY).catch(() => null);
+  const secureSettings = parseStored(secure);
+  if (secureSettings) return secureSettings;
+
+  const legacy = await getSetting<AppLockSettings>(KEY, DEFAULT_APP_LOCK_SETTINGS).catch(() => DEFAULT_APP_LOCK_SETTINGS);
+  const safe = sanitizeAppLockSettings(legacy);
+  await SecureStore.setItemAsync(SECURE_KEY, JSON.stringify(safe)).catch(() => {});
+  return safe;
 }
 
 export async function saveAppLockSettings(value: AppLockSettings) {
   const safe = sanitizeAppLockSettings(value);
-  await setSetting(KEY, safe);
+  await SecureStore.setItemAsync(SECURE_KEY, JSON.stringify(safe));
+  await setSetting(KEY, safe).catch(() => {});
   return safe;
 }
 

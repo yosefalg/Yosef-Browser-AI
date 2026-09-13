@@ -7,6 +7,7 @@ import { getAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
 export function AppLockGate({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [privacyShield, setPrivacyShield] = useState(false);
   const [message, setMessage] = useState('');
   const settingsRef = useRef<AppLockSettings | null>(null);
   const backgroundAt = useRef<number | null>(null);
@@ -16,6 +17,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
     const settings = settingsRef.current;
     if (!settings?.enabled && !force) {
       setLocked(false);
+      setPrivacyShield(false);
       return true;
     }
     if (authenticating.current) return false;
@@ -31,13 +33,16 @@ export function AppLockGate({ children }: PropsWithChildren) {
       });
       if (result.success) {
         setLocked(false);
+        setPrivacyShield(false);
         return true;
       }
       setLocked(true);
+      setPrivacyShield(true);
       setMessage('بقي المتصفح مقفولًا. اضغط فتح وحاول مرة ثانية.');
       return false;
     } catch {
       setLocked(true);
+      setPrivacyShield(true);
       setMessage('تعذر تشغيل تحقق الجهاز الآن. حاول مرة ثانية.');
       return false;
     } finally {
@@ -53,16 +58,19 @@ export function AppLockGate({ children }: PropsWithChildren) {
         settingsRef.current = settings;
         if (settings.enabled) {
           setLocked(true);
+          setPrivacyShield(true);
           setReady(true);
           await authenticate();
           return;
         }
         setLocked(false);
+        setPrivacyShield(false);
         setReady(true);
       })
       .catch(() => {
         if (!alive) return;
         setLocked(false);
+        setPrivacyShield(false);
         setReady(true);
       });
     return () => { alive = false; };
@@ -73,6 +81,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
       const settings = settingsRef.current;
       if (state === 'background' || state === 'inactive') {
         backgroundAt.current = Date.now();
+        if (settings?.enabled) setPrivacyShield(true);
         return;
       }
       if (state !== 'active') return;
@@ -80,18 +89,29 @@ export function AppLockGate({ children }: PropsWithChildren) {
         settingsRef.current = latest;
         if (!latest.enabled) {
           setLocked(false);
+          setPrivacyShield(false);
           backgroundAt.current = null;
           return;
         }
-        if (!latest.lockOnBackground) return;
         const leftAt = backgroundAt.current;
         backgroundAt.current = null;
-        if (leftAt == null) return;
+        if (!latest.lockOnBackground || leftAt == null) {
+          setPrivacyShield(false);
+          return;
+        }
         if (Date.now() - leftAt >= latest.gracePeriodMs) {
           setLocked(true);
+          setPrivacyShield(true);
           void authenticate();
+          return;
         }
-      }).catch(() => {});
+        setPrivacyShield(false);
+      }).catch(() => {
+        if (settings?.enabled) {
+          setLocked(true);
+          setPrivacyShield(true);
+        }
+      });
     });
     return () => subscription.remove();
   }, [authenticate]);
@@ -100,7 +120,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
     return <View style={styles.loading}><ActivityIndicator size="large" color="#D5AA88" /><Text style={styles.loadingText}>RAID Browser</Text></View>;
   }
 
-  if (!locked) return <>{children}</>;
+  if (!locked && !privacyShield) return <>{children}</>;
 
   return <View style={styles.root}>
     <View style={styles.glowOne} />
@@ -108,13 +128,13 @@ export function AppLockGate({ children }: PropsWithChildren) {
     <View style={styles.card}>
       <View style={styles.iconWrap}><Ionicons name="lock-closed" size={30} color="#E7C7AA" /></View>
       <Text style={styles.kicker}>RAID APP LOCK</Text>
-      <Text style={styles.title}>المتصفح مقفول</Text>
-      <Text style={styles.body}>استخدم بصمة أو وجه الجهاز. إذا كان جهازك يسمح، يبقى رمز القفل كخيار احتياطي.</Text>
+      <Text style={styles.title}>{locked ? 'المتصفح مقفول' : 'RAID محمي'}</Text>
+      <Text style={styles.body}>{locked ? 'استخدم بصمة أو وجه الجهاز. إذا كان جهازك يسمح، يبقى رمز القفل كخيار احتياطي.' : 'تم إخفاء محتوى المتصفح أثناء وجود التطبيق في الخلفية لحماية خصوصيتك.'}</Text>
       {!!message && <Text style={styles.message}>{message}</Text>}
-      <Pressable onPress={() => void authenticate(true)} style={({ pressed }) => [styles.button, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="فتح RAID Browser">
+      {locked && <Pressable onPress={() => void authenticate(true)} style={({ pressed }) => [styles.button, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="فتح RAID Browser">
         <Ionicons name="finger-print" size={22} color="#0B1018" />
         <Text style={styles.buttonText}>فتح RAID</Text>
-      </Pressable>
+      </Pressable>}
       <Text style={styles.note}>التحقق يتم بواسطة Android ولا يرسل RAID بصمتك أو وجهك لأي خادم.</Text>
     </View>
   </View>;

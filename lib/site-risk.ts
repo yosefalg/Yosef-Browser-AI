@@ -10,6 +10,7 @@ export type SiteRiskAssessment = {
 const SENSITIVE_PATH_RE = /\b(?:login|signin|sign-in|account|verify|verification|wallet|bank|payment|checkout|password|passcode|otp|2fa)\b/i;
 const SUSPICIOUS_TOKEN_RE = /(?:secure|verify|verification|support|update|account|wallet|bank|payment|bonus|gift|free|login)/gi;
 const BRAND_LOOKALIKE_RE = /(?:paypa[l1]|faceb[o0]{2}k|g[o0]{2}gle|micr[o0]soft|ap[p1]le|amaz[o0]n|instagr[a4]m|whats[a4]pp)/i;
+const DECEPTIVE_FORMAT_CHARS = /[\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/;
 
 function isIpHost(host: string) {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.startsWith('[');
@@ -24,25 +25,40 @@ function tokenDensity(host: string) {
   return matches ? matches.length : 0;
 }
 
+function subdomainDepth(host: string) {
+  return Math.max(0, host.split('.').filter(Boolean).length - 2);
+}
+
 export function assessSiteRisk(value: string): SiteRiskAssessment {
   try {
+    if (DECEPTIVE_FORMAT_CHARS.test(value)) {
+      return { level: 'danger', score: 8, reasons: ['الرابط يحتوي محارف اتجاه أو إخفاء يمكن استخدامها لتمويه الوجهة'], host: value };
+    }
+
     const url = new URL(value);
     const host = url.hostname.toLowerCase().replace(/^www\./, '');
     const reasons: string[] = [];
     let score = 0;
+    const sensitive = SENSITIVE_PATH_RE.test(url.pathname + url.search);
 
     if (url.protocol === 'http:') {
       score += 2;
       reasons.push('الاتصال غير مشفّر (HTTP)');
     }
 
+    if (url.username || url.password) {
+      score += 6;
+      reasons.push('الرابط يحتوي بيانات دخول مضمّنة قبل اسم الموقع ويمكن استغلالها لتمويه الوجهة');
+    }
+
     if (hasPunycode(host)) {
       score += 3;
       reasons.push('اسم النطاق يستخدم Punycode وقد يكون مشابهًا بصريًا لنطاق معروف');
+      if (sensitive) score += 2;
     }
 
     if (isIpHost(host)) {
-      score += SENSITIVE_PATH_RE.test(url.pathname + url.search) ? 4 : 1;
+      score += sensitive ? 4 : 1;
       reasons.push('الموقع يستخدم عنوان IP بدل اسم نطاق عادي');
     }
 
@@ -61,12 +77,17 @@ export function assessSiteRisk(value: string): SiteRiskAssessment {
       reasons.push('اسم النطاق يجمع كلمات حساسة كثيرة');
     }
 
+    if (subdomainDepth(host) >= 4) {
+      score += 1;
+      reasons.push('الرابط يستخدم طبقات كثيرة من النطاقات الفرعية');
+    }
+
     if (host.length > 55) {
       score += 1;
       reasons.push('اسم النطاق طويل بصورة غير معتادة');
     }
 
-    if (SENSITIVE_PATH_RE.test(url.pathname + url.search) && url.protocol !== 'https:') {
+    if (sensitive && url.protocol !== 'https:') {
       score += 3;
       reasons.push('صفحة حساسة تعمل بدون HTTPS');
     }

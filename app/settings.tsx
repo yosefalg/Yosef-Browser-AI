@@ -40,6 +40,7 @@ export default function SettingsScreen(){
   const services:SettingsRow[]=[
     {title:'حساب RAID',hint:signedIn?'الحساب متصل ويمكن مزامنته':'غير مسجل الدخول',icon:signedIn?'account-check-outline':'account-outline',route:'/account',badge:signedIn?'متصل':'غير مسجل'},
     {title:'قفل RAID',hint:'قفل اختياري ببصمة أو وجه الجهاز',icon:'shield-lock-outline',route:'/app-lock',badge:'حماية'},
+    {title:'RAID Security Center',hint:'فحص الروابط وكشف مؤشرات التمويه قبل الفتح',icon:'shield-search-outline',route:'/security',badge:'جديد'},
     {title:'RAID AI',hint:'المساعد الذكي وسياق الصفحة',icon:'creation',route:'/ai'},
     {title:'RAID VPN',hint:vpnConnected?'النفق متصل فعليًا':'إدارة WireGuard والاتصال',icon:vpnConnected?'shield-check':'shield-outline',route:'/vpn',badge:vpnConnected?'متصل':'غير متصل'},
     {title:'مركز الخصوصية',hint:'الحماية والبيانات المحلية',icon:'shield-lock-outline',route:'/privacy'},
@@ -55,7 +56,7 @@ export default function SettingsScreen(){
     <View style={[s.head,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable onPress={()=>router.back()} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="رجوع"><MaterialCommunityIcons name="chevron-right" size={25} color={theme.text}/></Pressable>
       <View style={s.headText}><Text style={[s.title,{color:theme.text}]}>الإعدادات</Text><Text style={[s.subtitle,{color:theme.muted}]}>RAID Control Center</Text></View>
-      <Pressable onPress={()=>router.push('/privacy')} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="الخصوصية"><MaterialCommunityIcons name="shield-lock-outline" size={21} color={theme.accent}/></Pressable>
+      <Pressable onPress={()=>router.push('/security')} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="مركز الأمان"><MaterialCommunityIcons name="shield-search-outline" size={21} color={theme.accent}/></Pressable>
     </View>
 
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>

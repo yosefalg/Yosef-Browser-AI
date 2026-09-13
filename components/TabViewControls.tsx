@@ -15,7 +15,8 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
   theme: ThemePalette;
 }) {
   const { width } = useWindowDimensions();
-  const compact = width < 390;
+  const compact = width < 430;
+  const veryCompact = width < 360;
   const sortItems: SortItem[] = [
     { key: 'recent', label: 'الأحدث', icon: 'time-outline' },
     { key: 'oldest', label: 'الأقدم', icon: 'hourglass-outline' },
@@ -27,9 +28,9 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={s.sortRow}
+      contentContainerStyle={[s.sortRow,compact&&s.sortRowCompact]}
       keyboardShouldPersistTaps="handled"
-      style={s.sortScroller}
+      style={[s.sortScroller,compact&&s.sortScrollerCompact]}
     >
       {sortItems.map(item => {
         const active = sortMode === item.key;
@@ -42,6 +43,7 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
           style={({pressed})=>[
             s.chip,
             compact&&s.chipCompact,
+            veryCompact&&s.chipVeryCompact,
             {backgroundColor:active?theme.surface2:theme.surface,borderColor:active?theme.accent:theme.border},
             pressed&&s.press,
           ]}
@@ -52,34 +54,42 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
       })}
     </ScrollView>
     <View style={[s.modeRow,{backgroundColor:theme.surface,borderColor:theme.border},compact&&s.modeRowCompact]}>
-      <Pressable
-        onPress={() => onViewMode('grid')}
-        style={[s.mode,viewMode==='grid'&&{backgroundColor:theme.accent}]}
-        accessibilityRole="button"
-        accessibilityState={{ selected: viewMode==='grid' }}
-        accessibilityLabel="عرض شبكي"
-      ><Ionicons name="grid-outline" size={17} color={viewMode==='grid'?'#fff':theme.muted}/></Pressable>
-      <Pressable
-        onPress={() => onViewMode('list')}
-        style={[s.mode,viewMode==='list'&&{backgroundColor:theme.accent}]}
-        accessibilityRole="button"
-        accessibilityState={{ selected: viewMode==='list' }}
-        accessibilityLabel="عرض قائمة"
-      ><Ionicons name="list-outline" size={19} color={viewMode==='list'?'#fff':theme.muted}/></Pressable>
+      <Text style={[s.modeLabel,{color:theme.muted}]}>العرض</Text>
+      <View style={s.modeButtons}>
+        <Pressable
+          onPress={() => onViewMode('grid')}
+          style={[s.mode,viewMode==='grid'&&{backgroundColor:theme.accent}]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: viewMode==='grid' }}
+          accessibilityLabel="عرض شبكي"
+        ><Ionicons name="grid-outline" size={17} color={viewMode==='grid'?'#fff':theme.muted}/></Pressable>
+        <Pressable
+          onPress={() => onViewMode('list')}
+          style={[s.mode,viewMode==='list'&&{backgroundColor:theme.accent}]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: viewMode==='list' }}
+          accessibilityLabel="عرض قائمة"
+        ><Ionicons name="list-outline" size={19} color={viewMode==='list'?'#fff':theme.muted}/></Pressable>
+      </View>
     </View>
   </View>;
 }
 
 const s=StyleSheet.create({
-  wrap:{marginTop:12,flexDirection:'row-reverse',alignItems:'center',gap:9},
+  wrap:{marginTop:12,flexDirection:'row-reverse',alignItems:'center',gap:9,minWidth:0},
   wrapCompact:{alignItems:'stretch',flexDirection:'column',gap:8},
-  sortScroller:{flex:1},
+  sortScroller:{flex:1,minWidth:0},
+  sortScrollerCompact:{flexGrow:0},
   sortRow:{flexDirection:'row-reverse',gap:7,paddingVertical:1,paddingHorizontal:1},
+  sortRowCompact:{paddingEnd:2},
   chip:{height:36,minWidth:78,paddingHorizontal:10,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:5},
-  chipCompact:{minWidth:72},
+  chipCompact:{minWidth:76},
+  chipVeryCompact:{minWidth:70,paddingHorizontal:8},
   chipText:{fontSize:10,fontWeight:'900'},
-  modeRow:{flexDirection:'row',borderRadius:13,padding:3,borderWidth:1,flexShrink:0},
-  modeRowCompact:{alignSelf:'flex-end'},
+  modeRow:{minHeight:38,flexDirection:'row-reverse',alignItems:'center',gap:7,borderRadius:13,padding:3,borderWidth:1,flexShrink:0},
+  modeRowCompact:{alignSelf:'stretch',justifyContent:'space-between',paddingStart:10},
+  modeLabel:{fontSize:9,fontWeight:'800',paddingHorizontal:4},
+  modeButtons:{flexDirection:'row',gap:2},
   mode:{width:37,height:30,borderRadius:10,alignItems:'center',justifyContent:'center'},
   press:{opacity:.82,transform:[{scale:.97}]}
 });

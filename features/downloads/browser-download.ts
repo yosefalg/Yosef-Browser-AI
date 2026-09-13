@@ -5,7 +5,8 @@ const STREAM_MANIFEST_RE = /(?:\.m3u8(?:$|[?#])|[?&](?:format|type)=(?:hls|m3u8)
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const recentDownloads = new Map<string, { id: number; at: number }>();
 const inFlightDownloads = new Map<string, Promise<number>>();
-const DEDUPE_WINDOW_MS = 5000;
+const DEDUPE_WINDOW_MS = 8000;
+const TRACKING_QUERY_RE = /^(?:utm_(?:source|medium|campaign|term|content|id)|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid)$/i;
 
 export type BrowserDownloadResult =
   | { kind: 'media'; url: string }
@@ -55,7 +56,7 @@ function safePageReferer(value: string, targetUrl: string) {
 
 function canonicalDownloadUrl(value: string) {
   try {
-    const parsed = new URL(value);
+    const parsed = new URL(value.trim());
     parsed.hash = '';
     return parsed.toString();
   } catch {
@@ -63,8 +64,26 @@ function canonicalDownloadUrl(value: string) {
   }
 }
 
+/**
+ * Used only for duplicate detection. Tracking parameters are ignored because
+ * WebView pages can append them differently to the same file on consecutive
+ * callbacks. Authentication, expiry, signature and CDN parameters are kept.
+ */
+function downloadIdentity(value: string) {
+  try {
+    const parsed = new URL(canonicalDownloadUrl(value));
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (TRACKING_QUERY_RE.test(key)) parsed.searchParams.delete(key);
+    }
+    parsed.searchParams.sort();
+    return parsed.toString();
+  } catch {
+    return canonicalDownloadUrl(value);
+  }
+}
+
 function recentDownload(url: string) {
-  const key = canonicalDownloadUrl(url);
+  const key = downloadIdentity(url);
   const entry = recentDownloads.get(key);
   if (!entry) return null;
 
@@ -81,31 +100,32 @@ function rememberDownload(url: string, id: number) {
   for (const [key, entry] of recentDownloads) {
     if (now - entry.at > DEDUPE_WINDOW_MS) recentDownloads.delete(key);
   }
-  recentDownloads.set(canonicalDownloadUrl(url), { id, at: now });
+  recentDownloads.set(downloadIdentity(url), { id, at: now });
 }
 
 async function startDownloadOnce(url: string, pageUrl: string) {
-  const key = canonicalDownloadUrl(url);
-  const duplicateId = recentDownload(key);
+  const requestUrl = canonicalDownloadUrl(url);
+  const identity = downloadIdentity(requestUrl);
+  const duplicateId = recentDownload(requestUrl);
   if (duplicateId) return duplicateId;
 
-  // Some Android WebView builds can fire the injected click capture and
-  // onFileDownload nearly at the same time. recentDownloads only protects
-  // callbacks after startDownload resolves, so collapse concurrent callbacks
-  // onto the exact same promise to prevent duplicate native downloads.
-  const existing = inFlightDownloads.get(key);
+  // Some Android WebView builds can fire injected click capture and
+  // onFileDownload almost simultaneously. Collapse those callbacks onto one
+  // promise. The identity ignores only known tracking parameters; signed and
+  // authenticated query parameters remain distinct and are never rewritten.
+  const existing = inFlightDownloads.get(identity);
   if (existing) return existing;
 
-  const pending = startDownload(key, safePageReferer(pageUrl, key))
+  const pending = startDownload(requestUrl, safePageReferer(pageUrl, requestUrl))
     .then((id) => {
-      rememberDownload(key, id);
+      rememberDownload(requestUrl, id);
       return id;
     })
     .finally(() => {
-      if (inFlightDownloads.get(key) === pending) inFlightDownloads.delete(key);
+      if (inFlightDownloads.get(identity) === pending) inFlightDownloads.delete(identity);
     });
 
-  inFlightDownloads.set(key, pending);
+  inFlightDownloads.set(identity, pending);
   return pending;
 }
 
@@ -113,8 +133,8 @@ async function startDownloadOnce(url: string, pageUrl: string) {
  * Routes WebView download events without hijacking inline video playback.
  * Ordinary files are handed to RAID Download Manager; direct media remains
  * in the in-app player, while insecure/non-web URLs are rejected.
- * Duplicate WebView callbacks are collapsed so one tap creates one download,
- * including concurrent callbacks emitted before the first native enqueue ends.
+ * Duplicate WebView callbacks are collapsed so one user action creates one
+ * RAID download even when the page mutates harmless tracking parameters.
  */
 export async function routeBrowserDownload(downloadUrl: string, pageUrl: string): Promise<BrowserDownloadResult> {
   const candidate = canonicalDownloadUrl(downloadUrl);

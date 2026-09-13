@@ -4,6 +4,7 @@ const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
 const STREAM_MANIFEST_RE = /(?:\.m3u8(?:$|[?#])|[?&](?:format|type)=(?:hls|m3u8)(?:&|$))/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const recentDownloads = new Map<string, { id: number; at: number }>();
+const inFlightDownloads = new Map<string, Promise<number>>();
 const DEDUPE_WINDOW_MS = 5000;
 
 export type BrowserDownloadResult =
@@ -74,11 +75,37 @@ function rememberDownload(url: string, id: number) {
   recentDownloads.set(canonicalDownloadUrl(url), { id, at: now });
 }
 
+async function startDownloadOnce(url: string, pageUrl: string) {
+  const key = canonicalDownloadUrl(url);
+  const duplicateId = recentDownload(key);
+  if (duplicateId) return duplicateId;
+
+  // Some Android WebView builds can fire the injected click capture and
+  // onFileDownload nearly at the same time. recentDownloads only protects
+  // callbacks after startDownload resolves, so collapse concurrent callbacks
+  // onto the exact same promise to prevent duplicate native downloads.
+  const existing = inFlightDownloads.get(key);
+  if (existing) return existing;
+
+  const pending = startDownload(key, safePageReferer(pageUrl))
+    .then((id) => {
+      rememberDownload(key, id);
+      return id;
+    })
+    .finally(() => {
+      if (inFlightDownloads.get(key) === pending) inFlightDownloads.delete(key);
+    });
+
+  inFlightDownloads.set(key, pending);
+  return pending;
+}
+
 /**
  * Routes WebView download events without hijacking inline video playback.
  * Ordinary files are handed to RAID Download Manager; direct media remains
  * in the in-app player, while insecure/non-web URLs are rejected.
- * Duplicate WebView callbacks are collapsed so one tap creates one download.
+ * Duplicate WebView callbacks are collapsed so one tap creates one download,
+ * including concurrent callbacks emitted before the first native enqueue ends.
  */
 export async function routeBrowserDownload(downloadUrl: string, pageUrl: string): Promise<BrowserDownloadResult> {
   const candidate = canonicalDownloadUrl(downloadUrl);
@@ -99,10 +126,6 @@ export async function routeBrowserDownload(downloadUrl: string, pageUrl: string)
     return { kind: 'blocked', reason: 'RAID يسمح بتنزيل الملفات عبر HTTPS فقط لحماية الجهاز.' };
   }
 
-  const duplicateId = recentDownload(candidate);
-  if (duplicateId) return { kind: 'download', url: candidate, id: duplicateId };
-
-  const id = await startDownload(candidate, safePageReferer(pageUrl));
-  rememberDownload(candidate, id);
+  const id = await startDownloadOnce(candidate, pageUrl);
   return { kind: 'download', url: candidate, id };
 }

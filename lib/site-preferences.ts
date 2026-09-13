@@ -1,5 +1,5 @@
 import { getSetting, setSetting } from './db';
-import { getPerformanceSettings, type BrowsingProfile } from './performance';
+import { getPerformanceSettings, resolveBrowsingProfile, type BrowsingProfile } from './performance';
 
 export type SitePreferences = {
   desktopMode: boolean;
@@ -43,11 +43,11 @@ function applyProfileDefaults(base: SitePreferences, profile: BrowsingProfile, e
 
   switch (profile) {
     case 'video':
-      return { ...base, autoplayMedia: true };
+      return { ...base, autoplayMedia: true, adBlock: true };
     case 'reading':
-      return { ...base, autoplayMedia: false, adBlock: true };
+      return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
     case 'downloads':
-      return { ...base, autoplayMedia: false, adBlock: true };
+      return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
     case 'low-data':
       return { ...base, autoplayMedia: false, thirdPartyCookies: false, adBlock: true };
     case 'boost':
@@ -71,7 +71,8 @@ export async function getSitePreferences(url: string): Promise<SitePreferences> 
   const base = { ...DEFAULT_SITE_PREFERENCES };
   const performance = await getPerformanceSettings().catch(() => null);
   if (!performance) return base;
-  return applyProfileDefaults(base, performance.profile, performance.enabled);
+  const effectiveProfile = resolveBrowsingProfile(url, performance);
+  return applyProfileDefaults(base, effectiveProfile, performance.enabled);
 }
 
 export async function saveSitePreferences(url: string, value: SitePreferences) {

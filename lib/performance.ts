@@ -105,10 +105,8 @@ export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
     const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     const query = parsed.searchParams;
 
-    // Direct files and explicit download routes win over broad host classification.
     if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname) || queryHasAny(query, DOWNLOAD_QUERY_KEYS)) return 'downloads';
     if (isGithubReleaseAsset(host, parsed.pathname) || hostMatches(host, DOWNLOAD_HOSTS)) return 'downloads';
-
     if (hostMatches(host, VIDEO_HOSTS) || VIDEO_PATH_RE.test(parsed.pathname) || queryHasAny(query, VIDEO_QUERY_KEYS)) return 'video';
     if (hostMatches(host, READING_HOSTS) || READING_PATH_RE.test(parsed.pathname)) return 'reading';
   } catch {}
@@ -124,6 +122,25 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
   if (!value.enabled) return 'balanced';
   if (value.profile !== 'balanced' || !value.adaptiveMode) return value.profile;
   return inferBrowsingProfileForUrl(url);
+}
+
+function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
+  if (!aggressiveRetry) return [1800] as const;
+
+  switch (profile) {
+    case 'boost':
+      return [450, 1300, 3200] as const;
+    case 'video':
+      return [700, 2000, 5000] as const;
+    case 'downloads':
+      return [800, 2500, 7000] as const;
+    case 'low-data':
+      return [900, 2600, 6500] as const;
+    case 'reading':
+      return [650, 1800, 4800] as const;
+    default:
+      return [600, 1700, 4400] as const;
+  }
 }
 
 export function deriveBrowserPerformancePolicy(input: PerformanceSettings, contextUrl?: string): BrowserPerformancePolicy {
@@ -145,9 +162,8 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
   }
 
   const profile = contextUrl ? resolveBrowsingProfile(contextUrl, value) : value.profile;
-  // Backoff is intentionally bounded: retry quickly for brief mobile-network stalls,
-  // then slow down to avoid hammering a weak or congested connection.
-  const retryDelaysMs = value.aggressiveRetry ? [500, 1400, 3600] as const : [1600] as const;
+  const retryDelaysMs = retryScheduleForProfile(profile, value.aggressiveRetry);
+
   switch (profile) {
     case 'boost':
       return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal', lightweightNavigation:true };

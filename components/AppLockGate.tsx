@@ -11,6 +11,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
   const backgroundAt = useRef<number | null>(null);
   const mounted = useRef(true);
   const busyRef = useRef(false);
+  const authInProgress = useRef(false);
 
   const refreshSettings = useCallback(async () => {
     const next = await getAppLockSettings().catch(() => null);
@@ -22,6 +23,8 @@ export function AppLockGate({ children }: PropsWithChildren) {
   const unlock = useCallback(async () => {
     if (busyRef.current) return;
     busyRef.current = true;
+    authInProgress.current = true;
+    backgroundAt.current = null;
     if (mounted.current) {
       setBusy(true);
       setMessage('');
@@ -34,7 +37,9 @@ export function AppLockGate({ children }: PropsWithChildren) {
     } catch {
       if (mounted.current) setMessage('تعذر تشغيل حماية الجهاز الآن.');
     } finally {
+      authInProgress.current = false;
       busyRef.current = false;
+      backgroundAt.current = null;
       if (mounted.current) setBusy(false);
     }
   }, []);
@@ -51,6 +56,13 @@ export function AppLockGate({ children }: PropsWithChildren) {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
+      // Android can briefly mark the app inactive while the biometric/device
+      // credential prompt is on screen. That transition must not start a new
+      // lock timer or a successful unlock could immediately prompt again.
+      if (authInProgress.current) {
+        backgroundAt.current = null;
+        return;
+      }
       if (state === 'inactive' || state === 'background') {
         backgroundAt.current = Date.now();
         return;

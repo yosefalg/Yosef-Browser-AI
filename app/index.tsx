@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { normalizeInput } from '@/lib/url';
+import { normalizeInput, SEARCH_SHORTCUTS } from '@/lib/url';
 import { getBrowserTabs, getSetting, setSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { isVpnConnected } from '@/lib/vpn';
@@ -38,11 +38,13 @@ export default function HomeScreen(){
   const openUrl=(value:string)=>{const clean=value.trim();if(!clean)return;Keyboard.dismiss();router.push({pathname:'/browser',params:{url:normalizeInput(clean)}})};
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
   const submit=()=>looksLikeAIQuery(query)?askAI():openUrl(query);
+  const applySearchShortcut=(prefix:string)=>{const clean=query.trim();if(clean&&!clean.startsWith('!')){openUrl(`${prefix} ${clean}`);return;}setQuery(`${prefix} `)};
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
   const dismissWelcome=()=>{setWelcomeOpen(false);void setSetting('raid_2_11_welcome_seen',true)};
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
   const lightSurface=themeName==='light'||themeName==='ivory';
   const glass=lightSurface?'rgba(255,255,255,.76)':'rgba(255,255,255,.065)';
+  const searchChips=SEARCH_SHORTCUTS.slice(0,6);
 
   const menuItems=useMemo<HomeMenuItem[]>(()=>[
     {label:'الرئيسية',icon:'home-outline',hint:'هنا البداية',onPress:()=>setMenuOpen(false)},
@@ -84,6 +86,10 @@ export default function HomeScreen(){
         <Pressable accessibilityRole="button" accessibilityLabel="روح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={20} color="#fff"/></Pressable>
       </View>
 
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={s.searchShortcutRow}>
+        {searchChips.map(item=><Pressable key={item.prefix} onPress={()=>applySearchShortcut(item.prefix)} accessibilityRole="button" accessibilityLabel={`بحث ${item.label}`} style={({pressed})=>[s.searchShortcut,{backgroundColor:glass,borderColor:theme.border},pressed&&s.press]}><Text style={[s.shortcutPrefix,{color:theme.accent}]}>{item.prefix}</Text><Text style={[s.shortcutLabel,{color:theme.text}]}>{item.label}</Text></Pressable>)}
+      </ScrollView>
+
       <HomeShortcuts theme={theme} items={shortcuts} onMore={()=>setMenuOpen(true)}/>
 
       <View style={[s.quickRail,{backgroundColor:glass,borderColor:theme.border}]}> 
@@ -114,6 +120,7 @@ const s=StyleSheet.create({
   fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:18,paddingBottom:34,gap:16},
   greeting:{alignItems:'flex-end',paddingTop:4},hello:{fontSize:28,fontWeight:'900',textAlign:'right'},question:{fontSize:13,fontWeight:'700',textAlign:'right',marginTop:4},
   search:{minHeight:66,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:9,gap:7,shadowColor:'#000',shadowOpacity:.12,shadowRadius:18,elevation:3},searchIcon:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center'},input:{flex:1,fontSize:15,textAlign:'right',paddingHorizontal:3},aiQuick:{width:42,height:42,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:46,height:46,borderRadius:17,alignItems:'center',justifyContent:'center'},
+  searchShortcutRow:{gap:8,paddingHorizontal:1},searchShortcut:{minHeight:38,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row',alignItems:'center',gap:6},shortcutPrefix:{fontSize:11,fontWeight:'900'},shortcutLabel:{fontSize:10.5,fontWeight:'800'},
   quickRail:{minHeight:94,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'stretch',padding:8,shadowColor:'#000',shadowOpacity:.10,shadowRadius:22,elevation:3,overflow:'hidden'},quickSlot:{flex:1,position:'relative',justifyContent:'center'},quickAction:{flex:1,minHeight:76,borderRadius:20,alignItems:'center',justifyContent:'center',paddingHorizontal:7,paddingVertical:7},quickPressed:{transform:[{scale:.965}],backgroundColor:'rgba(255,255,255,.055)'},quickIcon:{width:40,height:40,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center',marginBottom:7},quickTitle:{fontSize:11.5,fontWeight:'900',textAlign:'center'},quickSub:{fontSize:8.5,fontWeight:'600',textAlign:'center',marginTop:3,maxWidth:92},quickDivider:{position:'absolute',left:0,top:18,bottom:18,width:StyleSheet.hairlineWidth,opacity:.55},
   security:{minHeight:72,borderRadius:23,borderWidth:1,paddingHorizontal:13,paddingVertical:11,flexDirection:'row-reverse',alignItems:'center',gap:11},securityIcon:{width:46,height:46,borderRadius:16,alignItems:'center',justifyContent:'center'},securityCopy:{flex:1,alignItems:'flex-end'},securityTitle:{fontSize:13,fontWeight:'900'},securitySub:{fontSize:9.5,marginTop:4,textAlign:'right'},
   signature:{alignItems:'center',paddingVertical:18},signatureTitle:{fontWeight:'900',letterSpacing:5},signatureSub:{fontSize:10,marginTop:7},press:{transform:[{scale:.98}],opacity:.84},

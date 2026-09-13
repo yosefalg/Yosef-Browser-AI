@@ -42,7 +42,7 @@ const KEY = 'raid_performance_settings_v1';
 const VIDEO_HOSTS = [
   'youtube.com', 'youtu.be', 'twitch.tv', 'vimeo.com', 'dailymotion.com',
   'shahid.net', 'tiktok.com', 'kick.com', 'rumble.com', 'odysee.com',
-  'watch.plex.tv', 'crunchyroll.com',
+  'watch.plex.tv', 'crunchyroll.com', 'shabakaty.com',
 ];
 const READING_HOSTS = [
   'wikipedia.org', 'wikimedia.org', 'developer.mozilla.org', 'medium.com',
@@ -125,6 +125,18 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
   return inferBrowsingProfileForUrl(url);
 }
 
+function retryPlan(profile: BrowsingProfile, aggressive: boolean): readonly number[] {
+  if (!aggressive) return profile === 'downloads' ? [2400] : [1600];
+  switch (profile) {
+    case 'boost': return [450, 1300, 3200];
+    case 'video': return [700, 1900, 4800];
+    case 'downloads': return [900, 2800, 7200];
+    case 'low-data': return [1100, 3200, 8000];
+    case 'reading': return [650, 1800, 4600];
+    default: return [600, 1700, 4300];
+  }
+}
+
 export function deriveBrowserPerformancePolicy(input: PerformanceSettings, contextUrl?: string): BrowserPerformancePolicy {
   const value = sanitizePerformanceSettings(input);
   if (!value.enabled) {
@@ -143,9 +155,9 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
   }
 
   const profile = contextUrl ? resolveBrowsingProfile(contextUrl, value) : value.profile;
-  // Backoff is intentionally bounded: retry quickly for brief mobile-network stalls,
-  // then slow down to avoid hammering a weak or congested connection.
-  const retryDelaysMs = value.aggressiveRetry ? [500, 1400, 3600] as const : [1600] as const;
+  // Profile-specific bounded backoff avoids retry storms on congested or high-latency links.
+  // Download and Low Data modes deliberately back off more than Boost to protect transfers/data.
+  const retryDelaysMs = retryPlan(profile, value.aggressiveRetry);
   switch (profile) {
     case 'boost':
       return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal' };
@@ -170,6 +182,7 @@ export function policySummary(policy: BrowserPerformancePolicy) {
   if (policy.lowBandwidthImages) parts.push('صور أخف');
   if (policy.mediaBias === 'video') parts.push('مهيأ للفيديو');
   if (policy.mediaBias === 'downloads') parts.push('مهيأ للتنزيل');
+  if (policy.retryDelaysMs.length > 1) parts.push('Retry متدرج');
   return parts.length ? parts.join(' • ') : 'وضع متوازن';
 }
 

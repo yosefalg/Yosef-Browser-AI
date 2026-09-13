@@ -12,7 +12,9 @@ import { isOnboardingComplete } from '@/lib/onboarding';
 export default function RootLayout() {
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ url?: string | string[] }>();
-  const [freezeInactiveScreens, setFreezeInactiveScreens] = useState(false);
+  // Memory protection is a safe baseline: inactive screens are frozen from the
+  // first frame instead of briefly running until settings finish loading.
+  const [freezeInactiveScreens, setFreezeInactiveScreens] = useState(true);
   const [lightweightNavigation, setLightweightNavigation] = useState(false);
   const lastExternalUrl = useRef('');
 
@@ -33,7 +35,7 @@ export default function RootLayout() {
       })
       .catch(() => {
         if (!cancelled) {
-          setFreezeInactiveScreens(false);
+          setFreezeInactiveScreens(true);
           setLightweightNavigation(false);
         }
       });

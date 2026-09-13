@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { pauseDownload, resumeDownload } from '@/features/downloads/download-manager';
 import { listDownloads, subscribeDownloads } from '@/features/downloads/store';
 import type { DownloadItem } from '@/features/downloads/types';
 
@@ -30,17 +31,21 @@ function chooseActive(items: DownloadItem[]) {
     || null;
 }
 
+function isActive(item: DownloadItem) {
+  return item.state === 'downloading' || item.state === 'queued' || item.state === 'paused';
+}
+
 export function DownloadShelf({ visible }: { visible: boolean }) {
   const insets = useSafeAreaInsets();
-  const [item, setItem] = useState<DownloadItem | null>(null);
+  const [items, setItems] = useState<DownloadItem[]>([]);
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!visible) {
-      setItem(null);
+      setItems([]);
       return;
     }
-    const items = await listDownloads(20).catch(() => [] as DownloadItem[]);
-    setItem(chooseActive(items));
+    setItems(await listDownloads(20).catch(() => [] as DownloadItem[]));
   }, [visible]);
 
   useEffect(() => {
@@ -48,6 +53,13 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     const unsubscribe = subscribeDownloads(() => { void refresh(); });
     return unsubscribe;
   }, [refresh]);
+
+  const item = useMemo(() => chooseActive(items), [items]);
+  const activeCount = useMemo(() => items.filter(isActive).length, [items]);
+  const aggregateSpeed = useMemo(
+    () => items.filter((value) => value.state === 'downloading').reduce((sum, value) => sum + (value.speed_bps || 0), 0),
+    [items],
+  );
 
   if (!visible || !item) return null;
 
@@ -61,24 +73,57 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     : item.state === 'queued'
       ? 'بانتظار البدء'
       : `${speed ? `${speed}/ث` : 'جاري التنزيل'}${remaining ? ` • ${remaining} متبقٍ` : ''}`;
+  const extra = activeCount > 1 ? ` • +${activeCount - 1} تنزيل` : '';
+  const totalSpeed = activeCount > 1 && aggregateSpeed > 0 ? ` • الكلي ${bytes(aggregateSpeed)}/ث` : '';
+
+  const togglePause = async () => {
+    if (busy || item.state === 'queued') return;
+    setBusy(true);
+    try {
+      if (item.state === 'downloading') await pauseDownload(item.id);
+      else if (item.state === 'paused') await resumeDownload(item.id);
+      await refresh();
+    } catch (error) {
+      Alert.alert('RAID Downloads', error instanceof Error ? error.message : 'تعذر التحكم بالتنزيل.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canControl = item.state === 'downloading' || item.state === 'paused';
 
   return (
     <Pressable
       onPress={() => router.push('/downloads')}
       accessibilityRole="button"
       accessibilityLabel={`تنزيل ${item.file_name}. ${status}`}
-      style={[styles.shell, { bottom: insets.bottom + 72 }]}
+      style={({ pressed }) => [styles.shell, { bottom: insets.bottom + 72 }, pressed && styles.pressed]}
     >
       <View style={styles.iconWrap}>
         <Ionicons name={item.state === 'paused' ? 'pause' : 'arrow-down'} size={18} color="#F8FAFC" />
       </View>
       <View style={styles.copy}>
-        <Text numberOfLines={1} style={styles.name}>{item.file_name}</Text>
-        <Text numberOfLines={1} style={styles.meta}>{status}</Text>
+        <View style={styles.nameRow}>
+          <Text numberOfLines={1} style={styles.name}>{item.file_name}</Text>
+          {activeCount > 1 && <View style={styles.countBadge}><Text style={styles.countText}>{activeCount}</Text></View>}
+        </View>
+        <Text numberOfLines={1} style={styles.meta}>{status}{extra}{totalSpeed}</Text>
         <View style={styles.track}>
           <View style={[styles.fill, progress === null ? styles.indeterminate : { width: `${Math.max(3, Math.round(progress * 100))}%` }]} />
         </View>
       </View>
+      {canControl && (
+        <Pressable
+          disabled={busy}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={item.state === 'paused' ? 'استكمال التنزيل' : 'إيقاف التنزيل مؤقتًا'}
+          onPress={(event) => { event.stopPropagation(); void togglePause(); }}
+          style={({ pressed }) => [styles.control, busy && styles.disabled, pressed && styles.controlPressed]}
+        >
+          <Ionicons name={item.state === 'paused' ? 'play' : 'pause'} size={16} color="#F8FAFC" />
+        </Pressable>
+      )}
       <View style={styles.trailing}>
         <Text style={styles.percent}>{progress === null ? '•••' : `${Math.round(progress * 100)}%`}</Text>
         <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
@@ -107,6 +152,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  pressed: { opacity: 0.96 },
   iconWrap: {
     width: 38,
     height: 38,
@@ -116,11 +162,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#8B654E',
   },
   copy: { flex: 1, minWidth: 0 },
-  name: { color: '#F8FAFC', fontSize: 12, fontWeight: '900' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  name: { flex: 1, color: '#F8FAFC', fontSize: 12, fontWeight: '900' },
+  countBadge: { minWidth: 22, height: 20, paddingHorizontal: 6, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#263244' },
+  countText: { color: '#D5AA88', fontSize: 9, fontWeight: '900' },
   meta: { color: '#CBD5E1', fontSize: 10, marginTop: 3 },
   track: { height: 3, borderRadius: 999, overflow: 'hidden', backgroundColor: '#334155', marginTop: 7 },
   fill: { height: 3, borderRadius: 999, backgroundColor: '#D5AA88' },
   indeterminate: { width: '24%' },
+  control: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#283548', borderWidth: 1, borderColor: 'rgba(148,163,184,.22)' },
+  controlPressed: { transform: [{ scale: 0.96 }] },
+  disabled: { opacity: 0.45 },
   trailing: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2 },
   percent: { color: '#E2E8F0', fontSize: 10, fontWeight: '900' },
 });

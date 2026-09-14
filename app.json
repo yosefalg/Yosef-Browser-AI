@@ -2,14 +2,14 @@
   "expo": {
     "name": "RAID Browser",
     "slug": "raid-browser",
-    "version": "2.14.50",
+    "version": "2.14.51",
     "orientation": "portrait",
     "scheme": "raidbrowser",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
       "package": "com.yosef.raidbrowser",
-      "versionCode": 136,
+      "versionCode": 137,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",
@@ -18,25 +18,41 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "category": ["BROWSABLE", "DEFAULT"],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
           "data": [
-            { "scheme": "http" },
-            { "scheme": "https" }
+            {
+              "scheme": "http"
+            },
+            {
+              "scheme": "https"
+            }
           ]
         }
       ],
-      "adaptiveIcon": { "backgroundColor": "#071018" }
+      "adaptiveIcon": {
+        "backgroundColor": "#071018"
+      }
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-local-authentication",
       "expo-sqlite",
-      ["expo-web-browser", { "experimentalLauncherActivity": true }],
+      [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": true
+        }
+      ],
       "./plugins/withRaidWebViewSecurity",
       "./plugins/withRaidWireGuard",
       "./plugins/withRaidLauncherIcon"
     ],
-    "experiments": { "typedRoutes": true }
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

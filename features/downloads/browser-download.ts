@@ -5,6 +5,7 @@ const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const recentDownloads = new Map<string, { id: number; at: number }>();
 const inFlightDownloads = new Map<string, Promise<number>>();
 const DEDUPE_WINDOW_MS = 20_000;
+const MAX_RECENT_DOWNLOADS = 64;
 const TRACKING_QUERY_RE = /^(?:utm_(?:source|medium|campaign|term|content|id)|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid)$/i;
 
 export type BrowserDownloadResult =
@@ -63,6 +64,13 @@ function normalizeKnownDownloadUrl(value: string) {
       if (!exportMode || exportMode === 'view') parsed.searchParams.set('export', 'download');
     }
 
+    // OneDrive's classic download endpoint is most reliable when download=1 is
+    // explicit. Only rewrite URLs that already carry a stable file identifier so
+    // ordinary OneDrive browsing links are left untouched.
+    if (host === 'onedrive.live.com' && (parsed.searchParams.has('resid') || parsed.searchParams.has('id'))) {
+      parsed.searchParams.set('download', '1');
+    }
+
     return parsed.toString();
   } catch {
     return value.trim();
@@ -94,12 +102,27 @@ function downloadIdentity(value: string) {
   }
 }
 
+function pruneRecentDownloads(now: number) {
+  for (const [key, entry] of recentDownloads) {
+    if (now - entry.at > DEDUPE_WINDOW_MS) recentDownloads.delete(key);
+  }
+
+  if (recentDownloads.size <= MAX_RECENT_DOWNLOADS) return;
+  const oldest = [...recentDownloads.entries()]
+    .sort((a, b) => a[1].at - b[1].at)
+    .slice(0, recentDownloads.size - MAX_RECENT_DOWNLOADS);
+  for (const [key] of oldest) recentDownloads.delete(key);
+}
+
 function recentDownload(url: string) {
+  const now = Date.now();
+  pruneRecentDownloads(now);
+
   const key = downloadIdentity(url);
   const entry = recentDownloads.get(key);
   if (!entry) return null;
 
-  if (Date.now() - entry.at > DEDUPE_WINDOW_MS) {
+  if (now - entry.at > DEDUPE_WINDOW_MS) {
     recentDownloads.delete(key);
     return null;
   }
@@ -109,10 +132,9 @@ function recentDownload(url: string) {
 
 function rememberDownload(url: string, id: number) {
   const now = Date.now();
-  for (const [key, entry] of recentDownloads) {
-    if (now - entry.at > DEDUPE_WINDOW_MS) recentDownloads.delete(key);
-  }
+  pruneRecentDownloads(now);
   recentDownloads.set(downloadIdentity(url), { id, at: now });
+  pruneRecentDownloads(now);
 }
 
 async function startDownloadOnce(url: string, pageUrl: string) {

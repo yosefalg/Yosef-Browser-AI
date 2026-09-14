@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'r
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { pauseDownload, resumeDownload } from '@/features/downloads/download-manager';
+import { pauseDownload, resumeDownload, retryDownload } from '@/features/downloads/download-manager';
 import { listDownloads, subscribeDownloads } from '@/features/downloads/store';
 import type { DownloadItem, DownloadState } from '@/features/downloads/types';
 
@@ -123,7 +123,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
   const itemStatus = item.state === 'completed'
     ? 'اكتمل التنزيل • اضغط لعرض الملف'
     : item.state === 'failed'
-      ? `فشل التنزيل${item.error ? ' • اضغط للتفاصيل' : ''}`
+      ? 'فشل التنزيل • أعد المحاولة أو افتح التفاصيل'
       : item.state === 'paused'
         ? 'متوقف مؤقتًا'
         : item.state === 'queued'
@@ -133,21 +133,36 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     ? `${activeCount} تنزيلات نشطة${aggregateSpeed > 0 ? ` • ${bytes(aggregateSpeed)}/ث` : ''}`
     : itemStatus;
 
-  const togglePause = async () => {
-    if (busy || item.state === 'queued' || terminalOnly) return;
+  const controlDownload = async () => {
+    if (busy) return;
+    const canRetry = terminalOnly && item.state === 'failed';
+    const canPauseOrResume = !terminalOnly && (item.state === 'downloading' || item.state === 'paused');
+    if (!canRetry && !canPauseOrResume) return;
+
     setBusy(true);
     try {
-      if (item.state === 'downloading') await pauseDownload(item.id);
-      else if (item.state === 'paused') await resumeDownload(item.id);
+      if (canRetry) {
+        if (terminalTimer.current) {
+          clearTimeout(terminalTimer.current);
+          terminalTimer.current = null;
+        }
+        setRecentTerminal(null);
+        await retryDownload(item.id);
+      } else if (item.state === 'downloading') {
+        await pauseDownload(item.id);
+      } else if (item.state === 'paused') {
+        await resumeDownload(item.id);
+      }
       await refresh();
     } catch (error) {
       Alert.alert('RAID Downloads', error instanceof Error ? error.message : 'تعذر التحكم بالتنزيل.');
+      await refresh();
     } finally {
       setBusy(false);
     }
   };
 
-  const canControl = !terminalOnly && (item.state === 'downloading' || item.state === 'paused');
+  const canControl = (terminalOnly && item.state === 'failed') || (!terminalOnly && (item.state === 'downloading' || item.state === 'paused'));
   const percentText = terminalOnly
     ? item.state === 'completed' ? 'تم' : 'خطأ'
     : displayProgress === null ? '•••' : `${Math.round(displayProgress * 100)}%`;
@@ -158,6 +173,12 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
       : item.state === 'paused'
         ? 'pause'
         : 'arrow-down';
+  const controlIcon = item.state === 'failed' ? 'refresh' : item.state === 'paused' ? 'play' : 'pause';
+  const controlLabel = item.state === 'failed'
+    ? 'إعادة محاولة التنزيل'
+    : item.state === 'paused'
+      ? 'استكمال التنزيل'
+      : 'إيقاف التنزيل مؤقتًا';
 
   return (
     <Pressable
@@ -188,11 +209,11 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           disabled={busy}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={item.state === 'paused' ? 'استكمال التنزيل' : 'إيقاف التنزيل مؤقتًا'}
-          onPress={(event) => { event.stopPropagation(); void togglePause(); }}
-          style={({ pressed }) => [styles.control, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
+          accessibilityLabel={controlLabel}
+          onPress={(event) => { event.stopPropagation(); void controlDownload(); }}
+          style={({ pressed }) => [styles.control, item.state === 'failed' && styles.controlRetry, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
         >
-          <Ionicons name={item.state === 'paused' ? 'play' : 'pause'} size={16} color="#F8FAFC" />
+          <Ionicons name={controlIcon} size={16} color="#F8FAFC" />
         </Pressable>
       )}
       <View style={styles.trailing}>
@@ -246,6 +267,7 @@ const styles = StyleSheet.create({
   fill: { height: 3, borderRadius: 999, backgroundColor: '#D5AA88' },
   indeterminate: { width: '24%' },
   control: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#283548', borderWidth: 1, borderColor: 'rgba(148,163,184,.22)' },
+  controlRetry: { backgroundColor: '#6F343A', borderColor: 'rgba(253,164,175,.32)' },
   controlCompact: { width: 32, height: 32 },
   controlPressed: { transform: [{ scale: 0.96 }] },
   disabled: { opacity: 0.45 },

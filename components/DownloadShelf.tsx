@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pauseDownload, resumeDownload } from '@/features/downloads/download-manager';
 import { listDownloads, subscribeDownloads } from '@/features/downloads/store';
-import type { DownloadItem } from '@/features/downloads/types';
+import type { DownloadItem, DownloadState } from '@/features/downloads/types';
 
 function bytes(value: number | null) {
   if (!value || value <= 0) return '';
@@ -35,29 +35,66 @@ function isActive(item: DownloadItem) {
   return item.state === 'downloading' || item.state === 'queued' || item.state === 'paused';
 }
 
+function isTerminal(state: DownloadState) {
+  return state === 'completed' || state === 'failed';
+}
+
 export function DownloadShelf({ visible }: { visible: boolean }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 370;
+  const previousStates = useRef(new Map<number, DownloadState>());
+  const terminalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [items, setItems] = useState<DownloadItem[]>([]);
+  const [recentTerminal, setRecentTerminal] = useState<DownloadItem | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const showTerminal = useCallback((item: DownloadItem) => {
+    if (terminalTimer.current) clearTimeout(terminalTimer.current);
+    setRecentTerminal(item);
+    terminalTimer.current = setTimeout(() => {
+      terminalTimer.current = null;
+      setRecentTerminal(null);
+    }, 7000);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!visible) {
       setItems([]);
+      setRecentTerminal(null);
+      previousStates.current.clear();
+      if (terminalTimer.current) {
+        clearTimeout(terminalTimer.current);
+        terminalTimer.current = null;
+      }
       return;
     }
-    setItems(await listDownloads(20).catch(() => [] as DownloadItem[]));
-  }, [visible]);
+
+    const nextItems = await listDownloads(20).catch(() => [] as DownloadItem[]);
+    const transitioned = nextItems
+      .filter((item) => {
+        const previous = previousStates.current.get(item.id);
+        return previous !== undefined && previous !== item.state && isTerminal(item.state);
+      })
+      .sort((a, b) => b.updated_at - a.updated_at)[0];
+
+    previousStates.current = new Map(nextItems.map((item) => [item.id, item.state]));
+    setItems(nextItems);
+    if (transitioned) showTerminal(transitioned);
+  }, [showTerminal, visible]);
 
   useEffect(() => {
     void refresh();
     const unsubscribe = subscribeDownloads(() => { void refresh(); });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (terminalTimer.current) clearTimeout(terminalTimer.current);
+    };
   }, [refresh]);
 
   const activeItems = useMemo(() => items.filter(isActive), [items]);
-  const item = useMemo(() => chooseActive(items), [items]);
+  const activeItem = useMemo(() => chooseActive(items), [items]);
+  const item = activeItem || recentTerminal;
   const activeCount = activeItems.length;
   const aggregateSpeed = useMemo(
     () => activeItems.filter((value) => value.state === 'downloading').reduce((sum, value) => sum + (value.speed_bps || 0), 0),
@@ -74,23 +111,30 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
 
   if (!visible || !item) return null;
 
-  const itemProgress = item.total_bytes && item.total_bytes > 0
-    ? Math.max(0, Math.min(1, item.progress || 0))
-    : null;
+  const terminalOnly = !activeItem && isTerminal(item.state);
+  const itemProgress = item.state === 'completed'
+    ? 1
+    : item.total_bytes && item.total_bytes > 0
+      ? Math.max(0, Math.min(1, item.progress || 0))
+      : null;
   const displayProgress = activeCount > 1 ? aggregateProgress : itemProgress;
   const speed = item.state === 'downloading' ? bytes(item.speed_bps) : '';
   const remaining = item.state === 'downloading' ? eta(item.eta_seconds) : '';
-  const itemStatus = item.state === 'paused'
-    ? 'متوقف مؤقتًا'
-    : item.state === 'queued'
-      ? 'بانتظار البدء'
-      : `${speed ? `${speed}/ث` : 'جاري التنزيل'}${remaining ? ` • ${remaining} متبقٍ` : ''}`;
+  const itemStatus = item.state === 'completed'
+    ? 'اكتمل التنزيل • اضغط لعرض الملف'
+    : item.state === 'failed'
+      ? `فشل التنزيل${item.error ? ' • اضغط للتفاصيل' : ''}`
+      : item.state === 'paused'
+        ? 'متوقف مؤقتًا'
+        : item.state === 'queued'
+          ? 'بانتظار البدء'
+          : `${speed ? `${speed}/ث` : 'جاري التنزيل'}${remaining ? ` • ${remaining} متبقٍ` : ''}`;
   const status = activeCount > 1
     ? `${activeCount} تنزيلات نشطة${aggregateSpeed > 0 ? ` • ${bytes(aggregateSpeed)}/ث` : ''}`
     : itemStatus;
 
   const togglePause = async () => {
-    if (busy || item.state === 'queued') return;
+    if (busy || item.state === 'queued' || terminalOnly) return;
     setBusy(true);
     try {
       if (item.state === 'downloading') await pauseDownload(item.id);
@@ -103,19 +147,28 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     }
   };
 
-  const canControl = item.state === 'downloading' || item.state === 'paused';
-  const percentText = displayProgress === null ? '•••' : `${Math.round(displayProgress * 100)}%`;
+  const canControl = !terminalOnly && (item.state === 'downloading' || item.state === 'paused');
+  const percentText = terminalOnly
+    ? item.state === 'completed' ? 'تم' : 'خطأ'
+    : displayProgress === null ? '•••' : `${Math.round(displayProgress * 100)}%`;
+  const iconName = item.state === 'completed'
+    ? 'checkmark-circle'
+    : item.state === 'failed'
+      ? 'alert-circle'
+      : item.state === 'paused'
+        ? 'pause'
+        : 'arrow-down';
 
   return (
     <Pressable
       onPress={() => router.push('/downloads')}
       accessibilityRole="button"
       accessibilityLabel={`${activeCount > 1 ? `${activeCount} تنزيلات نشطة` : `تنزيل ${item.file_name}`}. ${status}`}
-      style={({ pressed }) => [styles.shell, compact && styles.shellCompact, { bottom: insets.bottom + 72 }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.shell, terminalOnly && styles.terminalShell, compact && styles.shellCompact, { bottom: insets.bottom + 72 }, pressed && styles.pressed]}
     >
       {!compact && (
-        <View style={styles.iconWrap}>
-          <Ionicons name={item.state === 'paused' ? 'pause' : 'arrow-down'} size={18} color="#F8FAFC" />
+        <View style={[styles.iconWrap, item.state === 'completed' && styles.iconSuccess, item.state === 'failed' && styles.iconError]}>
+          <Ionicons name={iconName} size={18} color="#F8FAFC" />
         </View>
       )}
       <View style={styles.copy}>
@@ -124,9 +177,11 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           {activeCount > 1 && <View style={styles.countBadge}><Text style={styles.countText}>{activeCount}</Text></View>}
         </View>
         <Text numberOfLines={1} style={styles.meta}>{status}</Text>
-        <View style={styles.track}>
-          <View style={[styles.fill, displayProgress === null ? styles.indeterminate : { width: `${Math.max(3, Math.round(displayProgress * 100))}%` }]} />
-        </View>
+        {!terminalOnly && (
+          <View style={styles.track}>
+            <View style={[styles.fill, displayProgress === null ? styles.indeterminate : { width: `${Math.max(3, Math.round(displayProgress * 100))}%` }]} />
+          </View>
+        )}
       </View>
       {canControl && (
         <Pressable
@@ -141,7 +196,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
         </Pressable>
       )}
       <View style={styles.trailing}>
-        <Text style={styles.percent}>{percentText}</Text>
+        <Text style={[styles.percent, item.state === 'completed' && styles.percentSuccess, item.state === 'failed' && styles.percentError]}>{percentText}</Text>
         {!compact && <Ionicons name="chevron-forward" size={16} color="#94A3B8" />}
       </View>
     </Pressable>
@@ -168,6 +223,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  terminalShell: { minHeight: 58 },
   shellCompact: { left: 8, right: 8, minHeight: 60, paddingHorizontal: 9, gap: 7 },
   pressed: { opacity: 0.96 },
   iconWrap: {
@@ -178,6 +234,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#8B654E',
   },
+  iconSuccess: { backgroundColor: '#256B55' },
+  iconError: { backgroundColor: '#8A3F45' },
   copy: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   name: { flex: 1, color: '#F8FAFC', fontSize: 12, fontWeight: '900' },
@@ -193,4 +251,6 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.45 },
   trailing: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2, minWidth: 34 },
   percent: { color: '#E2E8F0', fontSize: 10, fontWeight: '900' },
+  percentSuccess: { color: '#86EFAC' },
+  percentError: { color: '#FDA4AF' },
 });

@@ -7,20 +7,30 @@ import { getSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { DEFAULT_PERFORMANCE_SETTINGS, deriveBrowserPerformancePolicy, getPerformanceSettings, policySummary, profileDescription, profileLabel, savePerformanceSettings, type BrowsingProfile, type PerformanceSettings } from '@/lib/performance';
 
-const PROFILES: Array<{id:BrowsingProfile;icon:keyof typeof Ionicons.glyphMap;title:string}> = [
-  {id:'balanced',icon:'options-outline',title:'متوازن'},
-  {id:'boost',icon:'flash-outline',title:'Boost'},
-  {id:'video',icon:'play-circle-outline',title:'Video'},
-  {id:'reading',icon:'reader-outline',title:'Reading'},
-  {id:'downloads',icon:'download-outline',title:'Downloads'},
-  {id:'low-data',icon:'cellular-outline',title:'Low Data'},
+const PROFILES: Array<{id:BrowsingProfile;icon:keyof typeof Ionicons.glyphMap;title:string;accent:string}> = [
+  {id:'balanced',icon:'options-outline',title:'متوازن',accent:'#9AA6B2'},
+  {id:'boost',icon:'flash-outline',title:'Boost',accent:'#F0B35A'},
+  {id:'video',icon:'play-circle-outline',title:'Video',accent:'#D47B8A'},
+  {id:'reading',icon:'reader-outline',title:'Reading',accent:'#8CB7A5'},
+  {id:'downloads',icon:'download-outline',title:'Downloads',accent:'#73A9D8'},
+  {id:'low-data',icon:'cellular-outline',title:'Low Data',accent:'#91B66B'},
 ];
+
+const PROFILE_PRESETS: Record<BrowsingProfile, Partial<PerformanceSettings>> = {
+  balanced:{profile:'balanced'},
+  boost:{profile:'boost',enabled:true,prioritizeActiveTab:true,suspendBackgroundTabs:true,reduceBackgroundWork:true,aggressiveRetry:true},
+  video:{profile:'video',enabled:true,prioritizeActiveTab:true,suspendBackgroundTabs:true,reduceBackgroundWork:true,lowBandwidthImages:false,aggressiveRetry:true},
+  reading:{profile:'reading',enabled:true,prioritizeActiveTab:true,suspendBackgroundTabs:true,reduceBackgroundWork:true,aggressiveRetry:true},
+  downloads:{profile:'downloads',enabled:true,prioritizeActiveTab:true,suspendBackgroundTabs:true,reduceBackgroundWork:true,aggressiveRetry:true},
+  'low-data':{profile:'low-data',enabled:true,prioritizeActiveTab:true,suspendBackgroundTabs:true,reduceBackgroundWork:true,lowBandwidthImages:true,aggressiveRetry:true},
+};
 
 export default function PerformanceScreen(){
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [settings,setSettings]=useState<PerformanceSettings>(DEFAULT_PERFORMANCE_SETTINGS);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const policy=useMemo(()=>deriveBrowserPerformancePolicy(settings),[settings]);
+  const activeAccent=useMemo(()=>PROFILES.find(item=>item.id===settings.profile)?.accent||theme.accent,[settings.profile,theme.accent]);
 
   useFocusEffect(useCallback(()=>{let alive=true;Promise.all([
     getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
@@ -34,20 +44,20 @@ export default function PerformanceScreen(){
     void savePerformanceSettings(next);
   };
 
-  const choose=(profile:BrowsingProfile)=>patch({profile,enabled:profile!=='balanced'||settings.enabled,lowBandwidthImages:profile==='low-data'?true:settings.lowBandwidthImages});
-  const quickBoost=()=>patch({enabled:true,profile:'boost',prioritizeActiveTab:true,suspendBackgroundTabs:true,reduceBackgroundWork:true,aggressiveRetry:true});
+  const choose=(profile:BrowsingProfile)=>patch(PROFILE_PRESETS[profile]);
+  const quickBoost=()=>patch(PROFILE_PRESETS.boost);
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.head,{borderBottomColor:theme.border,backgroundColor:theme.surface}]}>
       <Pressable onPress={()=>router.back()} style={[s.iconBtn,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="chevron-forward" size={24} color={theme.text}/></Pressable>
       <View style={s.headCopy}><Text style={[s.title,{color:theme.text}]}>RAID Performance</Text><Text style={[s.sub,{color:theme.muted}]}>أولوية ذكية لموارد المتصفح واتصالك الحالي</Text></View>
-      <View style={[s.statusDot,{backgroundColor:settings.enabled?'#4CB884':theme.muted}]}/>
+      <View style={[s.statusDot,{backgroundColor:settings.enabled?activeAccent:theme.muted}]}/>
     </View>
 
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
       <View style={[s.hero,{backgroundColor:theme.surface,borderColor:theme.border}]}>
-        <View style={[s.heroIcon,{backgroundColor:settings.enabled?'rgba(76,184,132,.13)':theme.surface2,borderColor:theme.border}]}><Ionicons name="speedometer-outline" size={32} color={settings.enabled?'#4CB884':theme.accent}/></View>
-        <View style={s.heroCopy}><Text style={[s.kicker,{color:theme.accent}]}>INTERNET / APP BOOST</Text><Text style={[s.heroTitle,{color:theme.text}]}>{settings.enabled?'وضع التحسين شغال':'الوضع الطبيعي'}</Text><Text style={[s.heroText,{color:theme.muted}]}>RAID ما يزيد سرعة اشتراكك نفسها؛ لكنه يقلل المنافسة داخل التطبيق ويجهز الموارد حسب نوع التصفح.</Text></View>
+        <View style={[s.heroIcon,{backgroundColor:settings.enabled?`${activeAccent}20`:theme.surface2,borderColor:theme.border}]}><Ionicons name="speedometer-outline" size={32} color={settings.enabled?activeAccent:theme.accent}/></View>
+        <View style={s.heroCopy}><Text style={[s.kicker,{color:activeAccent}]}>INTERNET / APP BOOST</Text><Text style={[s.heroTitle,{color:theme.text}]}>{settings.enabled?'وضع التحسين شغال':'الوضع الطبيعي'}</Text><Text style={[s.heroText,{color:theme.muted}]}>RAID ما يزيد سرعة اشتراكك نفسها؛ لكنه يقلل المنافسة داخل التطبيق ويجهز الموارد حسب نوع التصفح.</Text></View>
         <Switch value={settings.enabled} onValueChange={value=>patch({enabled:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
       </View>
 
@@ -57,9 +67,10 @@ export default function PerformanceScreen(){
       </Pressable>
 
       <View style={[s.policyCard,{backgroundColor:theme.surface2,borderColor:theme.border}]}>
-        <View style={s.policyHead}><Ionicons name="pulse-outline" size={19} color={theme.accent}/><Text style={[s.policyTitle,{color:theme.text}]}>سياسة RAID الحالية</Text></View>
+        <View style={s.policyHead}><Ionicons name="pulse-outline" size={19} color={activeAccent}/><Text style={[s.policyTitle,{color:theme.text}]}>سياسة RAID الحالية</Text></View>
         <Text style={[s.policyText,{color:theme.muted}]}>{policySummary(policy)}</Text>
         <View style={s.chips}>
+          <Chip label={profileLabel(policy.profile)} on theme={theme}/>
           <Chip label={policy.activeTabPriority?'Active Priority':'Balanced Priority'} on={policy.activeTabPriority} theme={theme}/>
           <Chip label={policy.suspendBackgroundTabs?'Background Suspend':'Background On'} on={policy.suspendBackgroundTabs} theme={theme}/>
           <Chip label={policy.lowBandwidthImages?'Light Images':'Full Images'} on={policy.lowBandwidthImages} theme={theme}/>
@@ -74,12 +85,12 @@ export default function PerformanceScreen(){
 
       <View style={s.section}><Text style={[s.sectionTitle,{color:theme.accent}]}>اختيار المود</Text><View style={s.grid}>{PROFILES.map(item=>{
         const active=settings.profile===item.id;
-        return <Pressable key={item.id} onPress={()=>choose(item.id)} style={({pressed})=>[s.profile,{backgroundColor:theme.surface,borderColor:active?theme.accent:theme.border},active&&s.profileActive,pressed&&s.pressed]}>
-          <View style={[s.profileIcon,{backgroundColor:theme.surface2,borderColor:active?theme.accent:theme.border}]}><Ionicons name={item.icon} size={22} color={active?theme.accent:theme.text}/></View>
-          <Text style={[s.profileTitle,{color:theme.text}]}>{item.title}</Text><Text numberOfLines={2} style={[s.profileHint,{color:theme.muted}]}>{profileDescription(item.id)}</Text>
+        return <Pressable key={item.id} onPress={()=>choose(item.id)} style={({pressed})=>[s.profile,{backgroundColor:theme.surface,borderColor:active?item.accent:theme.border},active&&s.profileActive,pressed&&s.pressed]}>
+          <View style={[s.profileIcon,{backgroundColor:active?`${item.accent}1F`:theme.surface2,borderColor:active?item.accent:theme.border}]}><Ionicons name={item.icon} size={22} color={active?item.accent:theme.text}/></View>
+          <Text style={[s.profileTitle,{color:active?item.accent:theme.text}]}>{item.title}</Text><Text numberOfLines={2} style={[s.profileHint,{color:theme.muted}]}>{profileDescription(item.id)}</Text>
         </Pressable>})}</View></View>
 
-      <View style={[s.activeCard,{backgroundColor:theme.surface,borderColor:theme.border}]}><Text style={[s.activeLabel,{color:theme.muted}]}>المود الحالي</Text><Text style={[s.activeName,{color:theme.text}]}>{profileLabel(settings.profile)}</Text><Text style={[s.activeDesc,{color:theme.muted}]}>{profileDescription(settings.profile)}</Text></View>
+      <View style={[s.activeCard,{backgroundColor:theme.surface,borderColor:activeAccent}]}><Text style={[s.activeLabel,{color:theme.muted}]}>المود الحالي</Text><Text style={[s.activeName,{color:activeAccent}]}>{profileLabel(settings.profile)}</Text><Text style={[s.activeDesc,{color:theme.muted}]}>{profileDescription(settings.profile)}</Text></View>
 
       <View style={s.section}><Text style={[s.sectionTitle,{color:theme.accent}]}>تحكم دقيق</Text><View style={[s.group,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <Toggle title="تركيز الصفحة الحالية" hint="يعطي الأولوية للصفحة النشطة داخل RAID بدل توزيع الشغل بالتساوي." value={settings.prioritizeActiveTab} onChange={value=>patch({prioritizeActiveTab:value})} theme={theme}/>
@@ -89,7 +100,7 @@ export default function PerformanceScreen(){
         <Toggle title="إعادة محاولة ذكية" hint="يستخدم Retry متدرج بدل إعادة التحميل العشوائي والمزعج." value={settings.aggressiveRetry} onChange={value=>patch({aggressiveRetry:value})} theme={theme} last/>
       </View></View>
 
-      <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>Adaptive Browsing يغير افتراضات الموقع فقط عند عدم وجود إعدادات مخصصة له. اختيارك اليدوي لأي موقع يبقى هو الأعلى أولوية.</Text></View>
+      <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>كل مود يطبق Preset آمن فورًا. Video يحافظ على جودة الصور، Downloads يركز موارد الصفحة والتنزيل، Low Data يخفف الصور والعمل الخلفي، وAdaptive يبقى متاحًا للوضع المتوازن.</Text></View>
     </ScrollView>
   </SafeAreaView>;
 }

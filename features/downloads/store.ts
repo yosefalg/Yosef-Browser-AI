@@ -66,12 +66,12 @@ export async function createDownload(url: string, fileName: string, localUri: st
   return Number(result.lastInsertRowId);
 }
 
-export async function updateDownload(id: number, patch: Partial<Pick<DownloadItem, 'state'|'progress'|'total_bytes'|'written_bytes'|'speed_bps'|'eta_seconds'|'resume_data'|'error'|'local_uri'>>) {
+export async function updateDownload(id: number, patch: Partial<Pick<DownloadItem, 'state'|'progress'|'total_bytes'|'written_bytes'|'speed_bps'|'eta_seconds'|'resume_data'|'error'|'local_uri'|'file_name'>>) {
   const d = await db();
   const current = await d.getFirstAsync<DownloadItem>('SELECT * FROM downloads WHERE id=?', id);
   if (!current) return;
   await d.runAsync(
-    'UPDATE downloads SET state=?,progress=?,total_bytes=?,written_bytes=?,speed_bps=?,eta_seconds=?,resume_data=?,error=?,local_uri=?,updated_at=? WHERE id=?',
+    'UPDATE downloads SET state=?,progress=?,total_bytes=?,written_bytes=?,speed_bps=?,eta_seconds=?,resume_data=?,error=?,local_uri=?,file_name=?,updated_at=? WHERE id=?',
     patch.state ?? current.state,
     patch.progress ?? current.progress,
     patch.total_bytes === undefined ? current.total_bytes : patch.total_bytes,
@@ -81,6 +81,7 @@ export async function updateDownload(id: number, patch: Partial<Pick<DownloadIte
     patch.resume_data === undefined ? current.resume_data : patch.resume_data,
     patch.error === undefined ? current.error : patch.error,
     patch.local_uri === undefined ? current.local_uri : patch.local_uri,
+    patch.file_name === undefined ? current.file_name : patch.file_name,
     Date.now(), id,
   );
   emitDownloadsChanged();

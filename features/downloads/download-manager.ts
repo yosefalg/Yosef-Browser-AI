@@ -8,15 +8,59 @@ const active = new Map<number, FileSystem.DownloadResumable>();
 const paused = new Map<number, FileSystem.DownloadPauseState>();
 const progressStats = new Map<number, { at: number; written: number; speed: number; persistedAt: number }>();
 const LEGACY_SYSTEM_PREFIX = 'android:';
+const MIME_EXTENSIONS: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'application/zip': '.zip',
+  'application/json': '.json',
+  'application/vnd.android.package-archive': '.apk',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+  'audio/mpeg': '.mp3',
+  'audio/mp4': '.m4a',
+  'text/plain': '.txt',
+};
+
+function sanitizeFileName(value: string, fallback = `download-${Date.now()}.bin`) {
+  const cleaned = value.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_').trim().replace(/^\.+/, '').slice(0, 120);
+  return cleaned || fallback;
+}
 
 function safeFileName(url: string) {
   try {
     const raw = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || 'download.bin');
-    const cleaned = raw.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_').trim().slice(0, 120);
-    return cleaned || `download-${Date.now()}.bin`;
+    return sanitizeFileName(raw);
   } catch {
     return `download-${Date.now()}.bin`;
   }
+}
+
+function headerValue(headers: Record<string, string> | undefined, name: string) {
+  if (!headers) return null;
+  const key = Object.keys(headers).find(item => item.toLowerCase() === name.toLowerCase());
+  return key ? headers[key] : null;
+}
+
+function decodeDispositionFilename(value: string) {
+  const utf8 = value.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  if (utf8) {
+    try { return decodeURIComponent(utf8.trim().replace(/^"|"$/g, '')); } catch {}
+  }
+  const quoted = value.match(/filename\s*=\s*"([^"]+)"/i)?.[1];
+  if (quoted) return quoted;
+  return value.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim().replace(/^"|"$/g, '') || '';
+}
+
+function preferredFileName(current: string, headers?: Record<string, string>) {
+  const disposition = headerValue(headers, 'content-disposition');
+  const fromHeader = disposition ? sanitizeFileName(decodeDispositionFilename(disposition), '') : '';
+  let candidate = fromHeader || current;
+  const contentType = headerValue(headers, 'content-type')?.split(';')[0]?.trim().toLowerCase() || '';
+  const extension = MIME_EXTENSIONS[contentType];
+  if (extension && !/\.[a-z0-9]{1,8}$/i.test(candidate)) candidate = `${candidate}${extension}`;
+  return sanitizeFileName(candidate, current);
 }
 
 async function ensureDirectory() {
@@ -75,8 +119,6 @@ function progressHandler(id: number) {
     const elapsed = previous ? Math.max(0.05, (now - previous.at) / 1000) : 0;
     const instant = previous && written >= previous.written ? (written - previous.written) / elapsed : 0;
     const smoothed = instant > 0 ? (previous?.speed ? previous.speed * 0.65 + instant * 0.35 : instant) : (previous?.speed || 0);
-    // Throughput is real even when a chunked response does not expose Content-Length.
-    // ETA/progress still stay unknown until the server provides a trustworthy total.
     const speed = smoothed;
     const eta = total > written && speed > 1 ? Math.ceil((total - written) / speed) : null;
     const shouldPersist = !previous || now - previous.persistedAt >= 500 || (total > 0 && written >= total);
@@ -117,14 +159,27 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
       throw new Error(downloadHttpError(result.status));
     }
 
-    const fileInfo = await FileSystem.getInfoAsync(result.uri);
+    const current = await getDownload(id);
+    const responseHeaders = (result as { headers?: Record<string, string> }).headers;
+    const resolvedName = preferredFileName(current?.file_name || safeFileName(current?.url || result.uri), responseHeaders);
+    let finalUri = result.uri;
+    if (current && resolvedName !== current.file_name) {
+      const renamed = await uniqueDestination(resolvedName);
+      if (renamed !== result.uri) {
+        await FileSystem.moveAsync({ from: result.uri, to: renamed });
+        finalUri = renamed;
+      }
+    }
+
+    const fileInfo = await FileSystem.getInfoAsync(finalUri);
     if (!fileInfo.exists) throw new Error('اكتمل الطلب لكن ملف التنزيل غير موجود على الجهاز.');
     const finalSize = typeof fileInfo.size === 'number' && fileInfo.size > 0 ? fileInfo.size : null;
 
     await updateDownload(id, {
       state: 'completed',
       progress: 1,
-      local_uri: result.uri,
+      file_name: resolvedName,
+      local_uri: finalUri,
       total_bytes: finalSize,
       written_bytes: finalSize || undefined,
       speed_bps: 0,

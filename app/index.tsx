@@ -44,7 +44,7 @@ export default function HomeScreen(){
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
   const lightSurface=themeName==='light'||themeName==='ivory';
   const glass=lightSurface?'rgba(255,255,255,.76)':'rgba(255,255,255,.065)';
-  const searchChips=SEARCH_SHORTCUTS.slice(0,6);
+  const searchChips=SEARCH_SHORTCUTS.slice(0,4);
 
   const menuItems=useMemo<HomeMenuItem[]>(()=>[
     {label:'الرئيسية',icon:'home-outline',hint:'هنا البداية',onPress:()=>setMenuOpen(false)},
@@ -67,11 +67,7 @@ export default function HomeScreen(){
     {label:'RAID VPN',service:'vpn' as const,onPress:()=>router.push('/vpn')},
   ];
 
-  const dock=[
-    {label:'التبويبات',sub:`${tabsCount} مفتوح`,icon:'albums-outline' as const,onPress:()=>router.push('/tabs')},
-    {label:'التنزيلات',sub:activeDownloads?`${activeDownloads} شغال`:'ماكو تنزيل نشط',icon:'download-outline' as const,onPress:()=>router.push('/downloads')},
-    {label:'المكتبة',sub:'السجل والمفضلة',icon:'library-outline' as const,onPress:()=>router.push('/library')},
-  ];
+
 
   return <LinearGradient colors={[...theme.gradient]} style={s.fill}><SafeAreaView edges={['top','bottom','left','right']} style={s.safe}>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -92,20 +88,9 @@ export default function HomeScreen(){
 
       <HomeShortcuts theme={theme} items={shortcuts} onMore={()=>setMenuOpen(true)}/>
 
-      <View style={[s.quickRail,{backgroundColor:glass,borderColor:theme.border}]}> 
-        {dock.map((item,index)=><View key={item.label} style={s.quickSlot}>
-          <Pressable onPress={item.onPress} accessibilityRole="button" accessibilityLabel={item.label} style={({pressed})=>[s.quickAction,pressed&&s.quickPressed]}>
-            <LinearGradient colors={[theme.surface2,lightSurface?'rgba(255,255,255,.82)':'rgba(255,255,255,.035)']} style={[s.quickIcon,{borderColor:theme.border}]}><Ionicons name={item.icon} size={21} color={theme.accent}/></LinearGradient>
-            <Text style={[s.quickTitle,{color:theme.text}]} numberOfLines={1}>{item.label}</Text>
-            <Text style={[s.quickSub,{color:theme.muted}]} numberOfLines={1}>{item.sub}</Text>
-          </Pressable>
-          {index<dock.length-1?<View style={[s.quickDivider,{backgroundColor:theme.border}]}/>:null}
-        </View>)}
-      </View>
+
 
       <Pressable onPress={()=>router.push('/privacy')} style={({pressed})=>[s.security,{backgroundColor:glass,borderColor:theme.border},pressed&&s.press]}><View style={[s.securityIcon,{backgroundColor:vpnConnected?'rgba(76,184,132,.14)':theme.surface2}]}><Ionicons name={vpnConnected?'shield-checkmark':'shield-checkmark-outline'} size={22} color={vpnConnected?'#4CB884':theme.accent}/></View><View style={s.securityCopy}><Text style={[s.securityTitle,{color:theme.text}]}>حماية RAID</Text><Text style={[s.securitySub,{color:theme.muted}]}>{vpnConnected?'VPN متصل • الحماية شغالة':'الحماية الأساسية شغالة • اضغط للتفاصيل'}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>
-
-      <View style={s.signature}><Text style={[s.signatureTitle,{color:theme.text}]}>RAID</Text><Text style={[s.signatureSub,{color:theme.muted}]}>خفيف • مرتب • على كيفك</Text></View>
     </ScrollView>
 
     <HomeMenu visible={menuOpen} onClose={()=>setMenuOpen(false)} theme={theme} items={menuItems}/>
@@ -117,12 +102,12 @@ export default function HomeScreen(){
 }
 
 const s=StyleSheet.create({
-  fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:18,paddingBottom:34,gap:16},
-  greeting:{alignItems:'flex-end',paddingTop:4},hello:{fontSize:28,fontWeight:'900',textAlign:'right'},question:{fontSize:13,fontWeight:'700',textAlign:'right',marginTop:4},
-  search:{minHeight:66,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:9,gap:7,shadowColor:'#000',shadowOpacity:.12,shadowRadius:18,elevation:3},searchIcon:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center'},input:{flex:1,fontSize:15,textAlign:'right',paddingHorizontal:3},aiQuick:{width:42,height:42,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:46,height:46,borderRadius:17,alignItems:'center',justifyContent:'center'},
-  searchShortcutRow:{gap:8,paddingHorizontal:1},searchShortcut:{minHeight:38,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row',alignItems:'center',gap:6},shortcutPrefix:{fontSize:11,fontWeight:'900'},shortcutLabel:{fontSize:10.5,fontWeight:'800'},
+  fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:15,paddingBottom:22,gap:12},
+  greeting:{alignItems:'flex-end',paddingTop:2},hello:{fontSize:24,fontWeight:'900',textAlign:'right'},question:{fontSize:12,fontWeight:'700',textAlign:'right',marginTop:3},
+  search:{minHeight:56,borderRadius:20,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:7,gap:6},searchIcon:{width:38,height:38,borderRadius:13,alignItems:'center',justifyContent:'center'},input:{flex:1,fontSize:14,textAlign:'right',paddingHorizontal:3,paddingVertical:0},aiQuick:{width:38,height:38,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center'},
+  searchShortcutRow:{gap:7,paddingHorizontal:1},searchShortcut:{height:32,borderRadius:12,borderWidth:1,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:5},shortcutPrefix:{fontSize:10,fontWeight:'900'},shortcutLabel:{fontSize:9.5,fontWeight:'800'},
   quickRail:{minHeight:94,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'stretch',padding:8,shadowColor:'#000',shadowOpacity:.10,shadowRadius:22,elevation:3,overflow:'hidden'},quickSlot:{flex:1,position:'relative',justifyContent:'center'},quickAction:{flex:1,minHeight:76,borderRadius:20,alignItems:'center',justifyContent:'center',paddingHorizontal:7,paddingVertical:7},quickPressed:{transform:[{scale:.965}],backgroundColor:'rgba(255,255,255,.055)'},quickIcon:{width:40,height:40,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center',marginBottom:7},quickTitle:{fontSize:11.5,fontWeight:'900',textAlign:'center'},quickSub:{fontSize:8.5,fontWeight:'600',textAlign:'center',marginTop:3,maxWidth:92},quickDivider:{position:'absolute',left:0,top:18,bottom:18,width:StyleSheet.hairlineWidth,opacity:.55},
-  security:{minHeight:72,borderRadius:23,borderWidth:1,paddingHorizontal:13,paddingVertical:11,flexDirection:'row-reverse',alignItems:'center',gap:11},securityIcon:{width:46,height:46,borderRadius:16,alignItems:'center',justifyContent:'center'},securityCopy:{flex:1,alignItems:'flex-end'},securityTitle:{fontSize:13,fontWeight:'900'},securitySub:{fontSize:9.5,marginTop:4,textAlign:'right'},
+  security:{minHeight:60,borderRadius:19,borderWidth:1,paddingHorizontal:11,paddingVertical:8,flexDirection:'row-reverse',alignItems:'center',gap:9},securityIcon:{width:40,height:40,borderRadius:14,alignItems:'center',justifyContent:'center'},securityCopy:{flex:1,alignItems:'flex-end'},securityTitle:{fontSize:12.5,fontWeight:'900'},securitySub:{fontSize:9,marginTop:3,textAlign:'right'},
   signature:{alignItems:'center',paddingVertical:18},signatureTitle:{fontWeight:'900',letterSpacing:5},signatureSub:{fontSize:10,marginTop:7},press:{transform:[{scale:.98}],opacity:.84},
   welcomeBackdrop:{flex:1,backgroundColor:'rgba(0,0,0,.72)',alignItems:'center',justifyContent:'center',padding:22},welcomeCard:{width:'100%',maxWidth:430,borderRadius:36,borderWidth:1,paddingHorizontal:25,paddingVertical:32,alignItems:'center',overflow:'hidden'},logoGlow:{padding:18,borderRadius:38,backgroundColor:'rgba(255,255,255,.035)'},welcomeEyebrow:{color:'#8BE0CC',fontSize:10,fontWeight:'900',letterSpacing:3,marginTop:18},welcomeTitle:{color:'#F7FAFC',fontSize:31,fontWeight:'900',marginTop:8},welcomeText:{color:'#AEB9C7',fontSize:13,lineHeight:22,textAlign:'center',marginTop:9,maxWidth:310},welcomePoints:{alignSelf:'stretch',gap:9,marginTop:22},point:{height:42,borderRadius:15,backgroundColor:'rgba(255,255,255,.045)',flexDirection:'row-reverse',alignItems:'center',gap:9,paddingHorizontal:12},pointText:{color:'#DCE5EC',fontSize:11,fontWeight:'800',textAlign:'right',flex:1},startButton:{height:54,alignSelf:'stretch',borderRadius:18,backgroundColor:'#8BE0CC',marginTop:24,flexDirection:'row-reverse',gap:8,alignItems:'center',justifyContent:'center'},startText:{color:'#071412',fontSize:14,fontWeight:'900'}
 });

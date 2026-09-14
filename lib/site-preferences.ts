@@ -30,6 +30,8 @@ const COMPATIBILITY_HOSTS = [
   'checkout.stripe.com',
 ] as const;
 
+const COMPATIBILITY_PATH_RE = /(?:^|\/)(?:auth|authorize|authorization|login|log-in|signin|sign-in|sso|oauth|oauth2|callback|checkout|payment|payments|billing)(?:\/|$)/i;
+
 type SitePreferenceRecord = SitePreferences & { updatedAt: number };
 type SitePreferenceStore = Record<string, SitePreferenceRecord>;
 
@@ -48,6 +50,16 @@ function hostMatches(host: string, candidate: string) {
 export function isCompatibilitySensitiveHost(value: string) {
   const host = sitePreferenceHost(value);
   return !!host && COMPATIBILITY_HOSTS.some((candidate) => hostMatches(host, candidate));
+}
+
+export function isCompatibilitySensitiveUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (!/^https?:$/.test(parsed.protocol)) return false;
+    return isCompatibilitySensitiveHost(value) || COMPATIBILITY_PATH_RE.test(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function sanitize(value: Partial<SitePreferences> | null | undefined): SitePreferences {
@@ -91,9 +103,11 @@ export async function getSitePreferences(url: string): Promise<SitePreferences> 
   const saved = store[host];
   if (saved) return sanitize(saved);
 
-  // Prefer compatibility only for the initial visit to sensitive identity/payment
-  // hosts. Users can explicitly turn blocking back on for any of them.
-  const base = isCompatibilitySensitiveHost(url)
+  // Compatibility mode is applied only to an unsaved site and only when the URL
+  // clearly looks like an identity/payment flow. This keeps normal browsing strict
+  // while preventing adaptive defaults from breaking common SSO and checkout paths.
+  const compatibilitySensitive = isCompatibilitySensitiveUrl(url);
+  const base = compatibilitySensitive
     ? { ...DEFAULT_SITE_PREFERENCES, thirdPartyCookies: true, adBlock: false }
     : { ...DEFAULT_SITE_PREFERENCES };
   const performance = await getPerformanceSettings().catch(() => null);
@@ -101,9 +115,9 @@ export async function getSitePreferences(url: string): Promise<SitePreferences> 
   const effectiveProfile = resolveBrowsingProfile(url, performance);
   const profiled = applyProfileDefaults(base, effectiveProfile, performance.enabled);
 
-  // Performance profiles must never silently re-enable blocking on compatibility
-  // hosts; that would make adaptive mode capable of breaking sign-in/checkout.
-  if (isCompatibilitySensitiveHost(url)) {
+  // Performance profiles must never silently re-enable blocking or disable cookies
+  // in authentication/payment flows; explicit saved site preferences still win above.
+  if (compatibilitySensitive) {
     return { ...profiled, thirdPartyCookies: true, adBlock: false };
   }
   return profiled;

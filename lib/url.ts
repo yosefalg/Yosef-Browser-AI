@@ -1,8 +1,10 @@
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const HTTP_SCHEME = /^https?:\/\//i;
+const PROTOCOL_RELATIVE = /^\/\//;
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 const DECEPTIVE_FORMAT_CHARS = /[\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/;
 const MAX_OMNIBOX_INPUT_LENGTH = 8192;
+const TRAILING_CHAT_PUNCTUATION = /[.,،؛;!?؟]+$/;
 
 type SearchShortcut = {
   prefix: string;
@@ -230,6 +232,38 @@ function isReasonableInputLength(value: string) {
   return value.length <= MAX_OMNIBOX_INPUT_LENGTH;
 }
 
+function stripOuterUrlWrapper(value: string) {
+  if (value.length < 3) return value;
+  const pairs: ReadonlyArray<readonly [string, string]> = [
+    ['"', '"'],
+    ["'", "'"],
+    ['<', '>'],
+    ['(', ')'],
+    ['[', ']'],
+  ];
+  const pair = pairs.find(([open, close]) => value.startsWith(open) && value.endsWith(close));
+  if (!pair) return value;
+  const inner = value.slice(pair[0].length, value.length - pair[1].length).trim();
+  if (!inner || /\s/.test(inner)) return value;
+  return HTTP_SCHEME.test(inner) || PROTOCOL_RELATIVE.test(inner) || looksLikeHost(inner) || looksLikeInternationalHost(inner)
+    ? inner
+    : value;
+}
+
+function cleanPastedUrlCandidate(value: string) {
+  let candidate = stripOuterUrlWrapper(value.trim());
+  if (/\s/.test(candidate)) return candidate;
+
+  const withoutTrailingPunctuation = candidate.replace(TRAILING_CHAT_PUNCTUATION, '');
+  if (
+    withoutTrailingPunctuation !== candidate &&
+    (HTTP_SCHEME.test(withoutTrailingPunctuation) || PROTOCOL_RELATIVE.test(withoutTrailingPunctuation) || looksLikeHost(withoutTrailingPunctuation) || looksLikeInternationalHost(withoutTrailingPunctuation))
+  ) {
+    candidate = withoutTrailingPunctuation;
+  }
+  return candidate;
+}
+
 function shortcutTarget(value: string) {
   if (!value.startsWith('!')) return null;
   const match = value.match(/^(\S+)(?:\s+([\s\S]*))?$/);
@@ -275,17 +309,28 @@ export function safeExternalUrl(url: string) {
 }
 
 export function normalizeInput(input: string) {
-  const value = input.trim();
-  if (!value) return 'https://www.google.com';
-  if (!isReasonableInputLength(value)) throw new Error('Input too long');
-  if (CONTROL_CHARS.test(value) || DECEPTIVE_FORMAT_CHARS.test(value)) throw new Error('Unsafe URL characters');
+  const rawValue = input.trim();
+  if (!rawValue) return 'https://www.google.com';
+  if (!isReasonableInputLength(rawValue)) throw new Error('Input too long');
+  if (CONTROL_CHARS.test(rawValue) || DECEPTIVE_FORMAT_CHARS.test(rawValue)) throw new Error('Unsafe URL characters');
 
-  const shortcut = shortcutTarget(value) || colonShortcutTarget(value);
+  const shortcut = shortcutTarget(rawValue) || colonShortcutTarget(rawValue);
   if (shortcut) return shortcut;
+
+  const value = cleanPastedUrlCandidate(rawValue);
 
   if (HTTP_SCHEME.test(value)) {
     if (!safeExternalUrl(value)) throw new Error('Invalid URL');
     return value;
+  }
+
+  if (PROTOCOL_RELATIVE.test(value)) {
+    const authority = value.slice(2);
+    if (!authority || /\s/.test(authority)) throw new Error('Invalid URL');
+    const scheme = isLocalDevelopmentHost(authority) ? 'http' : 'https';
+    const candidate = `${scheme}:${value}`;
+    if (!safeExternalUrl(candidate)) throw new Error('Invalid URL');
+    return candidate;
   }
 
   if (looksLikeHost(value) || looksLikeInternationalHost(value)) {
@@ -298,5 +343,5 @@ export function normalizeInput(input: string) {
 
   if (EXPLICIT_SCHEME.test(value)) throw new Error('Unsupported URL scheme');
 
-  return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(rawValue)}`;
 }

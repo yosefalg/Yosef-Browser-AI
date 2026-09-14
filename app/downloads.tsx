@@ -13,11 +13,20 @@ type Filter = 'all' | 'active' | 'completed' | 'failed';
 type KindFilter = 'all' | 'media' | 'documents' | 'apps' | 'archives' | 'other';
 
 function downloadKind(item:DownloadItem):Exclude<KindFilter,'all'>{
-  const value=`${item.file_name} ${item.url}`.toLowerCase().split(/[?#]/)[0];
-  if(/\.(mp4|m4v|webm|mkv|mov|avi|mp3|wav|flac|ogg)$/.test(value))return 'media';
-  if(/\.(pdf|epub|mobi|doc|docx|xls|xlsx|ppt|pptx|csv|txt)$/.test(value))return 'documents';
-  if(/\.(apk|aab|xapk|apks|exe|msi|dmg|deb|rpm)$/.test(value))return 'apps';
-  if(/\.(zip|rar|7z|tar|gz|tgz|bz2|xz|iso)$/.test(value))return 'archives';
+  const candidates=[item.file_name,item.url].flatMap((value)=>{
+    const raw=String(value||'').toLowerCase();
+    try {
+      const parsed=new URL(raw);
+      return [decodeURIComponent(parsed.pathname),raw.split(/[?#]/)[0]];
+    } catch {
+      try { return [decodeURIComponent(raw.split(/[?#]/)[0])]; } catch { return [raw.split(/[?#]/)[0]]; }
+    }
+  });
+  const matches=(extensions:string[])=>candidates.some((value)=>extensions.some((extension)=>value.endsWith(`.${extension}`)));
+  if(matches(['mp4','m4v','webm','mkv','mov','avi','mp3','wav','flac','ogg']))return 'media';
+  if(matches(['pdf','epub','mobi','doc','docx','xls','xlsx','ppt','pptx','csv','txt']))return 'documents';
+  if(matches(['apk','aab','xapk','apks','exe','msi','dmg','deb','rpm']))return 'apps';
+  if(matches(['zip','rar','7z','tar','gz','tgz','bz2','xz','iso']))return 'archives';
   return 'other';
 }
 

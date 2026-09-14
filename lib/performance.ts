@@ -64,10 +64,10 @@ const LOW_DATA_FRIENDLY_HOSTS = [
 ];
 const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
-const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?|attachments?|packages?|artifacts?|dist|builds?|exports?)(?:\/|$)/i;
+const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|files?|attachments?|packages?|artifacts?|dist|builds?|exports?)(?:\/|$)/i;
 const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|reels?|episodes?|movies?)(?:\/|$)/i;
 const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp|reader)(?:\/|$)/i;
-const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'file', 'artifact', 'asset', 'export'];
+const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'artifact', 'export'];
 const VIDEO_QUERY_KEYS = ['video', 'stream', 'watch', 'play', 'episode'];
 const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic', 'save-data', 'datasaver', 'data-saver'];
 
@@ -124,14 +124,11 @@ function queryValueSignalsDownload(params: URLSearchParams) {
 }
 
 function looksLikeReadingVariant(parsed: URL) {
-  const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname.toLowerCase();
   const output = normalizedParam(parsed.searchParams.get('output'));
   const format = normalizedParam(parsed.searchParams.get('format'));
   const view = normalizedParam(parsed.searchParams.get('view'));
-  return host.startsWith('m.')
-    || host.startsWith('mobile.')
-    || path.startsWith('/amp/')
+  return path.startsWith('/amp/')
     || path.endsWith('/amp')
     || output === '1'
     || output === 'amp'
@@ -171,9 +168,18 @@ function isCloudDownloadUrl(host: string, parsed: URL) {
   return false;
 }
 
+function isSocialVideoUrl(host: string, pathname: string) {
+  if ((host === 'instagram.com' || host.endsWith('.instagram.com')) && /\/(?:reel|reels|tv)\//i.test(pathname)) return true;
+  if ((host === 'facebook.com' || host.endsWith('.facebook.com')) && /\/(?:watch|reel|reels|videos?)\b/i.test(pathname)) return true;
+  if ((host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com')) && /\/(?:i\/broadcasts|spaces)\b/i.test(pathname)) return true;
+  return false;
+}
+
 export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'balanced';
+
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
     const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     const query = parsed.searchParams;
@@ -183,7 +189,7 @@ export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
     if (queryValueSignalsDownload(query) || isCloudDownloadUrl(host, parsed)) return 'downloads';
     if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname) || queryHasAny(query, DOWNLOAD_QUERY_KEYS)) return 'downloads';
     if (isGithubReleaseAsset(host, parsed.pathname) || hostMatches(host, DOWNLOAD_HOSTS)) return 'downloads';
-    if (hostMatches(host, VIDEO_HOSTS) || VIDEO_PATH_RE.test(parsed.pathname) || queryHasAny(query, VIDEO_QUERY_KEYS)) return 'video';
+    if (hostMatches(host, VIDEO_HOSTS) || isSocialVideoUrl(host, parsed.pathname) || VIDEO_PATH_RE.test(parsed.pathname) || queryHasAny(query, VIDEO_QUERY_KEYS)) return 'video';
     if (hostMatches(host, READING_HOSTS) || READING_PATH_RE.test(parsed.pathname) || looksLikeReadingVariant(parsed)) return 'reading';
   } catch {}
   return 'balanced';
@@ -203,9 +209,8 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
 function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
   if (!aggressiveRetry) return [3200] as const;
 
-  // Staggered backoff is tuned for variable mobile/fixed-wireless last-mile links common
-  // in Iraq, including congested Earthlink-style routes. It reduces duplicate request
-  // bursts and lets the active page recover without pretending to increase ISP bandwidth.
+  // Staggered backoff reduces duplicate request bursts on unstable connections without
+  // pretending to increase the ISP's bandwidth. The browser only controls its own work.
   switch (profile) {
     case 'boost':
       return [750, 2200, 5600] as const;
@@ -242,20 +247,23 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
 
   const profile = contextUrl ? resolveBrowsingProfile(contextUrl, value) : value.profile;
   const retryDelaysMs = retryScheduleForProfile(profile, value.aggressiveRetry);
+  const activeTabPriority = value.prioritizeActiveTab;
+  const suspendBackgroundTabs = value.suspendBackgroundTabs;
+  const reduceBackgroundWork = value.reduceBackgroundWork;
 
   switch (profile) {
     case 'boost':
-      return { profile:'boost', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal', lightweightNavigation:true };
+      return { profile:'boost', activeTabPriority, suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'reduced', mediaBias:'normal', lightweightNavigation:true };
     case 'video':
-      return { profile:'video', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:false, retryDelaysMs, visualDensity:'reduced', mediaBias:'video', lightweightNavigation:true };
+      return { profile:'video', activeTabPriority, suspendBackgroundTabs, reduceBackgroundWork, preferCache:true, deferNonCriticalWork:reduceBackgroundWork, lowBandwidthImages:false, retryDelaysMs, visualDensity:'reduced', mediaBias:'video', lightweightNavigation:true };
     case 'reading':
-      return { profile:'reading', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
+      return { profile:'reading', activeTabPriority, suspendBackgroundTabs, reduceBackgroundWork, preferCache:true, deferNonCriticalWork:reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     case 'downloads':
-      return { profile:'downloads', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'downloads', lightweightNavigation:true };
+      return { profile:'downloads', activeTabPriority, suspendBackgroundTabs, reduceBackgroundWork, preferCache:true, deferNonCriticalWork:reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'minimal', mediaBias:'downloads', lightweightNavigation:true };
     case 'low-data':
-      return { profile:'low-data', activeTabPriority:true, suspendBackgroundTabs:true, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:true, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
+      return { profile:'low-data', activeTabPriority, suspendBackgroundTabs, reduceBackgroundWork:true, preferCache:true, deferNonCriticalWork:true, lowBandwidthImages:true, retryDelaysMs, visualDensity:'minimal', mediaBias:'normal', lightweightNavigation:true };
     default:
-      return { profile:'balanced', activeTabPriority:value.prioritizeActiveTab, suspendBackgroundTabs:value.suspendBackgroundTabs, reduceBackgroundWork:value.reduceBackgroundWork, preferCache:true, deferNonCriticalWork:value.reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'full', mediaBias:'normal', lightweightNavigation:false };
+      return { profile:'balanced', activeTabPriority, suspendBackgroundTabs, reduceBackgroundWork, preferCache:true, deferNonCriticalWork:reduceBackgroundWork, lowBandwidthImages:value.lowBandwidthImages, retryDelaysMs, visualDensity:'full', mediaBias:'normal', lightweightNavigation:false };
   }
 }
 
@@ -287,10 +295,10 @@ export function profileLabel(profile: BrowsingProfile) {
 export function profileDescription(profile: BrowsingProfile) {
   switch (profile) {
     case 'boost': return 'يركّز موارد RAID على الصفحة الحالية ويخفف الشغل الخلفي بدون ادعاء زيادة سرعة الاشتراك.';
-    case 'video': return 'يثبت أولوية الصفحة الحالية ويخفف الخلفية مع Retry متدرج أهدأ حتى لا تنافس الطلبات تدفق الفيديو على الاتصال المتذبذب.';
-    case 'reading': return 'واجهة هادئة وتحميل أخف للقراءة الطويلة مع تعليق الخلفية، ويشمل صفحات AMP والموبايل تلقائيًا.';
-    case 'downloads': return 'يعطي أولوية للجلسة الحالية ويجمّد الخلفية ويباعد إعادة المحاولة حتى تبقى تنزيلات RAID أكثر استقرارًا.';
+    case 'video': return 'يضبط سلوك RAID حول صفحات الفيديو مع Retry متدرج، ويحترم خيارات أولوية التبويب وتعليق الخلفية التي حددتها.';
+    case 'reading': return 'تحميل أخف للقراءة الطويلة وصفحات AMP مع احترام إعداداتك اليدوية بدل فرضها تلقائيًا.';
+    case 'downloads': return 'يركّز سياسة RAID على التنزيل ويباعد إعادة المحاولة، مع بقاء تحكمك اليدوي بالخلفية والأولوية فعالًا.';
     case 'low-data': return 'للشبكات الضعيفة أو المتذبذبة: يخفف الصور والعمل غير الضروري ويستخدم Backoff أكثر تحفظًا لتقليل الطلبات المتكررة واستهلاك البيانات.';
-    default: return 'الوضع الافتراضي السلس: يجمّد الشاشات غير النشطة ويوازن السرعة والذاكرة مع Retry متدرج للشبكات غير المستقرة.';
+    default: return 'الوضع الافتراضي السلس: يوازن أولوية الصفحة والخلفية وRetry حسب إعداداتك، ثم يغيّر السياق تلقائيًا عند تفعيل Adaptive Browsing.';
   }
 }

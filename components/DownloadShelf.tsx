@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'r
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { pauseDownload, resumeDownload, retryDownload } from '@/features/downloads/download-manager';
+import { cancelDownload, pauseDownload, resumeDownload, retryDownload } from '@/features/downloads/download-manager';
 import { listDownloads, subscribeDownloads } from '@/features/downloads/store';
 import type { DownloadItem, DownloadState } from '@/features/downloads/types';
 
@@ -120,15 +120,18 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
   const displayProgress = activeCount > 1 ? aggregateProgress : itemProgress;
   const speed = item.state === 'downloading' ? bytes(item.speed_bps) : '';
   const remaining = item.state === 'downloading' ? eta(item.eta_seconds) : '';
+  const transferred = !terminalOnly && item.total_bytes && item.total_bytes > 0
+    ? `${bytes(item.written_bytes || 0)} / ${bytes(item.total_bytes)}`
+    : '';
   const itemStatus = item.state === 'completed'
     ? 'اكتمل التنزيل • اضغط لعرض الملف'
     : item.state === 'failed'
       ? 'فشل التنزيل • أعد المحاولة أو افتح التفاصيل'
       : item.state === 'paused'
-        ? 'متوقف مؤقتًا'
+        ? `متوقف مؤقتًا${transferred ? ` • ${transferred}` : ''}`
         : item.state === 'queued'
           ? 'بانتظار البدء'
-          : `${speed ? `${speed}/ث` : 'جاري التنزيل'}${remaining ? ` • ${remaining} متبقٍ` : ''}`;
+          : `${speed ? `${speed}/ث` : 'جاري التنزيل'}${remaining ? ` • ${remaining} متبقٍ` : ''}${transferred ? ` • ${transferred}` : ''}`;
   const status = activeCount > 1
     ? `${activeCount} تنزيلات نشطة${aggregateSpeed > 0 ? ` • ${bytes(aggregateSpeed)}/ث` : ''}`
     : itemStatus;
@@ -162,7 +165,22 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     }
   };
 
+  const cancelCurrent = async () => {
+    if (busy || terminalOnly) return;
+    setBusy(true);
+    try {
+      await cancelDownload(item.id);
+      await refresh();
+    } catch (error) {
+      Alert.alert('RAID Downloads', error instanceof Error ? error.message : 'تعذر إلغاء التنزيل.');
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const canControl = (terminalOnly && item.state === 'failed') || (!terminalOnly && (item.state === 'downloading' || item.state === 'paused'));
+  const canCancel = !terminalOnly && (item.state === 'downloading' || item.state === 'paused' || item.state === 'queued');
   const percentText = terminalOnly
     ? item.state === 'completed' ? 'تم' : 'خطأ'
     : displayProgress === null ? '•••' : `${Math.round(displayProgress * 100)}%`;
@@ -214,6 +232,18 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           style={({ pressed }) => [styles.control, item.state === 'failed' && styles.controlRetry, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
         >
           <Ionicons name={controlIcon} size={16} color="#F8FAFC" />
+        </Pressable>
+      )}
+      {canCancel && (
+        <Pressable
+          disabled={busy}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="إلغاء التنزيل"
+          onPress={(event) => { event.stopPropagation(); void cancelCurrent(); }}
+          style={({ pressed }) => [styles.cancel, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
+        >
+          <Ionicons name="close" size={17} color="#F8FAFC" />
         </Pressable>
       )}
       <View style={styles.trailing}>
@@ -268,6 +298,7 @@ const styles = StyleSheet.create({
   indeterminate: { width: '24%' },
   control: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#283548', borderWidth: 1, borderColor: 'rgba(148,163,184,.22)' },
   controlRetry: { backgroundColor: '#6F343A', borderColor: 'rgba(253,164,175,.32)' },
+  cancel: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#6F343A', borderWidth: 1, borderColor: 'rgba(253,164,175,.32)' },
   controlCompact: { width: 32, height: 32 },
   controlPressed: { transform: [{ scale: 0.96 }] },
   disabled: { opacity: 0.45 },

@@ -33,6 +33,7 @@ async function db() {
     CREATE INDEX IF NOT EXISTS idx_browser_tabs_updated_at ON browser_tabs(updated_at DESC);
     CREATE TABLE IF NOT EXISTS closed_browser_tabs (id INTEGER PRIMARY KEY AUTOINCREMENT,url TEXT NOT NULL,title TEXT NOT NULL DEFAULT '',closed_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_closed_browser_tabs_closed_at ON closed_browser_tabs(closed_at DESC);
+    DELETE FROM browser_tabs WHERE private_mode != 0;
   `);
   return d;
 }
@@ -70,13 +71,13 @@ export async function assignTabToWorkspace(url:string,workspaceId:number){const 
 export async function getTabContexts(workspaceId?:number|null,limit=12){const d=await db();if(workspaceId==null)return d.getAllAsync<TabContext>('SELECT * FROM tab_contexts ORDER BY updated_at DESC LIMIT ?',limit);return d.getAllAsync<TabContext>('SELECT * FROM tab_contexts WHERE workspace_id=? ORDER BY updated_at DESC LIMIT ?',workspaceId,limit);}
 
 export async function createBrowserTab(url:string,title='علامة تبويب جديدة',privateMode=false){
+  // Private browsing must remain memory-only. Never create a SQLite row for it.
+  if(privateMode)return 0;
   const d=await db();const now=Date.now();
-  const result=await d.runAsync('INSERT INTO browser_tabs (url,title,private_mode,created_at,updated_at) VALUES (?,?,?,?,?)',url,title.trim().slice(0,300)||'علامة تبويب جديدة',privateMode?1:0,now,now);
-  if(!privateMode){
-    const overflow=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC LIMIT -1 OFFSET ?',MAX_OPEN_TABS);
-    for(const tab of overflow)await archiveClosedTab(d,tab,now);
-    if(overflow.length){await d.runAsync('DELETE FROM browser_tabs WHERE id IN ('+overflow.map(()=>'?').join(',')+')',...overflow.map(tab=>tab.id));await trimRecentlyClosed(d);}
-  }
+  const result=await d.runAsync('INSERT INTO browser_tabs (url,title,private_mode,created_at,updated_at) VALUES (?,?,?,?,?)',url,title.trim().slice(0,300)||'علامة تبويب جديدة',0,now,now);
+  const overflow=await d.getAllAsync<BrowserTab>('SELECT * FROM browser_tabs WHERE private_mode=0 ORDER BY updated_at DESC LIMIT -1 OFFSET ?',MAX_OPEN_TABS);
+  for(const tab of overflow)await archiveClosedTab(d,tab,now);
+  if(overflow.length){await d.runAsync('DELETE FROM browser_tabs WHERE id IN ('+overflow.map(()=>'?').join(',')+')',...overflow.map(tab=>tab.id));await trimRecentlyClosed(d);}
   return result.lastInsertRowId;
 }
 export async function updateBrowserTab(id:number,url:string,title?:string){if(!Number.isFinite(id)||id<=0||!/^https?:\/\//i.test(url))return;const d=await db();await d.runAsync('UPDATE browser_tabs SET url=?,title=?,updated_at=? WHERE id=? AND private_mode=0',url,(title||url).trim().slice(0,300),Date.now(),id);}

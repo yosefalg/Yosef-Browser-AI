@@ -1,11 +1,11 @@
 import { startDownload } from '@/features/downloads/download-manager';
 
-const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
-const STREAM_MANIFEST_RE = /(?:\.m3u8(?:$|[?#])|[?&](?:format|type)=(?:hls|m3u8)(?:&|$))/i;
+const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
+const STREAM_MANIFEST_RE = /(?:\.(?:m3u8|mpd)(?:$|[?#])|[?&](?:format|type)=(?:hls|m3u8|dash|mpd)(?:&|$))/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const recentDownloads = new Map<string, { id: number; at: number }>();
 const inFlightDownloads = new Map<string, Promise<number>>();
-const DEDUPE_WINDOW_MS = 8000;
+const DEDUPE_WINDOW_MS = 20_000;
 const TRACKING_QUERY_RE = /^(?:utm_(?:source|medium|campaign|term|content|id)|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid)$/i;
 
 export type BrowserDownloadResult =
@@ -47,9 +47,36 @@ function safePageReferer(value: string, targetUrl: string) {
   }
 }
 
-function canonicalDownloadUrl(value: string) {
+function normalizeKnownDownloadUrl(value: string) {
   try {
     const parsed = new URL(value.trim());
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+
+    // Dropbox share pages commonly expose the real file when dl=1. This rewrite
+    // runs only after the browser has already classified the navigation as a
+    // download, so normal browsing links are not affected.
+    if (host === 'dropbox.com' || host.endsWith('.dropbox.com')) {
+      parsed.searchParams.set('dl', '1');
+      parsed.searchParams.delete('raw');
+    }
+
+    // Google Drive direct-download endpoints sometimes arrive with export=view
+    // even though the user pressed Download. Keep the same endpoint and ID while
+    // making the requested operation explicit; authenticated cookies remain in use.
+    if ((host === 'drive.google.com' || host === 'drive.usercontent.google.com') && parsed.searchParams.has('id')) {
+      const exportMode = parsed.searchParams.get('export')?.toLowerCase();
+      if (!exportMode || exportMode === 'view') parsed.searchParams.set('export', 'download');
+    }
+
+    return parsed.toString();
+  } catch {
+    return value.trim();
+  }
+}
+
+function canonicalDownloadUrl(value: string) {
+  try {
+    const parsed = new URL(normalizeKnownDownloadUrl(value));
     parsed.hash = '';
     return parsed.toString();
   } catch {
@@ -116,12 +143,14 @@ async function startDownloadOnce(url: string, pageUrl: string) {
 }
 
 export async function routeBrowserDownload(downloadUrl: string, pageUrl: string): Promise<BrowserDownloadResult> {
-  const candidate = canonicalDownloadUrl(downloadUrl);
-  if (!candidate) return { kind: 'blocked', reason: 'لم يرجع الموقع رابط تنزيل صالحًا.' };
+  const raw = downloadUrl.trim();
+  if (!raw) return { kind: 'blocked', reason: 'لم يرجع الموقع رابط تنزيل صالحًا.' };
 
-  if (/^blob:/i.test(candidate)) {
+  if (/^(?:blob|data):/i.test(raw)) {
     return { kind: 'blocked', reason: 'هذا الموقع أنشأ ملفًا مؤقتًا داخل الصفحة. افتح رابط التنزيل المباشر من الموقع حتى يستطيع RAID حفظه ومتابعة تقدمه.' };
   }
+
+  const candidate = canonicalDownloadUrl(raw);
 
   if (isDirectMediaUrl(candidate) || (isLikelyStreamPage(pageUrl) && isStreamManifest(candidate))) {
     return { kind: 'media', url: candidate };

@@ -11,6 +11,7 @@ import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/read
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
 import { isVpnConnected } from '@/lib/vpn';
 import { DEFAULT_SITE_PREFERENCES, getSitePreferences, resetSitePreferences, saveSitePreferences, type SitePreferences } from '@/lib/site-preferences';
+import { DEFAULT_PERFORMANCE_SETTINGS, deriveBrowserPerformancePolicy, getPerformanceSettings, type PerformanceSettings } from '@/lib/performance';
 import { routeBrowserDownload } from '@/features/downloads/browser-download';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
@@ -42,39 +43,42 @@ const MEDIA_SCAN_JS = `(() => {
   } catch {}
   true;
 })();`;
+const MEDIA_PROBE_JS = `(() => {
+  try {
+    const urls = [];
+    const push = (value) => {
+      if (!value || typeof value !== 'string') return;
+      try {
+        const absolute = new URL(value, location.href).href;
+        if (/^https?:/i.test(absolute) && !urls.includes(absolute)) urls.push(absolute);
+      } catch {}
+    };
+    document.querySelectorAll('video').forEach((video) => {
+      push(video.currentSrc);
+      push(video.src);
+      video.querySelectorAll('source').forEach((source) => push(source.src));
+    });
+    if (urls.length) window.ReactNativeWebView?.postMessage('RAID_MEDIA:' + JSON.stringify(urls.slice(0, 12)));
+  } catch {}
+  true;
+})();`;
 const SILENT_STREAM_ASSIST_JS = `(() => {
   try {
-    const report = () => {
-      const videos = Array.from(document.querySelectorAll('video'));
-      const urls = [];
-      const push = (value) => {
-        if (!value || typeof value !== 'string') return;
-        try {
-          const absolute = new URL(value, location.href).href;
-          if (/^https?:/i.test(absolute) && !urls.includes(absolute)) urls.push(absolute);
-        } catch {}
-      };
-      videos.forEach((video) => {
-        video.setAttribute('playsinline', '');
-        push(video.currentSrc);
-        push(video.src);
-        video.querySelectorAll('source').forEach((source) => push(source.src));
-        if (video.paused) {
-          const result = video.play();
-          if (result && typeof result.catch === 'function') result.catch(() => {});
-        }
-      });
-      if (urls.length) window.ReactNativeWebView?.postMessage('RAID_MEDIA:' + JSON.stringify(urls.slice(0, 12)));
+    const urls = [];
+    const push = (value) => {
+      if (!value || typeof value !== 'string') return;
+      try {
+        const absolute = new URL(value, location.href).href;
+        if (/^https?:/i.test(absolute) && !urls.includes(absolute)) urls.push(absolute);
+      } catch {}
     };
-    report();
-    if (!window.__raidMediaObserver) {
-      let timer = 0;
-      window.__raidMediaObserver = new MutationObserver(() => {
-        clearTimeout(timer);
-        timer = setTimeout(report, 180);
-      });
-      window.__raidMediaObserver.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
-    }
+    document.querySelectorAll('video').forEach((video) => {
+      video.setAttribute('playsinline', '');
+      push(video.currentSrc);
+      push(video.src);
+      video.querySelectorAll('source').forEach((source) => push(source.src));
+    });
+    if (urls.length) window.ReactNativeWebView?.postMessage('RAID_MEDIA:' + JSON.stringify(urls.slice(0, 12)));
   } catch {}
   true;
 })();`;
@@ -213,7 +217,9 @@ export default function BrowserScreen() {
   const web = useRef<WebView>(null);
   const rendererFailures = useRef<number[]>([]);
   const rendererNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPersistedNavigation = useRef('');
+  const lastProgressRef = useRef(0);
   const [webKey, setWebKey] = useState(0);
   const [url, setUrl] = useState(startUrl);
   const [loadedUrl, setLoadedUrl] = useState(startUrl);
@@ -233,6 +239,7 @@ export default function BrowserScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [siteInfoOpen, setSiteInfoOpen] = useState(false);
   const [sitePrefs, setSitePrefs] = useState<SitePreferences>({ ...DEFAULT_SITE_PREFERENCES });
+  const [performanceSettings, setPerformanceSettings] = useState<PerformanceSettings>({ ...DEFAULT_PERFORMANCE_SETTINGS });
   const [vpnConnected, setVpnConnected] = useState(false);
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -242,10 +249,17 @@ export default function BrowserScreen() {
     void isVpnConnected().then(setVpnConnected).catch(() => setVpnConnected(false));
   }, []);
 
+  const refreshPerformance = useCallback(() => {
+    void getPerformanceSettings()
+      .then(setPerformanceSettings)
+      .catch(() => setPerformanceSettings({ ...DEFAULT_PERFORMANCE_SETTINGS }));
+  }, []);
+
   useFocusEffect(useCallback(() => {
     refreshVpnStatus();
+    refreshPerformance();
     return () => {};
-  }, [refreshVpnStatus]));
+  }, [refreshPerformance, refreshVpnStatus]));
 
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -274,6 +288,7 @@ export default function BrowserScreen() {
     return () => {
       subscription.remove();
       if (rendererNoticeTimer.current) clearTimeout(rendererNoticeTimer.current);
+      if (postLoadWorkTimer.current) clearTimeout(postLoadWorkTimer.current);
       Speech.stop();
     };
   }, [refreshVpnStatus]);
@@ -333,7 +348,9 @@ export default function BrowserScreen() {
     setLoadedUrl(nav.url);
     if (isDirectMediaUrl(nav.url)) setMediaUrls([nav.url]);
     if (!addressFocused) setInput(nav.url);
-    try { setBookmarked(await isBookmarked(nav.url)); } catch { setBookmarked(false); }
+    if (!nav.loading) {
+      try { setBookmarked(await isBookmarked(nav.url)); } catch { setBookmarked(false); }
+    }
     if (!privateMode && safeExternalUrl(nav.url) && !nav.loading) {
       const persistKey = `${nav.url}\n${nav.title || ''}`;
       if (lastPersistedNavigation.current === persistKey) return;
@@ -411,6 +428,43 @@ export default function BrowserScreen() {
   };
 
   const scanMedia = () => web.current?.injectJavaScript(MEDIA_SCAN_JS);
+  const probeMedia = () => web.current?.injectJavaScript(MEDIA_PROBE_JS);
+
+  const schedulePostLoadWork = (pageUrl: string) => {
+    if (postLoadWorkTimer.current) {
+      clearTimeout(postLoadWorkTimer.current);
+      postLoadWorkTimer.current = null;
+    }
+
+    const policy = deriveBrowserPerformancePolicy(performanceSettings, pageUrl);
+    const videoFastPath = policy.profile === 'video' || isLikelyStreamPage(pageUrl);
+    web.current?.injectJavaScript(DOWNLOAD_CAPTURE_JS);
+
+    if (videoFastPath) {
+      // Keep streaming pages close to stock WebView behavior: no persistent DOM
+      // observer, no forced autoplay loop, no automatic full-page AI extraction.
+      web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS);
+      probeMedia();
+      return;
+    }
+
+    // When VPN or adaptive performance mode is active, let the page settle first.
+    // This prevents RAID's own helper work from competing with navigation/network IO.
+    const delay = vpnConnected ? 1400 : policy.deferNonCriticalWork ? 900 : 350;
+    postLoadWorkTimer.current = setTimeout(() => {
+      postLoadWorkTimer.current = null;
+      captureContext();
+      if (!policy.reduceBackgroundWork) scanMedia();
+    }, delay);
+  };
+
+  const updateLoadProgress = (value: number) => {
+    const next = Math.max(0, Math.min(1, value));
+    if (next >= 0.995 || next - lastProgressRef.current >= 0.08) {
+      lastProgressRef.current = next;
+      setLoadProgress(next);
+    }
+  };
 
   const openInlineMedia = (candidate: string) => {
     if (!/^https?:\/\//i.test(candidate)) return;
@@ -512,7 +566,7 @@ export default function BrowserScreen() {
     if (privateMode) return;
     setMenuOpen(false);
     captureContext();
-    router.push({ pathname: '/ai', params: { url: loadedUrl, title } });
+    setTimeout(() => router.push({ pathname: '/ai', params: { url: loadedUrl, title } }), 120);
   };
 
   const goHome = () => router.replace('/');
@@ -595,19 +649,23 @@ export default function BrowserScreen() {
           allowUniversalAccessFromFileURLs={false}
           injectedJavaScriptBeforeContentLoaded={DOWNLOAD_CAPTURE_JS}
           onNavigationStateChange={changed}
-          onLoadStart={() => { setLoading(true); setLoadProgress(0.05); setLoadError(''); setMediaUrls([]); }}
-          onLoadProgress={(event) => setLoadProgress(event.nativeEvent.progress)}
+          onLoadStart={() => {
+            if (postLoadWorkTimer.current) {
+              clearTimeout(postLoadWorkTimer.current);
+              postLoadWorkTimer.current = null;
+            }
+            lastProgressRef.current = 0.05;
+            setLoading(true);
+            setLoadProgress(0.05);
+            setLoadError('');
+            setMediaUrls([]);
+          }}
+          onLoadProgress={(event) => updateLoadProgress(event.nativeEvent.progress)}
           onLoadEnd={(event) => {
+            lastProgressRef.current = 1;
             setLoading(false);
             setLoadProgress(1);
-            captureContext();
-            scanMedia();
-            web.current?.injectJavaScript(DOWNLOAD_CAPTURE_JS);
-            if (isLikelyStreamPage(event.nativeEvent.url)) {
-              web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS);
-              setTimeout(() => web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS), 900);
-              setTimeout(() => web.current?.injectJavaScript(MEDIA_SCAN_JS), 1800);
-            }
+            schedulePostLoadWork(event.nativeEvent.url);
           }}
           onError={(event) => {
             setLoading(false);

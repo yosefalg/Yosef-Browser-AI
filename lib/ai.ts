@@ -5,6 +5,30 @@ export type AgentMessage = { role: 'user' | 'assistant'; content: string };
 type FunctionErrorLike = Error & { context?: Response };
 type FunctionFailurePayload = { error?: string; message?: string; detail?: string; status?: number };
 
+const MAX_AI_PAGE_CONTEXT_LENGTH = 9000;
+const SECRET_REDACTIONS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/gi, 'Bearer [محجوب]'],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[JWT محجوب]'],
+  [/\b(?:sk-[A-Za-z0-9_-]{16,}|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})\b/g, '[مفتاح محجوب]'],
+  [/((?:password|passwd|pwd|api[_ -]?key|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|secret)\s*[:=]\s*)([^\s,;]{4,})/gi, '$1[محجوب]'],
+];
+
+function sanitizeAutomaticPageContext(pageText?: string) {
+  if (!pageText) return undefined;
+
+  let value = pageText
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\u200B|\u200C|\u200D|\u2060|\uFEFF/g, '')
+    .replace(/[ \t]{3,}/g, '  ')
+    .trim();
+
+  for (const [pattern, replacement] of SECRET_REDACTIONS) {
+    value = value.replace(pattern, replacement);
+  }
+
+  return value ? value.slice(0, MAX_AI_PAGE_CONTEXT_LENGTH) : undefined;
+}
+
 function friendlyFunctionError(payload: FunctionFailurePayload | null, httpStatus?: number) {
   const code = payload?.error?.trim();
   const status = payload?.status || httpStatus;
@@ -56,7 +80,7 @@ export async function askAgent(messages: AgentMessage[], pageText?: string) {
     .filter((message) => message.content.length > 0);
   if (!cleanMessages.length) throw new Error('اكتب رسالة أولاً.');
 
-  const body = { messages: cleanMessages, pageText: pageText?.slice(0, 9000) };
+  const body = { messages: cleanMessages, pageText: sanitizeAutomaticPageContext(pageText) };
   const invoke = (accessToken: string) => supabase.functions.invoke('raid-ai', {
     body,
     headers: { Authorization: `Bearer ${accessToken}` },

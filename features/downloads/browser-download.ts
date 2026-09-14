@@ -1,6 +1,5 @@
 import { startDownload } from '@/features/downloads/download-manager';
 
-const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
 const STREAM_MANIFEST_RE = /(?:\.(?:m3u8|mpd)(?:$|[?#])|[?&](?:format|type)=(?:hls|m3u8|dash|mpd)(?:&|$))/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const recentDownloads = new Map<string, { id: number; at: number }>();
@@ -12,10 +11,6 @@ export type BrowserDownloadResult =
   | { kind: 'media'; url: string }
   | { kind: 'download'; url: string; id: number }
   | { kind: 'blocked'; reason: string };
-
-function isDirectMediaUrl(value: string) {
-  return /^https?:\/\//i.test(value) && DIRECT_MEDIA_RE.test(value);
-}
 
 function isStreamManifest(value: string) {
   return /^https?:\/\//i.test(value) && STREAM_MANIFEST_RE.test(value);
@@ -152,7 +147,11 @@ export async function routeBrowserDownload(downloadUrl: string, pageUrl: string)
 
   const candidate = canonicalDownloadUrl(raw);
 
-  if (isDirectMediaUrl(candidate) || (isLikelyStreamPage(pageUrl) && isStreamManifest(candidate))) {
+  // This function is entered only after WebView or RAID's capture layer has
+  // identified an explicit download action. Direct MP4/WebM links must therefore
+  // stay downloads instead of being redirected back into the media player. The
+  // only media exception is an HLS/DASH manifest emitted by a known stream page.
+  if (isLikelyStreamPage(pageUrl) && isStreamManifest(candidate)) {
     return { kind: 'media', url: candidate };
   }
 

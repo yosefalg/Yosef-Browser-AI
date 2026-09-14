@@ -308,6 +308,28 @@ export function safeExternalUrl(url: string) {
   }
 }
 
+function unwrapKnownRedirect(value: string) {
+  if (!HTTP_SCHEME.test(value)) return value;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    let target = '';
+
+    if ((host === 'google.com' || host.endsWith('.google.com')) && parsed.pathname === '/url') {
+      target = parsed.searchParams.get('q') || parsed.searchParams.get('url') || '';
+    } else if ((host === 'facebook.com' || host.endsWith('.facebook.com')) && parsed.pathname === '/l.php') {
+      target = parsed.searchParams.get('u') || '';
+    } else if ((host === 'duckduckgo.com' || host.endsWith('.duckduckgo.com')) && parsed.pathname === '/l/') {
+      target = parsed.searchParams.get('uddg') || '';
+    }
+
+    if (!target || target === value || target.length > MAX_OMNIBOX_INPUT_LENGTH) return value;
+    return safeExternalUrl(target) ? target : value;
+  } catch {
+    return value;
+  }
+}
+
 export function normalizeInput(input: string) {
   const rawValue = input.trim();
   if (!rawValue) return 'https://www.google.com';
@@ -320,8 +342,9 @@ export function normalizeInput(input: string) {
   const value = cleanPastedUrlCandidate(rawValue);
 
   if (HTTP_SCHEME.test(value)) {
-    if (!safeExternalUrl(value)) throw new Error('Invalid URL');
-    return value;
+    const direct = unwrapKnownRedirect(value);
+    if (!safeExternalUrl(direct)) throw new Error('Invalid URL');
+    return direct;
   }
 
   if (PROTOCOL_RELATIVE.test(value)) {

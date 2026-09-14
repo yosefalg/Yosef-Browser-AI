@@ -141,26 +141,47 @@ const DOWNLOAD_CAPTURE_JS = `(() => {
 
 const PLAY_PAGE_VIDEO_JS = `(() => {
   try {
-    const videos = Array.from(document.querySelectorAll('video'));
-    const video = videos.find((item) => {
-      const rect = item.getBoundingClientRect();
-      return rect.width > 80 && rect.height > 45;
-    }) || videos[0];
-    if (!video) {
-      window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:NO_VIDEO');
-      return true;
+    const STYLE_ID = 'raid-inline-player-style';
+    if (!document.getElementById(STYLE_ID)) {
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = '.raid-player-host{position:absolute!important;inset:0!important;z-index:2147483000!important;pointer-events:none!important;font-family:system-ui,-apple-system,sans-serif!important;color:#fff!important}.raid-player-controls{position:absolute!important;inset:0!important;display:flex!important;flex-direction:column!important;justify-content:space-between!important;padding:10px!important;background:linear-gradient(180deg,rgba(0,0,0,.56),transparent 35%,transparent 55%,rgba(0,0,0,.78))!important;opacity:1!important;transition:opacity .2s!important;pointer-events:none!important}.raid-player-host.raid-hidden .raid-player-controls{opacity:0!important}.raid-player-top,.raid-player-bottom,.raid-player-center{display:flex!important;align-items:center!important;gap:8px!important;pointer-events:auto!important}.raid-player-top{justify-content:space-between!important}.raid-player-center{position:absolute!important;inset:0!important;justify-content:center!important;pointer-events:none!important}.raid-player-bottom{flex-wrap:wrap!important}.raid-player-btn{width:40px!important;height:40px!important;min-width:40px!important;border:1px solid rgba(255,255,255,.24)!important;border-radius:14px!important;background:rgba(8,12,20,.72)!important;color:#fff!important;font:800 14px system-ui!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;pointer-events:auto!important}.raid-player-main{width:62px!important;height:62px!important;border-radius:50%!important;font-size:24px!important;background:rgba(8,12,20,.78)!important}.raid-player-time{font:700 11px system-ui!important;color:#fff!important;direction:ltr!important;white-space:nowrap!important;text-shadow:0 1px 3px #000!important}.raid-player-seek{flex:1 1 120px!important;height:28px!important;min-width:90px!important;margin:0!important;accent-color:#d5aa88!important;pointer-events:auto!important}.raid-player-badge{padding:6px 9px!important;border-radius:10px!important;background:rgba(8,12,20,.72)!important;font:800 10px system-ui!important;white-space:nowrap!important}.raid-player-toast{position:absolute!important;left:50%!important;bottom:58px!important;transform:translateX(-50%)!important;padding:7px 12px!important;border-radius:12px!important;background:rgba(8,12,20,.86)!important;font:800 11px system-ui!important;opacity:0!important;transition:opacity .15s!important;white-space:nowrap!important}.raid-player-toast.raid-show{opacity:1!important}@media(max-width:360px){.raid-player-controls{padding:6px!important}.raid-player-btn{width:34px!important;height:34px!important;min-width:34px!important;border-radius:11px!important;font-size:11px!important}.raid-player-main{width:54px!important;height:54px!important;font-size:20px!important}.raid-player-time{font-size:9px!important}}';
+      (document.head || document.documentElement).appendChild(style);
     }
-    video.setAttribute('playsinline', '');
-    const result = video.play();
-    if (result && typeof result.catch === 'function') result.catch(() => {});
-    const fullscreen = video.requestFullscreen || video.webkitRequestFullscreen;
-    if (typeof fullscreen === 'function') {
-      try { fullscreen.call(video); } catch {}
-    }
-    window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:PLAYING');
-  } catch {
-    window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:FAILED');
-  }
+    const fmt = (seconds) => { if (!Number.isFinite(seconds)) return '--:--'; const value=Math.max(0,Math.floor(seconds)); const h=Math.floor(value/3600),m=Math.floor((value%3600)/60),s=value%60; return h ? String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0') : String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); };
+    const attach = (video) => {
+      if (!video || video.dataset.raidInlinePlayer === '1') return false;
+      const rect = video.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 68) return false;
+      video.dataset.raidInlinePlayer = '1'; video.setAttribute('playsinline',''); video.setAttribute('webkit-playsinline',''); video.controls = false;
+      let container = video.parentElement; if (!container) return false;
+      const position = getComputedStyle(container).position; if (position === 'static') container.style.position='relative';
+      const host=document.createElement('div'); host.className='raid-player-host'; host.setAttribute('dir','ltr');
+      host.innerHTML='<div class="raid-player-controls"><div class="raid-player-top"><span class="raid-player-badge">RAID • داخل الصفحة</span><button class="raid-player-btn raid-speed" aria-label="سرعة التشغيل">1×</button></div><div class="raid-player-center"><button class="raid-player-btn raid-player-main raid-play" aria-label="تشغيل الفيديو">▶</button></div><div class="raid-player-bottom"><button class="raid-player-btn raid-back" aria-label="رجوع عشر ثوان">−10</button><span class="raid-player-time">00:00 / --:--</span><input class="raid-player-seek" type="range" min="0" max="1000" value="0" aria-label="موضع الفيديو"><button class="raid-player-btn raid-forward" aria-label="تقديم عشر ثوان">+10</button><button class="raid-player-btn raid-pip" aria-label="صورة داخل صورة">PiP</button><button class="raid-player-btn raid-download" aria-label="تنزيل الفيديو">↓</button><button class="raid-player-btn raid-full" aria-label="ملء الشاشة">⛶</button></div></div><div class="raid-player-toast"></div>';
+      container.appendChild(host);
+      const controls=host.querySelector('.raid-player-controls'), play=host.querySelector('.raid-play'), seek=host.querySelector('.raid-player-seek'), time=host.querySelector('.raid-player-time'), speed=host.querySelector('.raid-speed'), toast=host.querySelector('.raid-player-toast');
+      let seeking=false, hideTimer=0, toastTimer=0, speedIndex=2; const speeds=[.5,.75,1,1.25,1.5,1.75,2];
+      const flash=(message)=>{toast.textContent=message;toast.classList.add('raid-show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('raid-show'),1200)};
+      const reveal=()=>{host.classList.remove('raid-hidden');clearTimeout(hideTimer);if(!video.paused)hideTimer=setTimeout(()=>host.classList.add('raid-hidden'),2800)};
+      const sync=()=>{play.textContent=video.paused?'▶':'❚❚';time.textContent=fmt(video.currentTime)+' / '+fmt(video.duration);if(!seeking&&Number.isFinite(video.duration)&&video.duration>0)seek.value=String(Math.round(video.currentTime/video.duration*1000));};
+      const toggle=()=>{if(video.paused)video.play().catch(()=>flash('اضغط تشغيل مرة أخرى'));else video.pause();reveal();};
+      play.onclick=(event)=>{event.stopPropagation();toggle()}; host.addEventListener('pointerdown',reveal,{passive:true}); video.addEventListener('click',reveal);
+      host.querySelector('.raid-back').onclick=()=>{video.currentTime=Math.max(0,video.currentTime-10);flash('رجوع 10 ثوانٍ');reveal()};
+      host.querySelector('.raid-forward').onclick=()=>{video.currentTime=Math.min(video.duration||Infinity,video.currentTime+10);flash('تقديم 10 ثوانٍ');reveal()};
+      seek.onpointerdown=()=>{seeking=true}; seek.onpointerup=()=>{seeking=false}; seek.oninput=()=>{if(Number.isFinite(video.duration)&&video.duration>0)video.currentTime=Number(seek.value)/1000*video.duration};
+      speed.onclick=()=>{speedIndex=(speedIndex+1)%speeds.length;video.playbackRate=speeds[speedIndex];speed.textContent=speeds[speedIndex]+'×';flash('السرعة '+speeds[speedIndex]+'×');reveal()};
+      host.querySelector('.raid-full').onclick=()=>{const target=container;const fn=target.requestFullscreen||target.webkitRequestFullscreen||video.requestFullscreen||video.webkitRequestFullscreen;if(fn)try{fn.call(target.requestFullscreen||target.webkitRequestFullscreen?target:video)}catch{}reveal()};
+      host.querySelector('.raid-pip').onclick=async()=>{try{if(document.pictureInPictureElement)await document.exitPictureInPicture();else if(video.requestPictureInPicture)await video.requestPictureInPicture();else flash('PiP غير مدعوم')}catch{flash('تعذر تشغيل PiP')}reveal()};
+      host.querySelector('.raid-download').onclick=()=>{const source=video.currentSrc||video.src||video.querySelector('source')?.src||'';if(source)window.ReactNativeWebView?.postMessage('RAID_MEDIA_DOWNLOAD:'+source);else flash('لم يظهر رابط مباشر بعد');reveal()};
+      ['loadedmetadata','durationchange','timeupdate','play','pause','ended','ratechange'].forEach((name)=>video.addEventListener(name,sync)); video.addEventListener('play',reveal); video.addEventListener('pause',reveal); sync(); reveal(); return true;
+    };
+    const install=()=>{let count=0;document.querySelectorAll('video').forEach((video)=>{if(attach(video))count++});return count};
+    const count=install();
+    if(!window.__raidInlinePlayerObserver){window.__raidInlinePlayerObserver=new MutationObserver(()=>install());window.__raidInlinePlayerObserver.observe(document.documentElement,{childList:true,subtree:true});}
+    const videos=Array.from(document.querySelectorAll('video')); const target=videos.find((video)=>{const r=video.getBoundingClientRect();return r.width>120&&r.height>68})||videos[0];
+    if(target){attach(target);target.scrollIntoView({block:'center',behavior:'smooth'});const result=target.play();if(result&&typeof result.catch==='function')result.catch(()=>{});window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:PLAYING');}
+    else if(!count) window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:NO_VIDEO');
+  } catch { window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:FAILED'); }
   true;
 })();`;
 
@@ -445,6 +466,7 @@ export default function BrowserScreen() {
       // Keep streaming pages close to stock WebView behavior: no persistent DOM
       // observer, no forced autoplay loop, no automatic full-page AI extraction.
       web.current?.injectJavaScript(SILENT_STREAM_ASSIST_JS);
+      web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS);
       probeMedia();
       return;
     }
@@ -455,6 +477,7 @@ export default function BrowserScreen() {
     postLoadWorkTimer.current = setTimeout(() => {
       postLoadWorkTimer.current = null;
       captureContext();
+      web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS);
       if (!policy.reduceBackgroundWork) scanMedia();
     }, delay);
   };
@@ -547,12 +570,6 @@ export default function BrowserScreen() {
 
   const openMediaPlayer = () => {
     setMenuOpen(false);
-    const candidate = mediaUrls.find(isDirectMediaUrl) || (isDirectMediaUrl(loadedUrl) ? loadedUrl : '');
-    if (candidate) {
-      setMediaUrl(candidate);
-      setMediaOpen(true);
-      return;
-    }
     scanMedia();
     web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS);
   };
@@ -580,10 +597,9 @@ export default function BrowserScreen() {
 
   const shouldLoad = (requestUrl: string) => {
     if (isDirectMediaUrl(requestUrl)) {
-      setMediaUrl(requestUrl);
-      setMediaUrls((current) => current.includes(requestUrl) ? current : [requestUrl, ...current].slice(0, 12));
-      setMediaOpen(true);
-      return false;
+      // Let the direct media document load in the main WebView; RAID then places
+      // its controls over that page's video instead of opening a separate modal.
+      return true;
     }
     if (isLikelyDownloadRequest(requestUrl)) {
       handleFileDownload(requestUrl);

@@ -3,7 +3,7 @@ name: Patch RAID media player
 on:
   push:
     branches:
-      - fix/2.14.51-media-player-responsive
+      - "fix/2.14.51-media-player-responsive"
 
 permissions:
   contents: write
@@ -12,76 +12,25 @@ jobs:
   patch:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
           ref: fix/2.14.51-media-player-responsive
           fetch-depth: 0
 
-      - name: Patch responsive player
+      - name: Apply media patch
         shell: bash
         run: |
           set -euo pipefail
           if [ -f .media-player-patched ]; then
-            echo "Media player patch already applied."
+            echo "already patched"
             exit 0
           fi
-
-          python - <<'PY'
-          from pathlib import Path
-          import re, json
-
-          path = Path('app/browser.tsx')
-          text = path.read_text()
-
-          new_function = r'''function mediaPlayerHtml(mediaUrl: string) {
-  const source = JSON.stringify(mediaUrl).replace(/</g, '\\u003c');
-  return `<!doctype html>
-<html dir="rtl"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><style>
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;width:100%;height:100%;background:#03060a;color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}body{display:flex;flex-direction:column}.player{width:100%;height:100%;display:flex;flex-direction:column;background:#03060a}.stage{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden}video{width:100%;height:100%;background:#000;object-fit:contain}.center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}.big{pointer-events:auto;width:68px;height:68px;border-radius:50%;border:1px solid rgba(255,255,255,.24);background:rgba(2,6,23,.72);color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center}.status{position:absolute;top:12px;left:12px;max-width:72%;padding:7px 10px;border-radius:999px;background:rgba(15,23,42,.78);font-size:11px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.controls{flex:0 0 auto;background:#0a1020;border-top:1px solid #1e293b;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}.timeline{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.seekWrap{position:relative;height:22px;display:flex;align-items:center}.buffer{position:absolute;left:0;right:0;height:4px;border-radius:999px;background:#263348;overflow:hidden;pointer-events:none}.bufferFill{height:100%;width:0;background:#52657d}.seek{position:relative;width:100%;margin:0;accent-color:#d5aa88;background:transparent}.time{font-size:11px;color:#cbd5e1;direction:ltr;min-width:92px;text-align:left;font-variant-numeric:tabular-nums}.primaryRow{display:grid;grid-template-columns:48px 1fr 48px;gap:10px;align-items:center;margin-top:8px}.utilityRow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}.btn{border:1px solid rgba(255,255,255,.13);background:#172033;color:#fff;border-radius:13px;height:44px;padding:0 8px;font-weight:800;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.btn.primary{background:#8b654e;border-color:#b88766;font-size:13px}.toast{position:absolute;left:14px;right:14px;bottom:14px;background:rgba(15,23,42,.94);border:1px solid rgba(255,255,255,.12);padding:10px 14px;border-radius:14px;text-align:center;font-size:11px;color:#e2e8f0;display:none;z-index:5}.errorActions{position:absolute;left:16px;right:16px;bottom:16px;display:none;gap:8px}.errorActions.show{display:grid;grid-template-columns:1fr 1fr}.errorBtn{height:44px;border-radius:13px;border:1px solid #334155;background:#172033;color:#fff;font-weight:800}@media (max-width:360px){.controls{padding-left:8px;padding-right:8px}.utilityRow{grid-template-columns:repeat(2,minmax(0,1fr))}.time{font-size:10px;min-width:84px}.btn{font-size:11px}.big{width:60px;height:60px}}@media (orientation:landscape){.controls{padding-top:7px;padding-bottom:calc(7px + env(safe-area-inset-bottom))}.utilityRow{margin-top:6px}.primaryRow{margin-top:6px}.btn{height:40px}.stage{min-height:180px}}
-</style></head><body><div class="player"><div class="stage" id="stage"><video id="raidVideo" playsinline webkit-playsinline preload="metadata"></video><div id="status" class="status">جاري تجهيز الفيديو…</div><div class="center"><button id="big" class="big" aria-label="تشغيل">▶</button></div><div id="errorActions" class="errorActions"><button id="retry" class="errorBtn">إعادة المحاولة</button><button id="native" class="errorBtn">العودة للموقع</button></div><div id="toast" class="toast"></div></div><div class="controls"><div class="timeline"><div class="seekWrap"><div class="buffer"><div id="bufferFill" class="bufferFill"></div></div><input id="seek" class="seek" type="range" min="0" max="1000" value="0" aria-label="موضع الفيديو"></div><span id="time" class="time">00:00 / --:--</span></div><div class="primaryRow"><button id="back" class="btn">−10</button><button id="play" class="btn primary">تشغيل</button><button id="fwd" class="btn">+10</button></div><div class="utilityRow"><button id="speed" class="btn">1×</button><button id="pip" class="btn">PiP</button><button id="full" class="btn">ملء الشاشة</button><button id="download" class="btn">تنزيل</button></div></div></div><script>
-const video=document.getElementById('raidVideo');const stage=document.getElementById('stage');const play=document.getElementById('play');const big=document.getElementById('big');const seek=document.getElementById('seek');const time=document.getElementById('time');const speed=document.getElementById('speed');const pip=document.getElementById('pip');const status=document.getElementById('status');const toast=document.getElementById('toast');const bufferFill=document.getElementById('bufferFill');const errorActions=document.getElementById('errorActions');const src=${source};video.src=src;
-let seeking=false;const speeds=[.5,.75,1,1.25,1.5,1.75,2];let speedIndex=2;const fmt=(s)=>{if(!Number.isFinite(s))return'--:--';s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60;return h?String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0'):String(m).padStart(2,'0')+':'+String(x).padStart(2,'0')};const flash=(m)=>{toast.textContent=m;toast.style.display='block';clearTimeout(window.__raidToast);window.__raidToast=setTimeout(()=>toast.style.display='none',1500)};const buffered=()=>{try{if(!video.buffered.length||!Number.isFinite(video.duration)||video.duration<=0)return 0;return Math.min(1,video.buffered.end(video.buffered.length-1)/video.duration)}catch{return 0}};const sync=()=>{const paused=video.paused;play.textContent=paused?'تشغيل':'إيقاف';big.textContent=paused?'▶':'❚❚';time.textContent=fmt(video.currentTime)+' / '+fmt(video.duration);if(!seeking&&Number.isFinite(video.duration)&&video.duration>0)seek.value=String(Math.round((video.currentTime/video.duration)*1000));bufferFill.style.width=(buffered()*100).toFixed(1)+'%'};const setState=(m)=>{status.textContent=m};const toggle=()=>{if(video.paused){video.play().catch(()=>setState('اضغط تشغيل مرة أخرى'))}else video.pause()};
-video.addEventListener('loadedmetadata',()=>{errorActions.classList.remove('show');setState('جاهز • '+(video.videoWidth||'?')+'×'+(video.videoHeight||'?'));sync()});video.addEventListener('durationchange',sync);video.addEventListener('timeupdate',sync);video.addEventListener('progress',sync);video.addEventListener('play',()=>{setState('تشغيل');sync()});video.addEventListener('pause',()=>{setState('متوقف مؤقتًا');sync()});video.addEventListener('waiting',()=>setState('تخزين مؤقت…'));video.addEventListener('stalled',()=>setState('الشبكة بطيئة • بانتظار البيانات…'));video.addEventListener('playing',()=>{setState('يعمل داخل RAID');errorActions.classList.remove('show');sync()});video.addEventListener('error',()=>{setState('تعذر تشغيل هذا المصدر مباشرة');errorActions.classList.add('show');window.ReactNativeWebView?.postMessage('RAID_MEDIA_STATUS:SOURCE_ERROR')});
-play.onclick=toggle;big.onclick=toggle;document.getElementById('back').onclick=()=>{video.currentTime=Math.max(0,video.currentTime-10);flash('رجوع 10 ثوانٍ')};document.getElementById('fwd').onclick=()=>{video.currentTime=Math.min(video.duration||Infinity,video.currentTime+10);flash('تقديم 10 ثوانٍ')};seek.onpointerdown=()=>{seeking=true};seek.onpointerup=()=>{seeking=false};seek.oninput=()=>{if(Number.isFinite(video.duration)&&video.duration>0)video.currentTime=(Number(seek.value)/1000)*video.duration};speed.onclick=()=>{speedIndex=(speedIndex+1)%speeds.length;video.playbackRate=speeds[speedIndex];speed.textContent=speeds[speedIndex]+'×';flash('السرعة '+speeds[speedIndex]+'×')};document.getElementById('full').onclick=()=>{const fn=video.requestFullscreen||video.webkitRequestFullscreen||stage.requestFullscreen||stage.webkitRequestFullscreen;if(fn){try{fn.call(video.requestFullscreen||video.webkitRequestFullscreen?video:stage)}catch{}}};pip.onclick=async()=>{try{if(document.pictureInPictureElement){await document.exitPictureInPicture();return}if(video.requestPictureInPicture){await video.requestPictureInPicture()}else flash('PiP غير مدعوم بهذا WebView')}catch{flash('تعذر تشغيل PiP لهذا المصدر')}};document.getElementById('download').onclick=()=>window.ReactNativeWebView?.postMessage('RAID_MEDIA_DOWNLOAD:'+src);document.getElementById('retry').onclick=()=>{errorActions.classList.remove('show');setState('إعادة الاتصال بالمصدر…');try{video.load();video.play().catch(()=>{})}catch{}};document.getElementById('native').onclick=()=>window.ReactNativeWebView?.postMessage('RAID_MEDIA_CLOSE');
-let lastTap=0;stage.addEventListener('pointerup',(event)=>{if(event.target.closest&&event.target.closest('button,input'))return;const now=Date.now();if(now-lastTap<320){const rect=stage.getBoundingClientRect();if(event.clientX<rect.left+rect.width*.42){video.currentTime=Math.max(0,video.currentTime-10);flash('−10 ثوانٍ')}else if(event.clientX>rect.left+rect.width*.58){video.currentTime=Math.min(video.duration||Infinity,video.currentTime+10);flash('+10 ثوانٍ')}else toggle();lastTap=0}else{lastTap=now}});sync();
-</script></body></html>`;
-}'''
-
-          pattern = r"function mediaPlayerHtml\(mediaUrl: string\) \{.*?\n\}\n\nexport default function BrowserScreen\(\)"
-          replacement = new_function + "\n\nexport default function BrowserScreen()"
-          patched, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
-          if count != 1:
-              raise SystemExit(f'player function patch count={count}')
-
-          old_msg = "    if (raw.startsWith('RAID_MEDIA_DOWNLOAD:')) {\n      const candidate = raw.slice('RAID_MEDIA_DOWNLOAD:'.length).trim();\n      if (/^https:\\/\\//i.test(candidate)) handleFileDownload(candidate);\n    }"
-          new_msg = "    if (raw.startsWith('RAID_MEDIA_DOWNLOAD:')) {\n      const candidate = raw.slice('RAID_MEDIA_DOWNLOAD:'.length).trim();\n      if (/^https:\\/\\//i.test(candidate)) handleFileDownload(candidate);\n      return;\n    }\n    if (raw === 'RAID_MEDIA_CLOSE') {\n      setMediaOpen(false);\n      return;\n    }\n    if (raw === 'RAID_MEDIA_STATUS:SOURCE_ERROR') return;"
-          if old_msg not in patched:
-              raise SystemExit('media message hook not found')
-          patched = patched.replace(old_msg, new_msg, 1)
-
-          old_webview = "            cacheEnabled\n            allowsFullscreenVideo\n            mediaPlaybackRequiresUserAction={false}"
-          new_webview = "            cacheEnabled\n            sharedCookiesEnabled={!privateMode}\n            thirdPartyCookiesEnabled={!privateMode && sitePrefs.thirdPartyCookies}\n            allowsFullscreenVideo\n            mediaPlaybackRequiresUserAction={false}\n            setSupportMultipleWindows={false}"
-          if old_webview not in patched:
-              raise SystemExit('media webview hook not found')
-          patched = patched.replace(old_webview, new_webview, 1)
-
-          patched = patched.replace("mediaSourceBar:{backgroundColor:'#0A1020',borderTopWidth:1,borderTopColor:'#1E293B',paddingTop:7}", "mediaSourceBar:{backgroundColor:'#0A1020',borderTopWidth:1,borderTopColor:'#1E293B',paddingTop:6,maxHeight:82}", 1)
-          path.write_text(patched)
-
-          app = Path('app.json')
-          data = json.loads(app.read_text())
-          data['expo']['version'] = '2.14.51'
-          data['expo']['android']['versionCode'] = 137
-          app.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
-          Path('.media-player-patched').write_text('2.14.51\n')
-          PY
-
+          python scripts/patch_media_player.py
           git diff --check
           grep -F '"version": "2.14.51"' app.json
           grep -F '"versionCode": 137' app.json
           grep -F 'RAID_MEDIA_CLOSE' app/browser.tsx
-          grep -F 'grid-template-columns:48px 1fr 48px' app/browser.tsx
-
           git config user.name "RAID Build Bot"
           git config user.email "actions@users.noreply.github.com"
           git add app/browser.tsx app.json .media-player-patched

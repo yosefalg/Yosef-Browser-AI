@@ -44,6 +44,17 @@ function RootChrome() {
     void getPerformanceSettings()
       .then((settings) => {
         if (cancelled) return;
+
+        // Performance off must be a true opt-out. In particular, do not keep
+        // freezing inactive screens or forcing lightweight transitions after
+        // the user disables RAID's performance controls.
+        if (!settings.enabled) {
+          setFreezeInactiveScreens(false);
+          setLightweightNavigation(false);
+          setActiveProfile('balanced');
+          return;
+        }
+
         const policy = deriveBrowserPerformancePolicy(settings, browserContextUrl);
         setFreezeInactiveScreens(policy.suspendBackgroundTabs);
         setLightweightNavigation(policy.lightweightNavigation);
@@ -107,12 +118,11 @@ function RootChrome() {
     const subscription = AppState.addEventListener('change', (state) => {
       const isActive = state === 'active';
       setAppActive(isActive);
-      if (isActive) {
-        refreshPerformancePolicy();
-      } else {
-        setFreezeInactiveScreens(true);
-        setLightweightNavigation(true);
-      }
+
+      // Keep the user's current tab/background policy intact while RAID is in
+      // the background. Re-read it when the app returns instead of silently
+      // overriding suspend-background-tabs or navigation preferences.
+      if (isActive) refreshPerformancePolicy();
     });
     return () => subscription.remove();
   }, [refreshPerformancePolicy]);

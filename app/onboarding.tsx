@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,8 +40,11 @@ const STEPS: Step[] = [
 export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
+  const { height } = useWindowDimensions();
+  const compactHeight = height < 700;
   const step = useMemo(() => STEPS[index], [index]);
   const last = index === STEPS.length - 1;
+  const first = index === 0;
 
   const finish = async () => {
     if (finishing) return;
@@ -62,39 +65,53 @@ export default function OnboardingScreen() {
     setIndex((value) => Math.min(value + 1, STEPS.length - 1));
   };
 
+  const previous = () => {
+    if (finishing || first) return;
+    setIndex((value) => Math.max(value - 1, 0));
+  };
+
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom', 'left', 'right']}>
       <View style={s.topRow}>
-        <Text style={s.brand}>RAID Browser</Text>
-        <Pressable disabled={finishing} onPress={() => void finish()} style={({ pressed }) => [s.skip, pressed && s.pressed, finishing && s.disabled]} accessibilityRole="button" accessibilityLabel="تخطي المقدمة">
-          <Text style={s.skipText}>تخطي</Text>
+        <Text style={s.brand} maxFontSizeMultiplier={1.25}>RAID Browser</Text>
+        <Pressable disabled={finishing} onPress={() => void finish()} style={({ pressed }) => [s.skip, pressed && s.pressed, finishing && s.disabled]} accessibilityRole="button" accessibilityLabel="تخطي المقدمة" accessibilityState={{ disabled: finishing }}>
+          <Text style={s.skipText} maxFontSizeMultiplier={1.35}>تخطي</Text>
         </Pressable>
       </View>
 
-      <View style={s.content}>
-        <View style={s.iconWrap}><Ionicons name={step.icon} size={42} color="#D5AA88" /></View>
-        <Text style={s.eyebrow}>{step.eyebrow}</Text>
-        <Text style={s.title}>{step.title}</Text>
-        <Text style={s.body}>{step.body}</Text>
+      <ScrollView style={s.scroll} contentContainerStyle={[s.content, compactHeight && s.contentCompact]} showsVerticalScrollIndicator={false} bounces={false}>
+        <View style={[s.iconWrap, compactHeight && s.iconWrapCompact]} accessible accessibilityLabel={`${step.eyebrow}: ${step.title}`}>
+          <Ionicons name={step.icon} size={compactHeight ? 36 : 42} color="#D5AA88" />
+        </View>
+        <Text style={s.eyebrow} maxFontSizeMultiplier={1.35}>{step.eyebrow}</Text>
+        <Text style={[s.title, compactHeight && s.titleCompact]} maxFontSizeMultiplier={1.35}>{step.title}</Text>
+        <Text style={s.body} maxFontSizeMultiplier={1.45}>{step.body}</Text>
 
         <View style={s.bullets}>
           {step.bullets.map((item) => (
-            <View key={item} style={s.bulletRow}>
+            <View key={item} style={s.bulletRow} accessible accessibilityLabel={item}>
               <Ionicons name="checkmark-circle" size={19} color="#83B58D" />
-              <Text style={s.bulletText}>{item}</Text>
+              <Text style={s.bulletText} maxFontSizeMultiplier={1.45}>{item}</Text>
             </View>
           ))}
         </View>
-      </View>
+      </ScrollView>
 
       <View style={s.footer}>
-        <View style={s.dots} accessibilityLabel={`الخطوة ${index + 1} من ${STEPS.length}`}>
+        <Text style={s.progressText} accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.35}>{`الخطوة ${index + 1} من ${STEPS.length}`}</Text>
+        <View style={s.dots} accessible accessibilityLabel={`الخطوة ${index + 1} من ${STEPS.length}`}>
           {STEPS.map((_, itemIndex) => <View key={itemIndex} style={[s.dot, itemIndex === index && s.dotActive]} />)}
         </View>
-        <Pressable disabled={finishing} onPress={next} style={({ pressed }) => [s.next, pressed && s.nextPressed, finishing && s.disabled]} accessibilityRole="button" accessibilityLabel={last ? 'بدء استخدام RAID' : 'التالي'}>
-          <Text style={s.nextText}>{finishing ? 'جارٍ التجهيز…' : last ? 'ابدأ استخدام RAID' : 'التالي'}</Text>
-          {!finishing && <Ionicons name="chevron-back" size={20} color="#fff" />}
-        </Pressable>
+        <View style={s.actions}>
+          <Pressable disabled={first || finishing} onPress={previous} style={({ pressed }) => [s.back, pressed && s.pressed, (first || finishing) && s.disabled]} accessibilityRole="button" accessibilityLabel="الخطوة السابقة" accessibilityState={{ disabled: first || finishing }}>
+            <Ionicons name="chevron-forward" size={20} color="#E9E3DC" />
+            <Text style={s.backText} maxFontSizeMultiplier={1.35}>السابق</Text>
+          </Pressable>
+          <Pressable disabled={finishing} onPress={next} style={({ pressed }) => [s.next, pressed && s.nextPressed, finishing && s.disabled]} accessibilityRole="button" accessibilityLabel={last ? 'بدء استخدام RAID' : 'التالي'} accessibilityState={{ disabled: finishing, busy: finishing }}>
+            <Text style={s.nextText} maxFontSizeMultiplier={1.35}>{finishing ? 'جارٍ التجهيز…' : last ? 'ابدأ استخدام RAID' : 'التالي'}</Text>
+            {!finishing && <Ionicons name="chevron-back" size={20} color="#fff" />}
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -102,24 +119,33 @@ export default function OnboardingScreen() {
 
 const s = StyleSheet.create({
   root:{flex:1,backgroundColor:'#161A18',paddingHorizontal:22},
-  topRow:{height:64,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},
+  topRow:{minHeight:64,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:12},
   brand:{color:'#F7F2EC',fontSize:18,fontWeight:'900'},
-  skip:{minWidth:68,height:38,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#292E2B',borderWidth:1,borderColor:'#3F4541'},
+  skip:{minWidth:68,minHeight:44,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#292E2B',borderWidth:1,borderColor:'#3F4541',paddingHorizontal:12},
   skipText:{color:'#C8C1B9',fontSize:12,fontWeight:'800'},
-  content:{flex:1,justifyContent:'center',alignItems:'stretch',paddingBottom:24},
+  scroll:{flex:1},
+  content:{flexGrow:1,justifyContent:'center',alignItems:'stretch',paddingVertical:24},
+  contentCompact:{justifyContent:'flex-start',paddingTop:14,paddingBottom:18},
   iconWrap:{width:78,height:78,borderRadius:26,alignSelf:'center',alignItems:'center',justifyContent:'center',backgroundColor:'#292E2B',borderWidth:1,borderColor:'#4A504B',marginBottom:22},
+  iconWrapCompact:{width:66,height:66,borderRadius:22,marginBottom:16},
   eyebrow:{color:'#D5AA88',fontSize:12,fontWeight:'900',textAlign:'center',marginBottom:8},
   title:{color:'#FFF8F1',fontSize:29,lineHeight:39,fontWeight:'900',textAlign:'center'},
+  titleCompact:{fontSize:25,lineHeight:34},
   body:{color:'#C8C1B9',fontSize:14,lineHeight:23,textAlign:'center',marginTop:14},
-  bullets:{marginTop:28,gap:12},
+  bullets:{marginTop:24,gap:12},
   bulletRow:{minHeight:48,flexDirection:'row-reverse',alignItems:'center',gap:11,paddingHorizontal:14,paddingVertical:10,borderRadius:16,backgroundColor:'#222725',borderWidth:1,borderColor:'#383E3A'},
   bulletText:{flex:1,color:'#E9E3DC',fontSize:13,lineHeight:20,textAlign:'right',fontWeight:'700'},
-  footer:{paddingBottom:8,gap:18},
+  footer:{paddingTop:10,paddingBottom:8,gap:10},
+  progressText:{color:'#9FA8A2',fontSize:11,fontWeight:'800',textAlign:'center'},
   dots:{height:18,flexDirection:'row',justifyContent:'center',alignItems:'center',gap:7},
   dot:{width:7,height:7,borderRadius:4,backgroundColor:'#4B514D'},
   dotActive:{width:25,backgroundColor:'#D5AA88'},
-  next:{height:54,borderRadius:18,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:8,backgroundColor:'#A9785C'},
+  actions:{flexDirection:'row-reverse',gap:10},
+  back:{minWidth:96,height:54,borderRadius:18,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:5,backgroundColor:'#292E2B',borderWidth:1,borderColor:'#3F4541',paddingHorizontal:14},
+  backText:{color:'#E9E3DC',fontSize:14,fontWeight:'900'},
+  next:{flex:1,minHeight:54,borderRadius:18,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:8,backgroundColor:'#A9785C',paddingHorizontal:16},
   nextPressed:{transform:[{scale:.985}],opacity:.92},
   nextText:{color:'#fff',fontSize:15,fontWeight:'900'},
-  pressed:{opacity:.72},disabled:{opacity:.5},
+  pressed:{opacity:.72},
+  disabled:{opacity:.42},
 });

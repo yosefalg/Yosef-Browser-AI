@@ -159,6 +159,10 @@ function looksLikeLowDataVariant(parsed: URL) {
   const data = normalizedParam(parsed.searchParams.get('data'));
   const quality = normalizedParam(parsed.searchParams.get('quality'));
   const nojs = normalizedParam(parsed.searchParams.get('nojs'));
+  const bandwidth = normalizedParam(parsed.searchParams.get('bandwidth'));
+  const connection = normalizedParam(parsed.searchParams.get('connection')) || normalizedParam(parsed.searchParams.get('network'));
+  const saveData = normalizedParam(parsed.searchParams.get('saveData')) || normalizedParam(parsed.searchParams.get('save-data'));
+  const constrained = new Set(['low', 'slow', 'limited', 'constrained', 'save', '2g', '3g']);
   return hostMatches(host, LOW_DATA_FRIENDLY_HOSTS)
     || path.startsWith('/lite/')
     || path.includes('/low-data/')
@@ -174,6 +178,14 @@ function looksLikeLowDataVariant(parsed: URL) {
     || data === 'save'
     || quality === 'low'
     || quality === 'lite'
+    || quality === 'sd'
+    || quality === '360p'
+    || quality === '480p'
+    || constrained.has(bandwidth)
+    || constrained.has(connection)
+    || saveData === '1'
+    || saveData === 'true'
+    || saveData === 'on'
     || nojs === '1'
     || nojs === 'true';
 }
@@ -227,24 +239,24 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
 }
 
 function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
-  if (!aggressiveRetry) return [3600] as const;
+  if (!aggressiveRetry) return [4200] as const;
 
-  // Conservative staggered backoff is friendlier to unstable or high-latency links
-  // (including congested mobile/ISP paths) because RAID avoids duplicate request bursts.
-  // This optimizes only browser behavior and never claims to increase ISP bandwidth.
+  // Deliberately stagger retries so unstable/high-latency Iraqi ISP and mobile paths
+  // do not get hammered by duplicate request bursts. This only optimizes RAID's own
+  // behavior; it never claims to increase the subscriber's ISP bandwidth.
   switch (profile) {
     case 'boost':
-      return [900, 2600, 6500] as const;
+      return [1100, 3300, 8500] as const;
     case 'video':
-      return [1600, 4800, 12000] as const;
+      return [1800, 5600, 14000] as const;
     case 'downloads':
-      return [2000, 6000, 15000] as const;
+      return [2200, 7000, 18000] as const;
     case 'low-data':
-      return [2600, 7800, 19000] as const;
+      return [3000, 9000, 22000] as const;
     case 'reading':
-      return [1200, 3600, 9000] as const;
+      return [1400, 4200, 10500] as const;
     default:
-      return [1200, 3600, 9000] as const;
+      return [1400, 4200, 10500] as const;
   }
 }
 
@@ -254,12 +266,12 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
     return {
       profile: 'balanced',
       activeTabPriority: false,
-      suspendBackgroundTabs: true,
+      suspendBackgroundTabs: false,
       reduceBackgroundWork: false,
-      preferCache: true,
+      preferCache: false,
       deferNonCriticalWork: false,
       lowBandwidthImages: false,
-      retryDelaysMs: [2600],
+      retryDelaysMs: [4200],
       visualDensity: 'full',
       mediaBias: 'normal',
       lightweightNavigation: false,

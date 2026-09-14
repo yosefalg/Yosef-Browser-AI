@@ -7,10 +7,22 @@ function hostOf(value: string) {
 }
 
 function faviconSources(url: string, host: string) {
-  return [
-    `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=128`,
-    `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`,
-  ];
+  const sources: string[] = [];
+  try {
+    const parsed = new URL(url);
+    if (/^https?:$/i.test(parsed.protocol) && parsed.hostname) {
+      // Same-origin first: avoids sending visited paths, queries, or fragments to a third party.
+      sources.push(`${parsed.protocol}//${parsed.host}/favicon.ico`);
+    }
+  } catch {}
+
+  if (host) {
+    // Third-party fallbacks receive only the hostname, never the full browsing URL.
+    sources.push(`https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`);
+    sources.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`);
+  }
+
+  return Array.from(new Set(sources));
 }
 
 export function SiteIcon({ url, size = 44, radius = 14 }: { url: string; size?: number; radius?: number }) {

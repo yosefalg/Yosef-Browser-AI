@@ -53,6 +53,15 @@ function requestOptions(referer?: string | null) {
   return safe ? { headers: { Referer: safe } } : {};
 }
 
+function downloadHttpError(status: number) {
+  if (status === 401) return 'رفض الخادم التنزيل لأن الجلسة تحتاج تسجيل دخول صالحًا (HTTP 401).';
+  if (status === 403) return 'رفض الخادم رابط التنزيل أو انتهت صلاحيته (HTTP 403). أعد فتح صفحة الملف وابدأ التنزيل من جديد.';
+  if (status === 404) return 'ملف التنزيل لم يعد موجودًا على الخادم (HTTP 404).';
+  if (status === 416) return 'تعذر استكمال الجزء السابق لأن الخادم رفض نطاق الاستئناف (HTTP 416). اضغط إعادة لبدء تنزيل جديد.';
+  if (status >= 500) return `الخادم واجه مشكلة أثناء التنزيل (HTTP ${status}). حاول لاحقًا أو أعد المحاولة.`;
+  return `الخادم أعاد استجابة غير ناجحة أثناء التنزيل (HTTP ${status}).`;
+}
+
 function isLegacySystemDownload(item: Pick<DownloadItem, 'resume_data'>) {
   return Boolean(item.resume_data?.startsWith(LEGACY_SYSTEM_PREFIX));
 }
@@ -102,6 +111,11 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
     paused.delete(id);
     progressStats.delete(id);
     if (!result?.uri) throw new Error('لم يرجع Android ملفًا بعد اكتمال التنزيل.');
+
+    if (typeof result.status === 'number' && (result.status < 200 || result.status >= 300)) {
+      await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+      throw new Error(downloadHttpError(result.status));
+    }
 
     const fileInfo = await FileSystem.getInfoAsync(result.uri);
     if (!fileInfo.exists) throw new Error('اكتمل الطلب لكن ملف التنزيل غير موجود على الجهاز.');

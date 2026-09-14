@@ -43,7 +43,9 @@ export default function HomeScreen(){
   const dismissWelcome=()=>{setWelcomeOpen(false);void setSetting('raid_2_11_welcome_seen',true)};
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
   const lightSurface=themeName==='light'||themeName==='ivory';
-  const glass=lightSurface?'rgba(255,255,255,.76)':'rgba(255,255,255,.065)';
+  const glass=lightSurface?'rgba(255,255,255,.78)':'rgba(255,255,255,.07)';
+  const heroText=lightSurface?'#182126':'#F7FAFC';
+  const heroMuted=lightSurface?'#66727A':'#AEBBC7';
   const searchChips=SEARCH_SHORTCUTS.slice(0,4);
 
   const menuItems=useMemo<HomeMenuItem[]>(()=>[
@@ -73,19 +75,31 @@ export default function HomeScreen(){
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <HomeHeader theme={theme} vpnConnected={vpnConnected} tabsCount={tabsCount} downloadsCount={activeDownloads} onMenu={()=>setMenuOpen(true)} onTabs={()=>router.push('/tabs')} onDownloads={()=>router.push('/downloads')} onVpn={()=>router.push('/vpn')}/>
 
-      <View style={s.greeting}><Text style={[s.hello,{color:theme.text}]}>هاي يولد 👋</Text><Text style={[s.question,{color:theme.muted}]}>وين تريد تروح اليوم؟</Text></View>
+      <LinearGradient
+        colors={lightSurface?['rgba(238,248,245,.98)','rgba(231,238,248,.98)']:['rgba(25,55,62,.98)','rgba(28,37,53,.98)','rgba(48,34,57,.98)']}
+        start={{x:0,y:0}}
+        end={{x:1,y:1}}
+        style={[s.hero,{borderColor:lightSurface?'rgba(30,70,75,.12)':'rgba(255,255,255,.12)'}]}>
+        <View pointerEvents="none" style={s.heroGlowA}/>
+        <View pointerEvents="none" style={s.heroGlowB}/>
+        <View style={s.heroTop}>
+          <View style={s.greeting}><Text style={[s.hello,{color:heroText}]}>هاي يولد 👋</Text><Text style={[s.question,{color:heroMuted}]}>وين تريد تروح اليوم؟</Text></View>
+          <View style={[s.commandPill,{backgroundColor:lightSurface?'rgba(255,255,255,.64)':'rgba(255,255,255,.07)'}]}><View style={s.liveDot}/><Text style={[s.commandText,{color:heroMuted}]}>RAID READY</Text></View>
+        </View>
 
-      <View style={[s.search,{backgroundColor:glass,borderColor:theme.border}]}>
-        <View style={[s.searchIcon,{backgroundColor:theme.surface2}]}><Ionicons name="search-outline" size={21} color={theme.accent}/></View>
-        <TextInput value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="وين تريد تروح أو شتريد تبحث؟" placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} autoCapitalize="none" autoCorrect={false}/>
-        <Pressable accessibilityRole="button" accessibilityLabel="اسأل RAID AI" onPress={askAI} style={({pressed})=>[s.aiQuick,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.press]}><Ionicons name="sparkles" size={18} color={theme.accent}/></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="روح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={20} color="#fff"/></Pressable>
-      </View>
+        <View style={[s.search,{backgroundColor:lightSurface?'rgba(255,255,255,.82)':'rgba(4,10,18,.34)',borderColor:lightSurface?'rgba(25,70,75,.13)':'rgba(255,255,255,.13)'}]}>
+          <View style={[s.searchIcon,{backgroundColor:lightSurface?'rgba(27,85,86,.08)':'rgba(255,255,255,.07)'}]}><Ionicons name="search-outline" size={20} color={theme.accent}/></View>
+          <TextInput value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="ابحث أو اكتب موقعًا" placeholderTextColor={heroMuted} style={[s.input,{color:heroText}]} autoCapitalize="none" autoCorrect={false}/>
+          <Pressable accessibilityRole="button" accessibilityLabel="اسأل RAID AI" onPress={askAI} style={({pressed})=>[s.aiQuick,{backgroundColor:lightSurface?'rgba(255,255,255,.68)':'rgba(255,255,255,.07)',borderColor:lightSurface?'rgba(25,70,75,.12)':'rgba(255,255,255,.11)'},pressed&&s.press]}><Ionicons name="sparkles" size={17} color={theme.accent}/></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="روح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={19} color="#fff"/></Pressable>
+        </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={s.searchShortcutRow}>
-        {searchChips.map(item=><Pressable key={item.prefix} onPress={()=>applySearchShortcut(item.prefix)} accessibilityRole="button" accessibilityLabel={`بحث ${item.label}`} style={({pressed})=>[s.searchShortcut,{backgroundColor:glass,borderColor:theme.border},pressed&&s.press]}><Text style={[s.shortcutPrefix,{color:theme.accent}]}>{item.prefix}</Text><Text style={[s.shortcutLabel,{color:theme.text}]}>{item.label}</Text></Pressable>)}
-      </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={s.searchShortcutRow}>
+          {searchChips.map(item=><Pressable key={item.prefix} onPress={()=>applySearchShortcut(item.prefix)} accessibilityRole="button" accessibilityLabel={`بحث ${item.label}`} style={({pressed})=>[s.searchShortcut,{backgroundColor:lightSurface?'rgba(255,255,255,.55)':'rgba(255,255,255,.055)',borderColor:lightSurface?'rgba(25,70,75,.10)':'rgba(255,255,255,.09)'},pressed&&s.press]}><Text style={[s.shortcutPrefix,{color:theme.accent}]}>{item.prefix}</Text><Text style={[s.shortcutLabel,{color:heroText}]}>{item.label}</Text></Pressable>)}
+        </ScrollView>
+      </LinearGradient>
 
+      <View style={s.sectionHead}><Text style={[s.sectionTitle,{color:theme.text}]}>اختصاراتك</Text><Pressable onPress={()=>setMenuOpen(true)} hitSlop={8}><Text style={[s.sectionAction,{color:theme.accent}]}>الكل</Text></Pressable></View>
       <HomeShortcuts theme={theme} items={shortcuts} onMore={()=>setMenuOpen(true)}/>
 
 
@@ -103,11 +117,11 @@ export default function HomeScreen(){
 
 const s=StyleSheet.create({
   fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:15,paddingBottom:22,gap:12},
-  greeting:{alignItems:'flex-end',paddingTop:2},hello:{fontSize:24,fontWeight:'900',textAlign:'right'},question:{fontSize:12,fontWeight:'700',textAlign:'right',marginTop:3},
+  hero:{minHeight:210,borderRadius:28,borderWidth:1,padding:15,gap:12,overflow:'hidden'},heroGlowA:{position:'absolute',width:170,height:170,borderRadius:85,backgroundColor:'rgba(88,214,190,.10)',top:-95,right:-35},heroGlowB:{position:'absolute',width:150,height:150,borderRadius:75,backgroundColor:'rgba(178,119,204,.10)',bottom:-100,left:-25},heroTop:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:12},greeting:{alignItems:'flex-end'},hello:{fontSize:24,fontWeight:'900',textAlign:'right'},question:{fontSize:11.5,fontWeight:'700',textAlign:'right',marginTop:3},commandPill:{height:28,borderRadius:14,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:6,borderWidth:1,borderColor:'rgba(255,255,255,.08)'},liveDot:{width:6,height:6,borderRadius:3,backgroundColor:'#64D7A5'},commandText:{fontSize:8,fontWeight:'900',letterSpacing:.8},
   search:{minHeight:56,borderRadius:20,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:7,gap:6},searchIcon:{width:38,height:38,borderRadius:13,alignItems:'center',justifyContent:'center'},input:{flex:1,fontSize:14,textAlign:'right',paddingHorizontal:3,paddingVertical:0},aiQuick:{width:38,height:38,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center'},
-  searchShortcutRow:{gap:7,paddingHorizontal:1},searchShortcut:{height:32,borderRadius:12,borderWidth:1,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:5},shortcutPrefix:{fontSize:10,fontWeight:'900'},shortcutLabel:{fontSize:9.5,fontWeight:'800'},
+  searchShortcutRow:{gap:7,paddingHorizontal:1},searchShortcut:{height:30,borderRadius:11,borderWidth:1,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:5},shortcutPrefix:{fontSize:9.5,fontWeight:'900'},shortcutLabel:{fontSize:9,fontWeight:'800'},sectionHead:{height:24,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',paddingHorizontal:2},sectionTitle:{fontSize:13,fontWeight:'900'},sectionAction:{fontSize:10,fontWeight:'900'},
   quickRail:{minHeight:94,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'stretch',padding:8,shadowColor:'#000',shadowOpacity:.10,shadowRadius:22,elevation:3,overflow:'hidden'},quickSlot:{flex:1,position:'relative',justifyContent:'center'},quickAction:{flex:1,minHeight:76,borderRadius:20,alignItems:'center',justifyContent:'center',paddingHorizontal:7,paddingVertical:7},quickPressed:{transform:[{scale:.965}],backgroundColor:'rgba(255,255,255,.055)'},quickIcon:{width:40,height:40,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center',marginBottom:7},quickTitle:{fontSize:11.5,fontWeight:'900',textAlign:'center'},quickSub:{fontSize:8.5,fontWeight:'600',textAlign:'center',marginTop:3,maxWidth:92},quickDivider:{position:'absolute',left:0,top:18,bottom:18,width:StyleSheet.hairlineWidth,opacity:.55},
-  security:{minHeight:60,borderRadius:19,borderWidth:1,paddingHorizontal:11,paddingVertical:8,flexDirection:'row-reverse',alignItems:'center',gap:9},securityIcon:{width:40,height:40,borderRadius:14,alignItems:'center',justifyContent:'center'},securityCopy:{flex:1,alignItems:'flex-end'},securityTitle:{fontSize:12.5,fontWeight:'900'},securitySub:{fontSize:9,marginTop:3,textAlign:'right'},
+  security:{minHeight:62,borderRadius:20,borderWidth:1,paddingHorizontal:12,paddingVertical:9,flexDirection:'row-reverse',alignItems:'center',gap:10},securityIcon:{width:40,height:40,borderRadius:14,alignItems:'center',justifyContent:'center'},securityCopy:{flex:1,alignItems:'flex-end'},securityTitle:{fontSize:12.5,fontWeight:'900'},securitySub:{fontSize:9,marginTop:3,textAlign:'right'},
   signature:{alignItems:'center',paddingVertical:18},signatureTitle:{fontWeight:'900',letterSpacing:5},signatureSub:{fontSize:10,marginTop:7},press:{transform:[{scale:.98}],opacity:.84},
   welcomeBackdrop:{flex:1,backgroundColor:'rgba(0,0,0,.72)',alignItems:'center',justifyContent:'center',padding:22},welcomeCard:{width:'100%',maxWidth:430,borderRadius:36,borderWidth:1,paddingHorizontal:25,paddingVertical:32,alignItems:'center',overflow:'hidden'},logoGlow:{padding:18,borderRadius:38,backgroundColor:'rgba(255,255,255,.035)'},welcomeEyebrow:{color:'#8BE0CC',fontSize:10,fontWeight:'900',letterSpacing:3,marginTop:18},welcomeTitle:{color:'#F7FAFC',fontSize:31,fontWeight:'900',marginTop:8},welcomeText:{color:'#AEB9C7',fontSize:13,lineHeight:22,textAlign:'center',marginTop:9,maxWidth:310},welcomePoints:{alignSelf:'stretch',gap:9,marginTop:22},point:{height:42,borderRadius:15,backgroundColor:'rgba(255,255,255,.045)',flexDirection:'row-reverse',alignItems:'center',gap:9,paddingHorizontal:12},pointText:{color:'#DCE5EC',fontSize:11,fontWeight:'800',textAlign:'right',flex:1},startButton:{height:54,alignSelf:'stretch',borderRadius:18,backgroundColor:'#8BE0CC',marginTop:24,flexDirection:'row-reverse',gap:8,alignItems:'center',justifyContent:'center'},startText:{color:'#071412',fontSize:14,fontWeight:'900'}
 });

@@ -32,6 +32,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
         disableDeviceFallback: false,
       });
       if (result.success) {
+        backgroundAt.current = null;
         setLocked(false);
         setPrivacyShield(false);
         return true;
@@ -108,6 +109,13 @@ export function AppLockGate({ children }: PropsWithChildren) {
     const subscription = AppState.addEventListener('change', (state) => {
       const settings = settingsRef.current;
       if (state === 'background' || state === 'inactive') {
+        // Android may temporarily mark the app inactive while its biometric/device
+        // credential prompt is on top. Treating that transition as a real leave
+        // would immediately lock the app again after successful authentication.
+        if (authenticating.current) {
+          if (settings?.enabled) setPrivacyShield(true);
+          return;
+        }
         backgroundAt.current = Date.now();
         if (settings?.enabled) setPrivacyShield(true);
         return;
@@ -124,7 +132,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
         const leftAt = backgroundAt.current;
         backgroundAt.current = null;
         if (!latest.lockOnBackground || leftAt == null) {
-          if (!locked) setPrivacyShield(false);
+          if (!locked && !authenticating.current) setPrivacyShield(false);
           return;
         }
         if (Date.now() - leftAt >= latest.gracePeriodMs) {
@@ -133,7 +141,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
           void authenticate();
           return;
         }
-        if (!locked) setPrivacyShield(false);
+        if (!locked && !authenticating.current) setPrivacyShield(false);
       }).catch(() => {
         if (settings?.enabled) {
           setLocked(true);

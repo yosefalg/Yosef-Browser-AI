@@ -5,6 +5,8 @@ import type { BrowserTab } from '@/lib/db';
 import type { ThemePalette } from '@/lib/theme';
 import type { TabViewMode } from '@/components/TabViewControls';
 
+const STALE_TAB_MS = 7 * 24 * 60 * 60 * 1000;
+
 function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return value;}}
 function pathOf(value:string){
   try{
@@ -22,7 +24,8 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
   const grid=viewMode==='grid';
   const secure=isSecure(tab.url);
   const path=pathOf(tab.url);
-  const activityLabel=recent?'آخر نشاط • ':'';
+  const stale=!recent && Date.now()-tab.updated_at>=STALE_TAB_MS;
+  const activityLabel=recent?'آخر نشاط • ':stale?'تبويب قديم • ':'';
   const singleColumn=width<390;
   const compactPhone=width<520;
   const narrowList=width<410;
@@ -56,13 +59,13 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
       </View>
       <View style={s.footer}>
         <View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>
-        {recent&&<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pulse-outline" size={11} color={theme.accent}/><Text style={[s.recentText,{color:theme.accent}]}>آخر نشاط</Text></View>}
+        {recent?<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pulse-outline" size={11} color={theme.accent}/><Text style={[s.recentText,{color:theme.accent}]}>آخر نشاط</Text></View>:stale?<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="archive-outline" size={11} color={theme.muted}/><Text style={[s.recentText,{color:theme.muted}]}>قديم</Text></View>:null}
       </View>
     </>:<>
       <View style={s.siteWrap}><SiteIcon url={tab.url} size={narrowList?44:50} radius={15}/><View style={[s.securityBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name={secure?'lock-closed':'warning-outline'} size={10} color={secure?theme.accent:theme.muted}/></View></View>
       <View style={s.copy}>
-        <View style={s.listTitleRow}><Text numberOfLines={1} style={[s.title,narrowList&&s.titleCompact,{color:theme.text}]}>{tab.title||hostOf(tab.url)}</Text>{recent&&!narrowList&&<View style={[s.activityPill,{backgroundColor:theme.surface2,borderColor:theme.border}]}><View style={[s.recentDot,{backgroundColor:theme.accent}]}/><Text style={[s.activityText,{color:theme.accent}]}>آخر نشاط</Text></View>}</View>
-        <View style={s.domainRow}><Ionicons name={secure?'lock-closed-outline':'globe-outline'} size={11} color={secure?theme.accent:theme.muted}/><Text numberOfLines={1} style={[s.host,{color:theme.muted}]}>{hostOf(tab.url)}</Text>{recent&&narrowList&&<Text style={[s.compactRecent,{color:theme.accent}]}>• آخر نشاط</Text>}</View>
+        <View style={s.listTitleRow}><Text numberOfLines={1} style={[s.title,narrowList&&s.titleCompact,{color:theme.text}]}>{tab.title||hostOf(tab.url)}</Text>{recent&&!narrowList?<View style={[s.activityPill,{backgroundColor:theme.surface2,borderColor:theme.border}]}><View style={[s.recentDot,{backgroundColor:theme.accent}]}/><Text style={[s.activityText,{color:theme.accent}]}>آخر نشاط</Text></View>:stale&&!narrowList?<View style={[s.activityPill,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="archive-outline" size={10} color={theme.muted}/><Text style={[s.activityText,{color:theme.muted}]}>قديم</Text></View>:null}</View>
+        <View style={s.domainRow}><Ionicons name={secure?'lock-closed-outline':'globe-outline'} size={11} color={secure?theme.accent:theme.muted}/><Text numberOfLines={1} style={[s.host,{color:theme.muted}]}>{hostOf(tab.url)}</Text>{recent&&narrowList?<Text style={[s.compactRecent,{color:theme.accent}]}>• آخر نشاط</Text>:stale&&narrowList?<Text style={[s.compactRecent,{color:theme.muted}]}>• قديم</Text>:null}</View>
         <View style={s.listMetaRow}><View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>{!!path&&!narrowList&&<Text numberOfLines={1} style={[s.listPath,{color:theme.muted}]}>{path}</Text>}</View>
       </View>
       {!selectionMode&&<View style={[s.actions,narrowList&&s.actionsCompactList]}>

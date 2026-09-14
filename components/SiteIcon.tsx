@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 function hostOf(value: string) {
@@ -11,21 +11,27 @@ function faviconSources(url: string, host: string) {
   try {
     const parsed = new URL(url);
     if (/^https?:$/i.test(parsed.protocol) && parsed.hostname) {
-      // Same-origin first: avoids sending visited paths, queries, or fragments to a third party.
-      sources.push(`${parsed.protocol}//${parsed.host}/favicon.ico`);
+      const origin = `${parsed.protocol}//${parsed.host}`;
+      // Keep favicon discovery on the visited origin first. This avoids leaking paths,
+      // queries, fragments, or full URLs to third-party icon providers.
+      sources.push(`${origin}/favicon.ico`);
+      sources.push(`${origin}/apple-touch-icon.png`);
+      sources.push(`${origin}/favicon.png`);
     }
   } catch {}
 
   if (host) {
-    // Third-party fallbacks receive only the hostname, never the full browsing URL.
+    // Last-resort provider receives the hostname only. A second third-party fallback
+    // was intentionally removed to reduce duplicate network requests and browsing-metadata exposure.
     sources.push(`https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`);
-    sources.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`);
   }
 
   return Array.from(new Set(sources));
 }
 
 export function SiteIcon({ url, size = 44, radius = 14 }: { url: string; size?: number; radius?: number }) {
+  const scheme = useColorScheme();
+  const dark = scheme === 'dark';
   const host = useMemo(() => hostOf(url), [url]);
   const sources = useMemo(() => faviconSources(url, host), [url, host]);
   const [sourceIndex, setSourceIndex] = useState(0);
@@ -34,19 +40,24 @@ export function SiteIcon({ url, size = 44, radius = 14 }: { url: string; size?: 
   useEffect(() => setSourceIndex(0), [url]);
   const source = sources[sourceIndex];
   const imageSize = Math.round(size * 0.64);
+  const shell = dark
+    ? { backgroundColor: '#182028', borderColor: 'rgba(255,255,255,.10)' }
+    : { backgroundColor: '#F8F4EF', borderColor: 'rgba(74,66,59,.16)' };
+  const letterColor = dark ? '#D9B493' : '#8C684F';
 
   return (
-    <View style={[s.wrap, { width: size, height: size, borderRadius: radius }]}>
+    <View style={[s.wrap, shell, { width: size, height: size, borderRadius: radius }]}>
       {source ? (
         <Image
           source={{ uri: source }}
           style={{ width: imageSize, height: imageSize, borderRadius: Math.max(6, radius - 6) }}
           resizeMode="contain"
+          fadeDuration={90}
           onError={() => setSourceIndex(index => index + 1)}
           accessibilityIgnoresInvertColors
         />
       ) : (
-        <Text style={[s.fallback, { fontSize: Math.max(15, Math.round(size * 0.38)) }]}>{letter}</Text>
+        <Text style={[s.fallback, { color: letterColor, fontSize: Math.max(15, Math.round(size * 0.38)) }]}>{letter}</Text>
       )}
     </View>
   );
@@ -63,8 +74,8 @@ export function RaidServiceIcon({ kind, size = 44 }: { kind: 'ai' | 'vpn'; size?
 }
 
 const s = StyleSheet.create({
-  wrap: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F4EF', borderWidth: 1, borderColor: 'rgba(74,66,59,.16)', overflow: 'hidden' },
-  fallback: { color: '#8C684F', fontWeight: '900' },
+  wrap: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, overflow: 'hidden' },
+  fallback: { fontWeight: '900' },
   service: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   ai: { backgroundColor: '#F5ECE4', borderColor: '#D7B89E' },
   vpn: { backgroundColor: '#E8F2EB', borderColor: '#BFD6C6' },

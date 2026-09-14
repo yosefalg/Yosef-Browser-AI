@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Linking, Text, View } from 'react-native';
+import { AppState, Linking, Text, View, useWindowDimensions } from 'react-native';
 import { Stack, router, useGlobalSearchParams, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AppLockGate } from '@/components/AppLockGate';
 import { DownloadShelf } from '@/components/DownloadShelf';
@@ -12,23 +13,24 @@ import { isOnboardingComplete } from '@/lib/onboarding';
 
 function profileHint(profile: BrowsingProfile) {
   switch (profile) {
-    case 'boost': return { bg: 'rgba(34,197,94,.90)', fg: '#052E16', text: 'Boost' };
-    case 'video': return { bg: 'rgba(124,58,237,.92)', fg: '#F5F3FF', text: 'Video' };
-    case 'reading': return { bg: 'rgba(14,116,144,.92)', fg: '#ECFEFF', text: 'Reading' };
-    case 'downloads': return { bg: 'rgba(180,83,9,.92)', fg: '#FFFBEB', text: 'Downloads' };
-    case 'low-data': return { bg: 'rgba(2,132,199,.92)', fg: '#F0F9FF', text: 'Low Data' };
-    default: return { bg: 'rgba(30,41,59,.90)', fg: '#E2E8F0', text: profileLabel(profile) };
+    case 'boost': return { bg: 'rgba(34,197,94,.90)', fg: '#052E16', text: 'Boost', icon: 'flash-outline' as const };
+    case 'video': return { bg: 'rgba(124,58,237,.92)', fg: '#F5F3FF', text: 'Video', icon: 'play-outline' as const };
+    case 'reading': return { bg: 'rgba(14,116,144,.92)', fg: '#ECFEFF', text: 'Reading', icon: 'reader-outline' as const };
+    case 'downloads': return { bg: 'rgba(180,83,9,.92)', fg: '#FFFBEB', text: 'Downloads', icon: 'download-outline' as const };
+    case 'low-data': return { bg: 'rgba(2,132,199,.92)', fg: '#F0F9FF', text: 'Low Data', icon: 'leaf-outline' as const };
+    default: return { bg: 'rgba(30,41,59,.90)', fg: '#E2E8F0', text: profileLabel(profile), icon: 'speedometer-outline' as const };
   }
 }
 
-export default function RootLayout() {
+function RootChrome() {
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ url?: string | string[] }>();
-  // Memory protection is a safe baseline: inactive screens are frozen from the
-  // first frame instead of briefly running until settings finish loading.
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [freezeInactiveScreens, setFreezeInactiveScreens] = useState(true);
   const [lightweightNavigation, setLightweightNavigation] = useState(false);
   const [activeProfile, setActiveProfile] = useState<BrowsingProfile>('balanced');
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const lastExternalUrl = useRef('');
 
   const browserContextUrl = useMemo(() => {
@@ -103,56 +105,75 @@ export default function RootLayout() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshPerformancePolicy();
+      const isActive = state === 'active';
+      setAppActive(isActive);
+      if (isActive) {
+        refreshPerformancePolicy();
+      } else {
+        setFreezeInactiveScreens(true);
+        setLightweightNavigation(true);
+      }
     });
     return () => subscription.remove();
   }, [refreshPerformancePolicy]);
 
   const hint = profileHint(activeProfile);
-  const showProfileHint = pathname === '/browser' && activeProfile !== 'balanced';
+  const showProfileHint = appActive && pathname === '/browser' && activeProfile !== 'balanced';
+  const compactHint = width < 360;
 
+  return (
+    <>
+      <StatusBar style="light" backgroundColor="#070B14" />
+      <AppErrorBoundary>
+        <AppLockGate>
+          <View style={{ flex: 1 }}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: lightweightNavigation ? 'none' : 'fade',
+                freezeOnBlur: freezeInactiveScreens,
+              }}
+            />
+            {showProfileHint && (
+              <View
+                pointerEvents="none"
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={{
+                  position: 'absolute',
+                  top: insets.top + 60,
+                  left: 12,
+                  minHeight: 26,
+                  maxWidth: compactHint ? 42 : 128,
+                  paddingHorizontal: compactHint ? 8 : 10,
+                  borderRadius: 999,
+                  flexDirection: 'row',
+                  gap: compactHint ? 0 : 5,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: hint.bg,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,.16)',
+                  elevation: 5,
+                }}
+              >
+                <Ionicons name={hint.icon} size={12} color={hint.fg} />
+                {!compactHint && <Text numberOfLines={1} style={{ color: hint.fg, fontSize: 9.5, fontWeight: '900' }}>{hint.text}</Text>}
+              </View>
+            )}
+            {appActive && pathname === '/browser' && <DownloadShelf visible />}
+          </View>
+        </AppLockGate>
+      </AppErrorBoundary>
+    </>
+  );
+}
+
+export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style="light" backgroundColor="#070B14" />
-        <AppErrorBoundary>
-          <AppLockGate>
-            <View style={{ flex: 1 }}>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  animation: lightweightNavigation ? 'none' : 'fade',
-                  freezeOnBlur: freezeInactiveScreens,
-                }}
-              />
-              {showProfileHint && (
-                <View
-                  pointerEvents="none"
-                  accessibilityElementsHidden
-                  importantForAccessibility="no-hide-descendants"
-                  style={{
-                    position: 'absolute',
-                    top: 66,
-                    left: 12,
-                    minHeight: 25,
-                    maxWidth: 116,
-                    paddingHorizontal: 9,
-                    borderRadius: 999,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: hint.bg,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,.16)',
-                    elevation: 5,
-                  }}
-                >
-                  <Text numberOfLines={1} style={{ color: hint.fg, fontSize: 9.5, fontWeight: '900' }}>{hint.text}</Text>
-                </View>
-              )}
-              <DownloadShelf visible={pathname === '/browser'} />
-            </View>
-          </AppLockGate>
-        </AppErrorBoundary>
+        <RootChrome />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

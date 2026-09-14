@@ -55,19 +55,20 @@ const READING_HOSTS = [
 const DOWNLOAD_HOSTS = [
   'githubusercontent.com', 'objects.githubusercontent.com', 'sourceforge.net', 'fosshub.com',
   'apkpure.com', 'archive.org', 'cdn.discordapp.com', 'download.microsoft.com',
-  'dl.google.com', 'releases.ubuntu.com',
+  'dl.google.com', 'releases.ubuntu.com', 'mediafire.com', 'mega.nz',
+  'drive.usercontent.google.com', 'storage.googleapis.com', 'download.mozilla.org',
 ];
 const LOW_DATA_FRIENDLY_HOSTS = [
   'lite.cnn.com', 'text.npr.org', 'mbasic.facebook.com',
 ];
 const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
-const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?|attachments?|packages?|artifacts?|dist|builds?)(?:\/|$)/i;
+const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?|attachments?|packages?|artifacts?|dist|builds?|exports?)(?:\/|$)/i;
 const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|reels?|episodes?|movies?)(?:\/|$)/i;
-const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp)(?:\/|$)/i;
-const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'file', 'artifact', 'asset'];
+const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp|reader)(?:\/|$)/i;
+const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'file', 'artifact', 'asset', 'export'];
 const VIDEO_QUERY_KEYS = ['video', 'stream', 'watch', 'play', 'episode'];
-const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic'];
+const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic', 'save-data', 'datasaver'];
 
 export function isBrowsingProfile(value: unknown): value is BrowsingProfile {
   return value === 'balanced' || value === 'boost' || value === 'video' || value === 'reading' || value === 'downloads' || value === 'low-data';
@@ -102,29 +103,47 @@ function hostMatches(host: string, candidates: readonly string[]) {
   return candidates.some((item) => host === item || host.endsWith(`.${item}`));
 }
 
+function normalizedParam(value: string | null) {
+  return value?.trim().toLowerCase() || '';
+}
+
 function queryHasAny(params: URLSearchParams, keys: readonly string[]) {
-  return keys.some((key) => params.has(key) || params.get('action')?.toLowerCase() === key || params.get('type')?.toLowerCase() === key);
+  const action = normalizedParam(params.get('action'));
+  const type = normalizedParam(params.get('type'));
+  const mode = normalizedParam(params.get('mode'));
+  const view = normalizedParam(params.get('view'));
+  return keys.some((key) => params.has(key) || action === key || type === key || mode === key || view === key);
+}
+
+function queryValueSignalsDownload(params: URLSearchParams) {
+  const disposition = normalizedParam(params.get('response-content-disposition'));
+  const contentDisposition = normalizedParam(params.get('content-disposition'));
+  const raw = normalizedParam(params.get('raw'));
+  return disposition.includes('attachment') || contentDisposition.includes('attachment') || raw === '1' || raw === 'true';
 }
 
 function looksLikeReadingVariant(parsed: URL) {
   const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname.toLowerCase();
-  const output = parsed.searchParams.get('output')?.toLowerCase();
-  const format = parsed.searchParams.get('format')?.toLowerCase();
+  const output = normalizedParam(parsed.searchParams.get('output'));
+  const format = normalizedParam(parsed.searchParams.get('format'));
+  const view = normalizedParam(parsed.searchParams.get('view'));
   return host.startsWith('m.')
     || host.startsWith('mobile.')
     || path.startsWith('/amp/')
     || path.endsWith('/amp')
     || output === '1'
     || output === 'amp'
-    || format === 'amp';
+    || format === 'amp'
+    || view === 'reader';
 }
 
 function looksLikeLowDataVariant(parsed: URL) {
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
   const path = parsed.pathname.toLowerCase();
-  const mode = parsed.searchParams.get('mode')?.toLowerCase();
-  const view = parsed.searchParams.get('view')?.toLowerCase();
+  const mode = normalizedParam(parsed.searchParams.get('mode'));
+  const view = normalizedParam(parsed.searchParams.get('view'));
+  const data = normalizedParam(parsed.searchParams.get('data'));
   return hostMatches(host, LOW_DATA_FRIENDLY_HOSTS)
     || path.startsWith('/lite/')
     || path.includes('/low-data/')
@@ -132,8 +151,20 @@ function looksLikeLowDataVariant(parsed: URL) {
     || queryHasAny(parsed.searchParams, LOW_DATA_QUERY_KEYS)
     || mode === 'lite'
     || mode === 'basic'
+    || mode === 'low-data'
     || view === 'lite'
-    || view === 'basic';
+    || view === 'basic'
+    || view === 'low-data'
+    || data === 'low'
+    || data === 'save';
+}
+
+function isCloudDownloadUrl(host: string, parsed: URL) {
+  if (host === 'drive.google.com' && /\/(?:uc|download)\b/i.test(parsed.pathname)) return true;
+  if (host === 'dropbox.com' && normalizedParam(parsed.searchParams.get('dl')) === '1') return true;
+  if (host.endsWith('.dropboxusercontent.com')) return true;
+  if (host === 'onedrive.live.com' && (parsed.searchParams.has('download') || normalizedParam(parsed.searchParams.get('download')) === '1')) return true;
+  return false;
 }
 
 export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
@@ -145,6 +176,7 @@ export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
 
     if (looksLikeLowDataVariant(parsed)) return 'low-data';
     if (VIDEO_EXT_RE.test(path)) return 'video';
+    if (queryValueSignalsDownload(query) || isCloudDownloadUrl(host, parsed)) return 'downloads';
     if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname) || queryHasAny(query, DOWNLOAD_QUERY_KEYS)) return 'downloads';
     if (isGithubReleaseAsset(host, parsed.pathname) || hostMatches(host, DOWNLOAD_HOSTS)) return 'downloads';
     if (hostMatches(host, VIDEO_HOSTS) || VIDEO_PATH_RE.test(parsed.pathname) || queryHasAny(query, VIDEO_QUERY_KEYS)) return 'video';

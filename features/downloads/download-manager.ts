@@ -7,6 +7,8 @@ import type { DownloadItem } from './types';
 const active = new Map<number, FileSystem.DownloadResumable>();
 const paused = new Map<number, FileSystem.DownloadPauseState>();
 const progressStats = new Map<number, { at: number; written: number; speed: number; persistedAt: number }>();
+const recentStarts = new Map<string, { id: number; at: number }>();
+const RECENT_START_WINDOW_MS = 1800;
 const LEGACY_SYSTEM_PREFIX = 'android:';
 const MIME_EXTENSIONS: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -110,6 +112,22 @@ function isLegacySystemDownload(item: Pick<DownloadItem, 'resume_data'>) {
   return Boolean(item.resume_data?.startsWith(LEGACY_SYSTEM_PREFIX));
 }
 
+function normalizeDownloadKey(url: string) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return url.trim();
+  }
+}
+
+function clearRecentStart(id: number) {
+  for (const [key, entry] of recentStarts.entries()) {
+    if (entry.id === id) recentStarts.delete(key);
+  }
+}
+
 function progressHandler(id: number) {
   return async (progress: FileSystem.DownloadProgressData) => {
     const now = Date.now();
@@ -152,6 +170,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
     active.delete(id);
     paused.delete(id);
     progressStats.delete(id);
+    clearRecentStart(id);
     if (!result?.uri) throw new Error('لم يرجع Android ملفًا بعد اكتمال التنزيل.');
 
     if (typeof result.status === 'number' && (result.status < 200 || result.status >= 300)) {
@@ -190,6 +209,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
   } catch (error) {
     active.delete(id);
     progressStats.delete(id);
+    clearRecentStart(id);
     if (paused.has(id)) return;
     await updateDownload(id, {
       state: 'failed',
@@ -202,11 +222,17 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
 
 export async function startDownload(url: string, referer?: string | null) {
   if (!/^https:\/\//i.test(url)) throw new Error('RAID يسمح بالتنزيل الآمن عبر HTTPS فقط.');
+  const key = normalizeDownloadKey(url);
+  const recent = recentStarts.get(key);
+  if (recent && Date.now() - recent.at <= RECENT_START_WINDOW_MS && active.has(recent.id)) return recent.id;
+  if (recent && Date.now() - recent.at > RECENT_START_WINDOW_MS) recentStarts.delete(key);
+
   const fileName = safeFileName(url);
   const storedReferer = safeReferer(referer);
   const destination = await uniqueDestination(fileName);
   const id = await createDownload(url, fileName, destination, storedReferer);
   const task = FileSystem.createDownloadResumable(url, destination, requestOptions(storedReferer), progressHandler(id));
+  recentStarts.set(key, { id, at: Date.now() });
   void runTask(id, task);
   return id;
 }
@@ -218,6 +244,7 @@ export async function pauseDownload(id: number) {
   active.delete(id);
   paused.set(id, state);
   progressStats.delete(id);
+  clearRecentStart(id);
   await updateDownload(id, {
     state: 'paused',
     speed_bps: 0,
@@ -323,6 +350,7 @@ export async function cancelDownload(id: number) {
   active.delete(id);
   paused.delete(id);
   progressStats.delete(id);
+  clearRecentStart(id);
   await updateDownload(id, { state: 'cancelled', speed_bps: 0, eta_seconds: null, resume_data: null });
 }
 
@@ -336,6 +364,7 @@ export async function retryDownload(id: number) {
   active.delete(id);
   paused.delete(id);
   progressStats.delete(id);
+  clearRecentStart(id);
 
   let destination = item.local_uri;
   if (!destination || isLegacySystemDownload(item)) {
@@ -393,6 +422,7 @@ export async function removeDownload(id: number, deleteFile = false) {
   if (active.has(id)) await cancelDownload(id);
   paused.delete(id);
   progressStats.delete(id);
+  clearRecentStart(id);
   if (deleteFile && item?.local_uri) await FileSystem.deleteAsync(item.local_uri, { idempotent: true }).catch(() => {});
   await deleteDownloadRecord(id);
 }

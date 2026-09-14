@@ -17,12 +17,19 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
   const { width } = useWindowDimensions();
   const compact = width < 520;
   const veryCompact = width < 390;
+  const preferredView: TabViewMode = veryCompact ? 'list' : 'grid';
+  const customLayout = sortMode !== 'recent' || viewMode !== preferredView;
   const sortItems: SortItem[] = [
     { key: 'recent', label: 'الأحدث', icon: 'time-outline' },
     { key: 'oldest', label: 'الأقدم', icon: 'hourglass-outline' },
     { key: 'domain', label: 'الموقع', icon: 'globe-outline' },
     { key: 'title', label: 'الاسم', icon: 'text-outline' },
   ];
+
+  const resetLayout = () => {
+    onSortMode('recent');
+    onViewMode(preferredView);
+  };
 
   return <View style={[s.wrap,compact&&s.wrapCompact]}>
     <ScrollView
@@ -56,9 +63,15 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
     <View style={[s.modeRow,{backgroundColor:theme.surface,borderColor:theme.border},compact&&s.modeRowCompact]}>
       <View style={s.modeCopy}>
         <Text style={[s.modeLabel,{color:theme.muted}]}>طريقة العرض</Text>
-        {compact&&<Text style={[s.modeHint,{color:theme.muted}]}>اختر الشكل الأنسب لحجم الشاشة</Text>}
+        {compact&&<Text style={[s.modeHint,{color:theme.muted}]}>{veryCompact?'القائمة أوضح على الشاشات الضيقة':'اختر الشكل الأنسب لحجم الشاشة'}</Text>}
       </View>
       <View style={s.modeButtons}>
+        {customLayout&&<Pressable
+          onPress={resetLayout}
+          style={[s.reset,{backgroundColor:theme.surface2,borderColor:theme.border}]}
+          accessibilityRole="button"
+          accessibilityLabel="استعادة العرض المقترح"
+        ><Ionicons name="sparkles-outline" size={15} color={theme.accent}/></Pressable>}
         <Pressable
           onPress={() => onViewMode('grid')}
           style={[s.mode,viewMode==='grid'&&{backgroundColor:theme.accent}]}
@@ -94,7 +107,8 @@ const s=StyleSheet.create({
   modeCopy:{flex:1,alignItems:'flex-end'},
   modeLabel:{fontSize:9,fontWeight:'900'},
   modeHint:{fontSize:8,marginTop:2},
-  modeButtons:{flexDirection:'row',gap:3},
+  modeButtons:{flexDirection:'row',gap:3,alignItems:'center'},
+  reset:{width:34,height:32,borderRadius:10,borderWidth:1,alignItems:'center',justifyContent:'center'},
   mode:{width:40,height:32,borderRadius:10,alignItems:'center',justifyContent:'center'},
   press:{opacity:.82,transform:[{scale:.97}]}
 });

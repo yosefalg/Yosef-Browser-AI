@@ -6,12 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
-import { clearHistory, getBookmarks, getHistory, getSetting } from '@/lib/db';
+import { clearHistory, getBookmarks, getHistory, getProtectionStats, getSetting, resetProtectionStats } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { getVpnProvisioningState, isVpnConnected } from '@/lib/vpn';
 import { getTheme, type ThemeName } from '@/lib/theme';
 
-type LiveState={signedIn:boolean;vpnConnected:boolean;vpnReady:boolean;vpnSource:string;history:number;bookmarks:number;biometric:boolean};
+type LiveState={signedIn:boolean;vpnConnected:boolean;vpnReady:boolean;vpnSource:string;history:number;bookmarks:number;biometric:boolean;adsRemoved:number;popupsBlocked:number};
 
 export default function PrivacyScreen(){
   const version=Constants.expoConfig?.version||'—';
@@ -19,14 +19,14 @@ export default function PrivacyScreen(){
   const [checking,setChecking]=useState(false);
   const [msg,setMsg]=useState('');
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
-  const [live,setLive]=useState<LiveState>({signedIn:false,vpnConnected:false,vpnReady:false,vpnSource:'none',history:0,bookmarks:0,biometric:false});
+  const [live,setLive]=useState<LiveState>({signedIn:false,vpnConnected:false,vpnReady:false,vpnSource:'none',history:0,bookmarks:0,biometric:false,adsRemoved:0,popupsBlocked:0});
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh=useCallback(async()=>{
     if(busy.current)return;
     busy.current=true;setChecking(true);
     try{
-      const [session,connected,history,bookmarks,profile,biometric,savedTheme]=await Promise.all([
+      const [session,connected,history,bookmarks,profile,biometric,savedTheme,protection]=await Promise.all([
         getCurrentSession().catch(()=>null),
         isVpnConnected().catch(()=>false),
         getHistory(2000).catch(()=>[]),
@@ -34,8 +34,9 @@ export default function PrivacyScreen(){
         getVpnProvisioningState().catch(()=>({configured:false,source:'none' as const})),
         LocalAuthentication.hasHardwareAsync().catch(()=>false),
         getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
+        getProtectionStats().catch(()=>({ads_removed:0,popups_blocked:0,updated_at:0})),
       ]);
-      setLive({signedIn:Boolean(session),vpnConnected:Boolean(connected),vpnReady:Boolean(profile.configured),vpnSource:profile.source,history:history.length,bookmarks:bookmarks.length,biometric:Boolean(biometric)});
+      setLive({signedIn:Boolean(session),vpnConnected:Boolean(connected),vpnReady:Boolean(profile.configured),vpnSource:profile.source,history:history.length,bookmarks:bookmarks.length,biometric:Boolean(biometric),adsRemoved:protection.ads_removed,popupsBlocked:protection.popups_blocked});
       setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
     } finally {busy.current=false;setChecking(false);}
   },[]);
@@ -48,11 +49,12 @@ export default function PrivacyScreen(){
     setMsg(r.success?'تم التحقق بنجاح.':'فشل التحقق أو أُلغي.');
   };
   const clear=async()=>{await clearHistory();setLive(v=>({...v,history:0}));setMsg('تم مسح سجل التصفح المحلي.');};
+  const resetProtection=async()=>{await resetProtectionStats();setLive(v=>({...v,adsRemoved:0,popupsBlocked:0}));setMsg('تم تصفير عدادات الحماية المحلية.');};
   const source=live.vpnSource==='service'?'خادم RAID':live.vpnSource==='local'?'WireGuard محلي':live.vpnSource==='cache'?'ملف محفوظ':'غير مهيأ';
 
   const status=(label:string,value:string,ok:boolean,icon:'person-outline'|'shield-outline'|'key-outline'|'finger-print-outline')=><View style={[s.status,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={[s.statusIcon,{backgroundColor:theme.surface2}]}><Ionicons name={icon} size={20} color={ok?'#4DB47A':theme.accent}/></View><View style={s.statusCopy}><Text style={[s.statusLabel,{color:theme.muted}]}>{label}</Text><Text style={[s.statusValue,{color:ok?'#4DB47A':theme.text}]}>{value}</Text></View></View>;
 
-  const action=(label:string,sub:string,icon:'shield-outline'|'trash-outline'|'settings-outline'|'finger-print-outline',onPress:()=>void,danger=false)=><Pressable accessibilityRole="button" onPress={onPress} style={({pressed})=>[s.action,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.press]}><View style={[s.actionIcon,{backgroundColor:danger?'rgba(173,74,67,.16)':theme.surface2}]}><Ionicons name={icon} size={21} color={danger?'#C7746D':theme.accent}/></View><View style={s.actionCopy}><Text style={[s.actionTitle,{color:danger?'#D9948D':theme.text}]}>{label}</Text><Text style={[s.actionSub,{color:theme.muted}]}>{sub}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>;
+  const action=(label:string,sub:string,icon:'shield-outline'|'trash-outline'|'settings-outline'|'finger-print-outline'|'stats-chart-outline',onPress:()=>void,danger=false)=><Pressable accessibilityRole="button" onPress={onPress} style={({pressed})=>[s.action,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.press]}><View style={[s.actionIcon,{backgroundColor:danger?'rgba(173,74,67,.16)':theme.surface2}]}><Ionicons name={icon} size={21} color={danger?'#C7746D':theme.accent}/></View><View style={s.actionCopy}><Text style={[s.actionTitle,{color:danger?'#D9948D':theme.text}]}>{label}</Text><Text style={[s.actionSub,{color:theme.muted}]}>{sub}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>;
 
   return <LinearGradient colors={[...theme.gradient]} style={s.fill}><SafeAreaView edges={['top','bottom','left','right']} style={s.root}>
     <View style={[s.head,{borderBottomColor:theme.border}]}>
@@ -70,6 +72,11 @@ export default function PrivacyScreen(){
       </View>
 
       <View style={[s.summary,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+        <View style={s.summaryHead}><View><Text style={[s.summaryTitle,{color:theme.text}]}>RAID Shields</Text><Text style={[s.summarySub,{color:theme.muted}]}>أرقام فعلية من عناصر أزالها المحرك على هذا الجهاز</Text></View><Ionicons name="shield-checkmark-outline" size={22} color={theme.accent}/></View>
+        <View style={s.metrics}><View style={[s.metric,{backgroundColor:theme.surface2}]}><Text style={[s.metricValue,{color:theme.text}]}>{live.adsRemoved}</Text><Text style={[s.metricLabel,{color:theme.muted}]}>إعلان أُزيل</Text></View><View style={[s.metric,{backgroundColor:theme.surface2}]}><Text style={[s.metricValue,{color:theme.text}]}>{live.popupsBlocked}</Text><Text style={[s.metricLabel,{color:theme.muted}]}>نافذة تلقائية مُنعت</Text></View></View>
+      </View>
+
+      <View style={[s.summary,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={s.summaryHead}><View><Text style={[s.summaryTitle,{color:theme.text}]}>بيانات التصفح المحلية</Text><Text style={[s.summarySub,{color:theme.muted}]}>لا تشمل جلسات الوضع الخاص</Text></View><Ionicons name="lock-closed-outline" size={22} color={theme.accent}/></View>
         <View style={s.metrics}><View style={[s.metric,{backgroundColor:theme.surface2}]}><Text style={[s.metricValue,{color:theme.text}]}>{live.history}</Text><Text style={[s.metricLabel,{color:theme.muted}]}>صفحة في السجل</Text></View><View style={[s.metric,{backgroundColor:theme.surface2}]}><Text style={[s.metricValue,{color:theme.text}]}>{live.bookmarks}</Text><Text style={[s.metricLabel,{color:theme.muted}]}>عنصر مفضلة</Text></View></View>
       </View>
@@ -84,6 +91,7 @@ export default function PrivacyScreen(){
         {action('فتح RAID VPN',live.vpnConnected?'عرض حالة النفق الحالي':live.vpnReady?'الاتصال بملف WireGuard الجاهز':'إضافة أو استيراد إعداد WireGuard','shield-outline',()=>router.push('/vpn'))}
         {action('التحقق بالبصمة أو الوجه',live.biometric?'اختبار القفل الحيوي على هذا الجهاز':'الجهاز لا يعلن دعمًا حيويًا','finger-print-outline',()=>void auth())}
         {action('الإعدادات','إدارة المظهر والخصوصية وإعدادات المتصفح','settings-outline',()=>router.push('/settings'))}
+        {action('تصفير إحصاءات الحماية',live.adsRemoved||live.popupsBlocked?`حذف ${live.adsRemoved+live.popupsBlocked} حدث حماية محفوظ`:'العدادات المحلية صفر','stats-chart-outline',()=>void resetProtection())}
         {action('مسح سجل التصفح',live.history?`حذف ${live.history} سجلًا محليًا`:'السجل المحلي فارغ','trash-outline',()=>void clear(),true)}
       </View>
 

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, BackHandler, Keyboard, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import { addBookmark, addHistory, createBrowserTab, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
+import { addBookmark, addHistory, createBrowserTab, getHistory, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -13,6 +13,7 @@ import { isVpnConnected } from '@/lib/vpn';
 import { DEFAULT_SITE_PREFERENCES, getSitePreferences, resetSitePreferences, saveSitePreferences, type SitePreferences } from '@/lib/site-preferences';
 import { DEFAULT_PERFORMANCE_SETTINGS, deriveBrowserPerformancePolicy, getPerformanceSettings, type PerformanceSettings } from '@/lib/performance';
 import { routeBrowserDownload } from '@/features/downloads/browser-download';
+import { RAID_ADBLOCK_OFF_JS, RAID_COSMETIC_ADBLOCK_JS } from '@/lib/adblock';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 const RENDERER_RECOVERY_WINDOW_MS = 30_000;
@@ -247,6 +248,7 @@ export default function BrowserScreen() {
   const [loadedUrl, setLoadedUrl] = useState(startUrl);
   const [input, setInput] = useState(startUrl);
   const [addressFocused, setAddressFocused] = useState(false);
+  const [historySuggestions, setHistorySuggestions] = useState<Array<{id:number;url:string;title:string;visited_at:number}>>([]);
   const [title, setTitle] = useState('RAID Browser');
   const [canBack, setCanBack] = useState(false);
   const [canForward, setCanForward] = useState(false);
@@ -302,6 +304,13 @@ export default function BrowserScreen() {
       .catch(() => { if (alive) setSitePrefs({ ...DEFAULT_SITE_PREFERENCES }); });
     return () => { alive = false; };
   }, [loadedUrl]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      web.current?.injectJavaScript(sitePrefs.adBlock ? RAID_COSMETIC_ADBLOCK_JS : RAID_ADBLOCK_OFF_JS);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [loadedUrl, sitePrefs.adBlock, webKey]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -522,6 +531,13 @@ export default function BrowserScreen() {
 
   const onMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
+    if (raw.startsWith('RAID_PROTECTION:')) {
+      try {
+        const value = JSON.parse(raw.slice('RAID_PROTECTION:'.length));
+        void incrementProtectionStats(Number(value?.adsRemoved) || 0, Number(value?.popupsBlocked) || 0);
+      } catch {}
+      return;
+    }
     if (raw.startsWith('RAID_DOWNLOAD:')) {
       const candidate = raw.slice('RAID_DOWNLOAD:'.length).trim();
       if (/^https:\/\//i.test(candidate)) handleFileDownload(candidate);
@@ -614,8 +630,10 @@ export default function BrowserScreen() {
   const insecureHttp = loadedUrl.startsWith('http://');
   const host = hostOf(loadedUrl);
   const addressValue = addressFocused ? input : host;
+  const visibleSuggestions = addressFocused && !privateMode ? historySuggestions.filter((item) => { const value=input.trim().toLowerCase(); return !value || `${item.title} ${item.url}`.toLowerCase().includes(value); }).slice(0,5) : [];
+  const openHistorySuggestion = (item:{url:string}) => { Keyboard.dismiss(); setAddressFocused(false); setHistorySuggestions([]); setInput(item.url); setUrl(item.url); };
   const playerHtml = useMemo(() => mediaUrl ? mediaPlayerHtml(mediaUrl) : '', [mediaUrl]);
-  const hasCustomSitePrefs = sitePrefs.desktopMode || !sitePrefs.thirdPartyCookies || !sitePrefs.autoplayMedia;
+  const hasCustomSitePrefs = sitePrefs.desktopMode || !sitePrefs.thirdPartyCookies || !sitePrefs.autoplayMedia || !sitePrefs.adBlock;
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
@@ -627,7 +645,7 @@ export default function BrowserScreen() {
           </Pressable>
           <TextInput
             value={addressValue}
-            onFocus={() => { setAddressFocused(true); setInput(loadedUrl); }}
+            onFocus={() => { setAddressFocused(true); setInput(loadedUrl); if (!privateMode) void getHistory(24).then(setHistorySuggestions).catch(() => setHistorySuggestions([])); }}
             onBlur={() => setAddressFocused(false)}
             onChangeText={setInput}
             onSubmitEditing={go}
@@ -645,6 +663,14 @@ export default function BrowserScreen() {
         <Pressable onPress={() => router.push('/tabs')} style={styles.icon} accessibilityRole="button" accessibilityLabel="التبويبات"><Ionicons name="albums-outline" size={20} color="#CBD5E1" /></Pressable>
         <Pressable onPress={() => setMenuOpen(true)} style={styles.icon} accessibilityRole="button" accessibilityLabel="قائمة وإعدادات المتصفح"><Ionicons name="menu" size={22} color="#CBD5E1" /></Pressable>
       </View>
+
+      {visibleSuggestions.length>0 && <View style={styles.suggestionPanel}>
+        {visibleSuggestions.map((item,index)=><Pressable key={`${item.id}-${item.url}`} onPressIn={()=>openHistorySuggestion(item)} style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>
+          <Ionicons name="time-outline" size={17} color="#D5AA88"/>
+          <View style={styles.suggestionCopy}><Text numberOfLines={1} style={styles.suggestionTitle}>{item.title||hostOf(item.url)}</Text><Text numberOfLines={1} style={styles.suggestionUrl}>{item.url}</Text></View>
+          <Ionicons name="arrow-up-back-outline" size={16} color="#8E969F"/>
+        </Pressable>)}
+      </View>}
 
       {privateMode && <View style={styles.private}><Text style={styles.privateText}>وضع خاص • لا سجل • لا سياق للذكاء الاصطناعي</Text></View>}
       {!!rendererNotice && <View style={styles.rendererNotice} accessibilityRole="alert"><Text style={styles.rendererNoticeText}>{rendererNotice}</Text></View>}
@@ -761,6 +787,7 @@ export default function BrowserScreen() {
             <View style={styles.siteControls}>
               <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>عرض سطح المكتب</Text><Text style={styles.siteControlHint}>يتذكر RAID هذا الاختيار لهذا الموقع</Text></View><Switch value={sitePrefs.desktopMode} onValueChange={(value) => void updateSitePreference({ desktopMode: value }, true)} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
               <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>كوكيز الطرف الثالث</Text><Text style={styles.siteControlHint}>عطّلها لهذا الموقع لخصوصية أعلى</Text></View><Switch value={!privateMode && sitePrefs.thirdPartyCookies} disabled={privateMode} onValueChange={(value) => void updateSitePreference({ thirdPartyCookies: value }, true)} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
+              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>حجب الإعلانات والنوافذ التلقائية</Text><Text style={styles.siteControlHint}>يعمل فعليًا داخل هذا الموقع وتُسجّل النتائج محليًا</Text></View><Switch value={sitePrefs.adBlock} onValueChange={(value) => void updateSitePreference({ adBlock: value })} trackColor={{false:'#3B4247',true:'#4F8C78'}} thumbColor="#F4EEE8" /></View>
               <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>تشغيل الوسائط تلقائيًا</Text><Text style={styles.siteControlHint}>تحكم مستقل بكل موقع</Text></View><Switch value={sitePrefs.autoplayMedia} onValueChange={(value) => void updateSitePreference({ autoplayMedia: value })} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
             </View>
 
@@ -829,6 +856,7 @@ const styles = StyleSheet.create({
   top:{height:58,flexDirection:'row',alignItems:'center',paddingHorizontal:8,gap:6,backgroundColor:'#242725',borderBottomWidth:1,borderBottomColor:'#3D403D'},
   icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#303330'},
   omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#303330',flexDirection:'row',alignItems:'center',paddingHorizontal:9,borderWidth:1,borderColor:'#484B47'},securityButton:{width:28,height:38,alignItems:'center',justifyContent:'center'},input:{flex:1,color:'#F8F3EE',fontSize:14,paddingVertical:0,textAlign:'left'},siteBadge:{width:24,height:24,borderRadius:9,alignItems:'center',justifyContent:'center',backgroundColor:'#41443F'},
+  suggestionPanel:{backgroundColor:'#252927',borderBottomWidth:1,borderBottomColor:'#454A46',paddingHorizontal:10},suggestionRow:{minHeight:52,flexDirection:'row',alignItems:'center',gap:9,paddingHorizontal:8},suggestionDivider:{borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:'#454A46'},suggestionCopy:{flex:1},suggestionTitle:{color:'#F2EEE9',fontSize:12,fontWeight:'800',textAlign:'right'},suggestionUrl:{color:'#8E969F',fontSize:9,marginTop:3,textAlign:'right'},
   private:{paddingVertical:6,paddingHorizontal:12,backgroundColor:'#3A302E'},privateText:{color:'#E7C9B6',fontSize:11,textAlign:'center',fontWeight:'700'},rendererNotice:{paddingVertical:7,paddingHorizontal:12,backgroundColor:'#343735',borderBottomWidth:1,borderBottomColor:'#555A55'},rendererNoticeText:{color:'#E7DED5',fontSize:11,textAlign:'center',fontWeight:'800'},
   progressTrack:{height:3,backgroundColor:'#282B29',overflow:'hidden'},progress:{height:3,backgroundColor:'#D5AA88'},webWrap:{flex:1,backgroundColor:'#fff'},web:{flex:1},
   errorCard:{position:'absolute',left:20,right:20,top:26,padding:22,borderRadius:22,backgroundColor:'#2B2E2C',borderWidth:1,borderColor:'#4B4F4B',shadowColor:'#000',shadowOpacity:.22,shadowRadius:14,elevation:8},errorTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'center'},errorHost:{color:'#D5AA88',fontSize:12,fontWeight:'800',textAlign:'center',marginTop:6},errorText:{color:'#D9D2CB',fontSize:13,lineHeight:19,textAlign:'center',marginTop:10},errorActions:{flexDirection:'row-reverse',gap:10,marginTop:18},retryBtn:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#B88766'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#3B3E3B'},errorSecondaryText:{color:'#D9D2CB',fontWeight:'800'},

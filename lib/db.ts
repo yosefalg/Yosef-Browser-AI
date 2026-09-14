@@ -6,6 +6,7 @@ export type Workspace = { id:number; name:string; created_at:number };
 export type TabContext = { id:number; workspace_id:number|null; url:string; title:string; text:string; updated_at:number };
 export type BrowserTab = { id:number; url:string; title:string; private_mode:number; created_at:number; updated_at:number };
 export type ClosedBrowserTab = { id:number; url:string; title:string; closed_at:number };
+export type ProtectionStats = { ads_removed:number; popups_blocked:number; updated_at:number };
 
 const MAX_OPEN_TABS = 50;
 const MAX_RECENTLY_CLOSED = 30;
@@ -21,6 +22,8 @@ async function db() {
     CREATE INDEX IF NOT EXISTS idx_history_visited_at ON history(visited_at DESC);
     CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT,url TEXT NOT NULL UNIQUE,title TEXT,created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS protection_stats (id INTEGER PRIMARY KEY CHECK (id = 1),ads_removed INTEGER NOT NULL DEFAULT 0,popups_blocked INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL DEFAULT 0);
+    INSERT OR IGNORE INTO protection_stats (id,ads_removed,popups_blocked,updated_at) VALUES (1,0,0,0);
     CREATE TABLE IF NOT EXISTS page_context (id INTEGER PRIMARY KEY CHECK (id = 1),url TEXT NOT NULL,title TEXT,text TEXT NOT NULL,captured_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS browser_memory (id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,value TEXT NOT NULL,created_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_browser_memory_created_at ON browser_memory(created_at DESC);
@@ -64,6 +67,9 @@ export async function addBookmark(url:string,title?:string){const d=await db();a
 export async function removeBookmark(url:string){const d=await db();await d.runAsync('DELETE FROM bookmarks WHERE url=?',url);}
 export async function isBookmarked(url:string){const d=await db();return Boolean(await d.getFirstAsync('SELECT 1 FROM bookmarks WHERE url=? LIMIT 1',url));}
 export async function getBookmarks(){const d=await db();return d.getAllAsync<{id:number;url:string;title:string;created_at:number}>('SELECT * FROM bookmarks ORDER BY created_at DESC');}
+export async function getProtectionStats(){const d=await db();return (await d.getFirstAsync<ProtectionStats>('SELECT ads_removed,popups_blocked,updated_at FROM protection_stats WHERE id=1'))||{ads_removed:0,popups_blocked:0,updated_at:0};}
+export async function incrementProtectionStats(adsRemoved=0,popupsBlocked=0){const ads=Math.max(0,Math.min(10000,Math.floor(adsRemoved)));const popups=Math.max(0,Math.min(1000,Math.floor(popupsBlocked)));if(!ads&&!popups)return;const d=await db();await d.runAsync('UPDATE protection_stats SET ads_removed=ads_removed+?,popups_blocked=popups_blocked+?,updated_at=? WHERE id=1',ads,popups,Date.now());}
+export async function resetProtectionStats(){const d=await db();await d.runAsync('UPDATE protection_stats SET ads_removed=0,popups_blocked=0,updated_at=? WHERE id=1',Date.now());}
 export async function setSetting(key:string,value:unknown){const d=await db();await d.runAsync('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)',key,JSON.stringify(value));}
 export async function getSetting<T>(key:string,fallback:T):Promise<T>{try{const d=await db();const row=await d.getFirstAsync<{value:string}>('SELECT value FROM settings WHERE key=?',key);return row?JSON.parse(row.value) as T:fallback;}catch{return fallback;}}
 export async function setPageContext(url:string,title:string,text:string){const cleanText=text.slice(0,16000);const now=Date.now();const d=await db();await d.runAsync('INSERT OR REPLACE INTO page_context (id,url,title,text,captured_at) VALUES (1,?,?,?,?)',url,title,cleanText,now);await upsertTabContext(url,title,cleanText,null);}

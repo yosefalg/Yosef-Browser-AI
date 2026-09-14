@@ -26,30 +26,66 @@ export const RAID_COSMETIC_ADBLOCK_JS = `(() => {
   try {
     if (window.__raidAdBlockInstalled) return true;
     window.__raidAdBlockInstalled = true;
+    const report = (adsRemoved, popupsBlocked) => {
+      if (!adsRemoved && !popupsBlocked) return;
+      window.ReactNativeWebView?.postMessage('RAID_PROTECTION:' + JSON.stringify({ adsRemoved, popupsBlocked }));
+    };
     const selectors = [
       '[id^="google_ads_"]','[id*="google_ads"]','[class*="google-ad"]',
       '[class*="adsbygoogle"]','ins.adsbygoogle','iframe[src*="doubleclick.net"]',
       'iframe[src*="googlesyndication.com"]','iframe[src*="adservice.google"]',
       '[data-ad-slot]','[data-ad-client]','[aria-label="Advertisement"]',
-      '.ad-banner','.ad-container','.advertisement','.popup-ad','.popunder'
+      '[aria-label="إعلان"]','.ad-banner','.ad-container','.advertisement','.popup-ad','.popunder'
     ];
     const clean = () => {
+      const removed = new Set();
       selectors.forEach((selector) => {
-        try { document.querySelectorAll(selector).forEach((node) => node.remove()); } catch {}
+        try {
+          document.querySelectorAll(selector).forEach((node) => {
+            if (!removed.has(node) && node.isConnected) {
+              removed.add(node);
+              node.remove();
+            }
+          });
+        } catch {}
       });
+      report(removed.size, 0);
     };
     clean();
     let timer = 0;
-    const observer = new MutationObserver(() => {
+    window.__raidAdBlockObserver = new MutationObserver(() => {
       clearTimeout(timer);
       timer = setTimeout(clean, 120);
     });
-    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+    window.__raidAdBlockObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
+
+    window.__raidLastGesture = 0;
+    const markGesture = () => { window.__raidLastGesture = Date.now(); };
+    document.addEventListener('pointerdown', markGesture, true);
+    document.addEventListener('keydown', markGesture, true);
+    if (typeof window.open === 'function' && !window.__raidOriginalOpen) {
+      window.__raidOriginalOpen = window.open;
+      window.open = function(url, ...args) {
+        if (Date.now() - (window.__raidLastGesture || 0) > 1200) {
+          report(0, 1);
+          return null;
+        }
+        return window.__raidOriginalOpen.call(this, url, ...args);
+      };
+    }
   } catch {}
   true;
 })();`;
 
 export const RAID_ADBLOCK_OFF_JS = `(() => {
-  try { window.__raidAdBlockInstalled = false; } catch {}
+  try {
+    window.__raidAdBlockObserver?.disconnect();
+    window.__raidAdBlockObserver = null;
+    if (window.__raidOriginalOpen) {
+      window.open = window.__raidOriginalOpen;
+      window.__raidOriginalOpen = null;
+    }
+    window.__raidAdBlockInstalled = false;
+  } catch {}
   true;
 })();`;

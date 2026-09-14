@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SiteIcon } from '@/components/SiteIcon';
@@ -6,6 +7,21 @@ import type { ThemePalette } from '@/lib/theme';
 import type { TabViewMode } from '@/components/TabViewControls';
 
 const STALE_TAB_MS = 7 * 24 * 60 * 60 * 1000;
+
+type TabCardProps = {
+  tab: BrowserTab;
+  viewMode: TabViewMode;
+  theme: ThemePalette;
+  busy: boolean;
+  selected: boolean;
+  selectionMode: boolean;
+  recent: boolean;
+  onOpen: () => void;
+  onDuplicate: () => void;
+  onClose: () => void;
+  onMenu: () => void;
+  onLongPress: () => void;
+};
 
 function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return value;}}
 function pathOf(value:string){
@@ -19,7 +35,7 @@ function pathOf(value:string){
 function isSecure(value:string){return /^https:\/\//i.test(value);}
 function ago(ts:number){const diff=Math.max(0,Date.now()-ts);const min=Math.floor(diff/60000);if(min<1)return 'الآن';if(min<60)return `منذ ${min} د`;const hr=Math.floor(min/60);if(hr<24)return `منذ ${hr} س`;return `منذ ${Math.floor(hr/24)} ي`;}
 
-export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,onOpen,onDuplicate,onClose,onMenu,onLongPress}:{tab:BrowserTab;viewMode:TabViewMode;theme:ThemePalette;busy:boolean;selected:boolean;selectionMode:boolean;recent:boolean;onOpen:()=>void;onDuplicate:()=>void;onClose:()=>void;onMenu:()=>void;onLongPress:()=>void}){
+function TabCardView({tab,viewMode,theme,busy,selected,selectionMode,recent,onOpen,onDuplicate,onClose,onMenu,onLongPress}:TabCardProps){
   const {width}=useWindowDimensions();
   const grid=viewMode==='grid';
   const secure=isSecure(tab.url);
@@ -75,6 +91,19 @@ export function TabCard({tab,viewMode,theme,busy,selected,selectionMode,recent,o
     </>}
   </Pressable>;
 }
+
+export const TabCard = memo(TabCardView, (previous, next) => (
+  previous.tab.id === next.tab.id &&
+  previous.tab.url === next.tab.url &&
+  previous.tab.title === next.tab.title &&
+  previous.tab.updated_at === next.tab.updated_at &&
+  previous.viewMode === next.viewMode &&
+  previous.theme === next.theme &&
+  previous.busy === next.busy &&
+  previous.selected === next.selected &&
+  previous.selectionMode === next.selectionMode &&
+  previous.recent === next.recent
+));
 
 const s=StyleSheet.create({
   grid:{minHeight:198,borderRadius:24,borderWidth:1,padding:13,gap:10,position:'relative',overflow:'hidden'},

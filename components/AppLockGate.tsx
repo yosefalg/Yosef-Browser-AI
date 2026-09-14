@@ -2,7 +2,7 @@ import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'rea
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Ionicons } from '@expo/vector-icons';
-import { getAppLockSettings, subscribeAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
+import { getAppLockSettings, subscribeAppLockNow, subscribeAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
 
 export function AppLockGate({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
@@ -87,12 +87,19 @@ export function AppLockGate({ children }: PropsWithChildren) {
         setMessage('');
         return;
       }
-      if (!previous?.enabled) {
-        // Enabling the lock already requires Android authentication in settings,
-        // so keep the current session open but enforce the new policy immediately
-        // on the next background transition.
-        backgroundAt.current = null;
-      }
+      if (!previous?.enabled) backgroundAt.current = null;
+    });
+    return () => { unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAppLockNow(() => {
+      if (!settingsRef.current?.enabled) return;
+      backgroundAt.current = null;
+      authenticating.current = false;
+      setMessage('');
+      setLocked(true);
+      setPrivacyShield(true);
     });
     return () => { unsubscribe(); };
   }, []);
@@ -117,7 +124,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
         const leftAt = backgroundAt.current;
         backgroundAt.current = null;
         if (!latest.lockOnBackground || leftAt == null) {
-          setPrivacyShield(false);
+          if (!locked) setPrivacyShield(false);
           return;
         }
         if (Date.now() - leftAt >= latest.gracePeriodMs) {
@@ -126,7 +133,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
           void authenticate();
           return;
         }
-        setPrivacyShield(false);
+        if (!locked) setPrivacyShield(false);
       }).catch(() => {
         if (settings?.enabled) {
           setLocked(true);
@@ -135,7 +142,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
       });
     });
     return () => subscription.remove();
-  }, [authenticate]);
+  }, [authenticate, locked]);
 
   if (!ready) {
     return <View style={styles.loading}><ActivityIndicator size="large" color="#D5AA88" /><Text style={styles.loadingText}>RAID Browser</Text></View>;

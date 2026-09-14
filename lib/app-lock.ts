@@ -17,6 +17,7 @@ export const DEFAULT_APP_LOCK_SETTINGS: AppLockSettings = {
 const KEY = 'raid_app_lock_v1';
 const SECURE_KEY = 'raid_app_lock_secure_v2';
 const listeners = new Set<(settings: AppLockSettings) => void>();
+const lockNowListeners = new Set<() => void>();
 
 export function sanitizeAppLockSettings(value: Partial<AppLockSettings> | null | undefined): AppLockSettings {
   const gracePeriodMs = APP_LOCK_GRACE_OPTIONS.includes(value?.gracePeriodMs as (typeof APP_LOCK_GRACE_OPTIONS)[number])
@@ -48,6 +49,17 @@ function publishAppLockSettings(settings: AppLockSettings) {
 export function subscribeAppLockSettings(listener: (settings: AppLockSettings) => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+export function subscribeAppLockNow(listener: () => void) {
+  lockNowListeners.add(listener);
+  return () => lockNowListeners.delete(listener);
+}
+
+export function requestAppLockNow() {
+  for (const listener of lockNowListeners) {
+    try { listener(); } catch {}
+  }
 }
 
 export async function getAppLockSettings() {

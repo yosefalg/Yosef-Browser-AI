@@ -11,10 +11,25 @@ export const PAGE_CONTEXT_JS = `
 (() => {
   try {
     const root = document.querySelector('main, article, [role="main"]') || document.body;
-    const text = (root?.innerText || document.body?.innerText || '')
-      .replace(/\\s+/g, ' ')
-      .trim()
-      .slice(0, 16000);
+    if (!root) return true;
+
+    // Avoid innerText here: it can force style/layout work on large dynamic pages.
+    // Walk text nodes directly and stop as soon as RAID has enough AI context.
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    let total = 0;
+    let node;
+    while (total < 18000 && (node = walker.nextNode())) {
+      const parent = node.parentElement;
+      if (!parent || /^(SCRIPT|STYLE|NOSCRIPT|SVG|CANVAS)$/i.test(parent.tagName)) continue;
+      const value = String(node.nodeValue || '').replace(/\\s+/g, ' ').trim();
+      if (!value) continue;
+      parts.push(value);
+      total += value.length + 1;
+    }
+    const text = parts.join(' ').slice(0, 16000);
+    if (!text) return true;
+
     window.ReactNativeWebView?.postMessage(JSON.stringify({
       type: 'RAID_PAGE_CONTEXT',
       url: location.href,

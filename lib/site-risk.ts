@@ -11,9 +11,22 @@ const SENSITIVE_PATH_RE = /\b(?:login|signin|sign-in|account|verify|verification
 const SUSPICIOUS_TOKEN_RE = /(?:secure|verify|verification|support|update|account|wallet|bank|payment|bonus|gift|free|login)/gi;
 const BRAND_LOOKALIKE_RE = /(?:paypa[l1]|faceb[o0]{2}k|g[o0]{2}gle|micr[o0]soft|ap[p1]le|amaz[o0]n|instagr[a4]m|whats[a4]pp)/i;
 const DECEPTIVE_FORMAT_CHARS = /[\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/;
+const OFFICIAL_BRAND_ROOTS = [
+  'google.com',
+  'microsoft.com',
+  'apple.com',
+  'amazon.com',
+  'facebook.com',
+  'instagram.com',
+  'whatsapp.com',
+  'paypal.com',
+] as const;
 
 function isIpHost(host: string) {
-  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.startsWith('[');
+  if (host.startsWith('[') && host.endsWith(']')) return true;
+  const parts = host.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every(part => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
 }
 
 function hasPunycode(host: string) {
@@ -29,6 +42,14 @@ function subdomainDepth(host: string) {
   return Math.max(0, host.split('.').filter(Boolean).length - 2);
 }
 
+function isOfficialBrandHost(host: string) {
+  return OFFICIAL_BRAND_ROOTS.some(root => host === root || host.endsWith(`.${root}`));
+}
+
+function isSupportedWebProtocol(protocol: string) {
+  return protocol === 'https:' || protocol === 'http:';
+}
+
 export function assessSiteRisk(value: string): SiteRiskAssessment {
   try {
     if (DECEPTIVE_FORMAT_CHARS.test(value)) {
@@ -39,6 +60,11 @@ export function assessSiteRisk(value: string): SiteRiskAssessment {
     const host = url.hostname.toLowerCase().replace(/^www\./, '');
     const reasons: string[] = [];
     let score = 0;
+
+    if (!isSupportedWebProtocol(url.protocol)) {
+      return { level: 'danger', score: 8, reasons: ['الرابط لا يستخدم بروتوكول ويب مدعومًا للفحص'], host };
+    }
+
     const sensitive = SENSITIVE_PATH_RE.test(url.pathname + url.search);
 
     if (url.protocol === 'http:') {
@@ -62,7 +88,7 @@ export function assessSiteRisk(value: string): SiteRiskAssessment {
       reasons.push('الموقع يستخدم عنوان IP بدل اسم نطاق عادي');
     }
 
-    if (BRAND_LOOKALIKE_RE.test(host) && !/^(?:google\.com|microsoft\.com|apple\.com|amazon\.com|facebook\.com|instagram\.com|whatsapp\.com|paypal\.com)$/.test(host)) {
+    if (BRAND_LOOKALIKE_RE.test(host) && !isOfficialBrandHost(host)) {
       score += 4;
       reasons.push('اسم النطاق يشبه اسم خدمة معروفة بطريقة غير معتادة');
     }

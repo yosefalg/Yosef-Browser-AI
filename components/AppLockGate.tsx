@@ -2,7 +2,7 @@ import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'rea
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Ionicons } from '@expo/vector-icons';
-import { getAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
+import { getAppLockSettings, subscribeAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
 
 export function AppLockGate({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
@@ -75,6 +75,24 @@ export function AppLockGate({ children }: PropsWithChildren) {
       });
     return () => { alive = false; };
   }, [authenticate]);
+
+  useEffect(() => subscribeAppLockSettings((latest) => {
+    const previous = settingsRef.current;
+    settingsRef.current = latest;
+    if (!latest.enabled) {
+      backgroundAt.current = null;
+      setLocked(false);
+      setPrivacyShield(false);
+      setMessage('');
+      return;
+    }
+    if (!previous?.enabled) {
+      // Enabling the lock already requires Android authentication in settings,
+      // so keep the current session open but enforce the new policy immediately
+      // on the next background transition.
+      backgroundAt.current = null;
+    }
+  }), []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {

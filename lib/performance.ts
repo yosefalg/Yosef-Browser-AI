@@ -61,6 +61,7 @@ const LOW_DATA_FRIENDLY_HOSTS = [
   'lite.cnn.com', 'text.npr.org', 'mbasic.facebook.com',
 ];
 const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
+const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
 const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|assets?|files?|attachments?|packages?|artifacts?|dist|builds?)(?:\/|$)/i;
 const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|reels?|episodes?|movies?)(?:\/|$)/i;
 const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp)(?:\/|$)/i;
@@ -108,17 +109,31 @@ function queryHasAny(params: URLSearchParams, keys: readonly string[]) {
 function looksLikeReadingVariant(parsed: URL) {
   const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname.toLowerCase();
-  return host.startsWith('m.') || host.startsWith('mobile.') || path.startsWith('/amp/') || path.endsWith('/amp') || parsed.searchParams.get('output') === '1';
+  const output = parsed.searchParams.get('output')?.toLowerCase();
+  const format = parsed.searchParams.get('format')?.toLowerCase();
+  return host.startsWith('m.')
+    || host.startsWith('mobile.')
+    || path.startsWith('/amp/')
+    || path.endsWith('/amp')
+    || output === '1'
+    || output === 'amp'
+    || format === 'amp';
 }
 
 function looksLikeLowDataVariant(parsed: URL) {
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
   const path = parsed.pathname.toLowerCase();
+  const mode = parsed.searchParams.get('mode')?.toLowerCase();
+  const view = parsed.searchParams.get('view')?.toLowerCase();
   return hostMatches(host, LOW_DATA_FRIENDLY_HOSTS)
     || path.startsWith('/lite/')
     || path.includes('/low-data/')
+    || path.includes('/basic/')
     || queryHasAny(parsed.searchParams, LOW_DATA_QUERY_KEYS)
-    || parsed.searchParams.get('mode')?.toLowerCase() === 'lite';
+    || mode === 'lite'
+    || mode === 'basic'
+    || view === 'lite'
+    || view === 'basic';
 }
 
 export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
@@ -129,6 +144,7 @@ export function inferBrowsingProfileForUrl(url: string): BrowsingProfile {
     const query = parsed.searchParams;
 
     if (looksLikeLowDataVariant(parsed)) return 'low-data';
+    if (VIDEO_EXT_RE.test(path)) return 'video';
     if (DOWNLOAD_EXT_RE.test(path) || DOWNLOAD_PATH_RE.test(parsed.pathname) || queryHasAny(query, DOWNLOAD_QUERY_KEYS)) return 'downloads';
     if (isGithubReleaseAsset(host, parsed.pathname) || hostMatches(host, DOWNLOAD_HOSTS)) return 'downloads';
     if (hostMatches(host, VIDEO_HOSTS) || VIDEO_PATH_RE.test(parsed.pathname) || queryHasAny(query, VIDEO_QUERY_KEYS)) return 'video';

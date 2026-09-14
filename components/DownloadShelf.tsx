@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,6 +37,8 @@ function isActive(item: DownloadItem) {
 
 export function DownloadShelf({ visible }: { visible: boolean }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const compact = width < 370;
   const [items, setItems] = useState<DownloadItem[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -54,27 +56,38 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     return unsubscribe;
   }, [refresh]);
 
+  const activeItems = useMemo(() => items.filter(isActive), [items]);
   const item = useMemo(() => chooseActive(items), [items]);
-  const activeCount = useMemo(() => items.filter(isActive).length, [items]);
+  const activeCount = activeItems.length;
   const aggregateSpeed = useMemo(
-    () => items.filter((value) => value.state === 'downloading').reduce((sum, value) => sum + (value.speed_bps || 0), 0),
-    [items],
+    () => activeItems.filter((value) => value.state === 'downloading').reduce((sum, value) => sum + (value.speed_bps || 0), 0),
+    [activeItems],
   );
+  const aggregateProgress = useMemo(() => {
+    const measurable = activeItems.filter((value) => (value.total_bytes || 0) > 0);
+    if (!measurable.length) return null;
+    const total = measurable.reduce((sum, value) => sum + (value.total_bytes || 0), 0);
+    if (total <= 0) return null;
+    const written = measurable.reduce((sum, value) => sum + Math.min(value.written_bytes || 0, value.total_bytes || 0), 0);
+    return Math.max(0, Math.min(1, written / total));
+  }, [activeItems]);
 
   if (!visible || !item) return null;
 
-  const progress = item.total_bytes && item.total_bytes > 0
+  const itemProgress = item.total_bytes && item.total_bytes > 0
     ? Math.max(0, Math.min(1, item.progress || 0))
     : null;
+  const displayProgress = activeCount > 1 ? aggregateProgress : itemProgress;
   const speed = item.state === 'downloading' ? bytes(item.speed_bps) : '';
   const remaining = item.state === 'downloading' ? eta(item.eta_seconds) : '';
-  const status = item.state === 'paused'
+  const itemStatus = item.state === 'paused'
     ? 'متوقف مؤقتًا'
     : item.state === 'queued'
       ? 'بانتظار البدء'
       : `${speed ? `${speed}/ث` : 'جاري التنزيل'}${remaining ? ` • ${remaining} متبقٍ` : ''}`;
-  const extra = activeCount > 1 ? ` • +${activeCount - 1} تنزيل` : '';
-  const totalSpeed = activeCount > 1 && aggregateSpeed > 0 ? ` • الكلي ${bytes(aggregateSpeed)}/ث` : '';
+  const status = activeCount > 1
+    ? `${activeCount} تنزيلات نشطة${aggregateSpeed > 0 ? ` • ${bytes(aggregateSpeed)}/ث` : ''}`
+    : itemStatus;
 
   const togglePause = async () => {
     if (busy || item.state === 'queued') return;
@@ -91,25 +104,28 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
   };
 
   const canControl = item.state === 'downloading' || item.state === 'paused';
+  const percentText = displayProgress === null ? '•••' : `${Math.round(displayProgress * 100)}%`;
 
   return (
     <Pressable
       onPress={() => router.push('/downloads')}
       accessibilityRole="button"
-      accessibilityLabel={`تنزيل ${item.file_name}. ${status}`}
-      style={({ pressed }) => [styles.shell, { bottom: insets.bottom + 72 }, pressed && styles.pressed]}
+      accessibilityLabel={`${activeCount > 1 ? `${activeCount} تنزيلات نشطة` : `تنزيل ${item.file_name}`}. ${status}`}
+      style={({ pressed }) => [styles.shell, compact && styles.shellCompact, { bottom: insets.bottom + 72 }, pressed && styles.pressed]}
     >
-      <View style={styles.iconWrap}>
-        <Ionicons name={item.state === 'paused' ? 'pause' : 'arrow-down'} size={18} color="#F8FAFC" />
-      </View>
+      {!compact && (
+        <View style={styles.iconWrap}>
+          <Ionicons name={item.state === 'paused' ? 'pause' : 'arrow-down'} size={18} color="#F8FAFC" />
+        </View>
+      )}
       <View style={styles.copy}>
         <View style={styles.nameRow}>
           <Text numberOfLines={1} style={styles.name}>{item.file_name}</Text>
           {activeCount > 1 && <View style={styles.countBadge}><Text style={styles.countText}>{activeCount}</Text></View>}
         </View>
-        <Text numberOfLines={1} style={styles.meta}>{status}{extra}{totalSpeed}</Text>
+        <Text numberOfLines={1} style={styles.meta}>{status}</Text>
         <View style={styles.track}>
-          <View style={[styles.fill, progress === null ? styles.indeterminate : { width: `${Math.max(3, Math.round(progress * 100))}%` }]} />
+          <View style={[styles.fill, displayProgress === null ? styles.indeterminate : { width: `${Math.max(3, Math.round(displayProgress * 100))}%` }]} />
         </View>
       </View>
       {canControl && (
@@ -119,14 +135,14 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           accessibilityRole="button"
           accessibilityLabel={item.state === 'paused' ? 'استكمال التنزيل' : 'إيقاف التنزيل مؤقتًا'}
           onPress={(event) => { event.stopPropagation(); void togglePause(); }}
-          style={({ pressed }) => [styles.control, busy && styles.disabled, pressed && styles.controlPressed]}
+          style={({ pressed }) => [styles.control, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
         >
           <Ionicons name={item.state === 'paused' ? 'play' : 'pause'} size={16} color="#F8FAFC" />
         </Pressable>
       )}
       <View style={styles.trailing}>
-        <Text style={styles.percent}>{progress === null ? '•••' : `${Math.round(progress * 100)}%`}</Text>
-        <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+        <Text style={styles.percent}>{percentText}</Text>
+        {!compact && <Ionicons name="chevron-forward" size={16} color="#94A3B8" />}
       </View>
     </Pressable>
   );
@@ -152,6 +168,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  shellCompact: { left: 8, right: 8, minHeight: 60, paddingHorizontal: 9, gap: 7 },
   pressed: { opacity: 0.96 },
   iconWrap: {
     width: 38,
@@ -171,8 +188,9 @@ const styles = StyleSheet.create({
   fill: { height: 3, borderRadius: 999, backgroundColor: '#D5AA88' },
   indeterminate: { width: '24%' },
   control: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#283548', borderWidth: 1, borderColor: 'rgba(148,163,184,.22)' },
+  controlCompact: { width: 32, height: 32 },
   controlPressed: { transform: [{ scale: 0.96 }] },
   disabled: { opacity: 0.45 },
-  trailing: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2 },
+  trailing: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2, minWidth: 34 },
   percent: { color: '#E2E8F0', fontSize: 10, fontWeight: '900' },
 });

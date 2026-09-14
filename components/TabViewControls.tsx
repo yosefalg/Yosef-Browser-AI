@@ -15,8 +15,8 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
   theme: ThemePalette;
 }) {
   const { width } = useWindowDimensions();
-  const compact = width < 430;
-  const veryCompact = width < 360;
+  const compact = width < 380;
+  const veryCompact = width < 340;
   const sortItems: SortItem[] = [
     { key: 'recent', label: 'الأحدث', icon: 'time-outline' },
     { key: 'oldest', label: 'الأقدم', icon: 'hourglass-outline' },
@@ -82,9 +82,9 @@ const s=StyleSheet.create({
   sortScrollerCompact:{flexGrow:0},
   sortRow:{flexDirection:'row-reverse',gap:7,paddingVertical:1,paddingHorizontal:1},
   sortRowCompact:{paddingEnd:2},
-  chip:{height:36,minWidth:78,paddingHorizontal:10,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:5},
-  chipCompact:{minWidth:76},
-  chipVeryCompact:{minWidth:70,paddingHorizontal:8},
+  chip:{height:36,minWidth:74,paddingHorizontal:9,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:5},
+  chipCompact:{minWidth:72},
+  chipVeryCompact:{minWidth:66,paddingHorizontal:7},
   chipText:{fontSize:10,fontWeight:'900'},
   modeRow:{minHeight:38,flexDirection:'row-reverse',alignItems:'center',gap:7,borderRadius:13,padding:3,borderWidth:1,flexShrink:0},
   modeRowCompact:{alignSelf:'stretch',justifyContent:'space-between',paddingStart:10},

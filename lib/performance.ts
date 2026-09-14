@@ -59,7 +59,8 @@ const DOWNLOAD_HOSTS = [
   'drive.usercontent.google.com', 'storage.googleapis.com', 'download.mozilla.org',
 ];
 const LOW_DATA_FRIENDLY_HOSTS = [
-  'lite.cnn.com', 'text.npr.org', 'mbasic.facebook.com',
+  'lite.cnn.com', 'text.npr.org', 'mbasic.facebook.com', 'm.facebook.com',
+  'mobile.twitter.com', 'nitter.net',
 ];
 const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|iso|tar|gz|tgz|deb|rpm|exe|msi)(?:$|[?#])/i;
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
@@ -68,7 +69,7 @@ const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|r
 const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp|reader)(?:\/|$)/i;
 const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'file', 'artifact', 'asset', 'export'];
 const VIDEO_QUERY_KEYS = ['video', 'stream', 'watch', 'play', 'episode'];
-const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic', 'save-data', 'datasaver'];
+const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic', 'save-data', 'datasaver', 'data-saver'];
 
 export function isBrowsingProfile(value: unknown): value is BrowsingProfile {
   return value === 'balanced' || value === 'boost' || value === 'video' || value === 'reading' || value === 'downloads' || value === 'low-data';
@@ -144,6 +145,7 @@ function looksLikeLowDataVariant(parsed: URL) {
   const mode = normalizedParam(parsed.searchParams.get('mode'));
   const view = normalizedParam(parsed.searchParams.get('view'));
   const data = normalizedParam(parsed.searchParams.get('data'));
+  const quality = normalizedParam(parsed.searchParams.get('quality'));
   return hostMatches(host, LOW_DATA_FRIENDLY_HOSTS)
     || path.startsWith('/lite/')
     || path.includes('/low-data/')
@@ -156,7 +158,9 @@ function looksLikeLowDataVariant(parsed: URL) {
     || view === 'basic'
     || view === 'low-data'
     || data === 'low'
-    || data === 'save';
+    || data === 'save'
+    || quality === 'low'
+    || quality === 'lite';
 }
 
 function isCloudDownloadUrl(host: string, parsed: URL) {
@@ -197,25 +201,24 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
 }
 
 function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
-  if (!aggressiveRetry) return [2600] as const;
+  if (!aggressiveRetry) return [3200] as const;
 
-  // Conservative staggered backoff is deliberate for mobile Iraqi routes (including
-  // congested/variable last-mile links). RAID retries quickly enough to recover from
-  // short packet loss, but avoids a burst of overlapping reloads that can make a weak
-  // connection worse. This optimizes app behavior only; it never changes ISP bandwidth.
+  // Staggered backoff is tuned for variable mobile/fixed-wireless last-mile links common
+  // in Iraq, including congested Earthlink-style routes. It reduces duplicate request
+  // bursts and lets the active page recover without pretending to increase ISP bandwidth.
   switch (profile) {
     case 'boost':
-      return [650, 1800, 4400] as const;
+      return [750, 2200, 5600] as const;
     case 'video':
-      return [1100, 3100, 7600] as const;
+      return [1350, 3900, 9800] as const;
     case 'downloads':
-      return [1400, 3900, 9800] as const;
+      return [1700, 4800, 12000] as const;
     case 'low-data':
-      return [1800, 5200, 12800] as const;
+      return [2200, 6500, 16000] as const;
     case 'reading':
-      return [850, 2500, 6200] as const;
+      return [1000, 3100, 7600] as const;
     default:
-      return [800, 2300, 5800] as const;
+      return [950, 2800, 6800] as const;
   }
 }
 
@@ -230,7 +233,7 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
       preferCache: true,
       deferNonCriticalWork: false,
       lowBandwidthImages: false,
-      retryDelaysMs: [1800],
+      retryDelaysMs: [2200],
       visualDensity: 'full',
       mediaBias: 'normal',
       lightweightNavigation: false,

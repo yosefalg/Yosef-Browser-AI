@@ -66,8 +66,9 @@ function progressHandler(id: number) {
     const elapsed = previous ? Math.max(0.05, (now - previous.at) / 1000) : 0;
     const instant = previous && written >= previous.written ? (written - previous.written) / elapsed : 0;
     const smoothed = instant > 0 ? (previous?.speed ? previous.speed * 0.65 + instant * 0.35 : instant) : (previous?.speed || 0);
-    // Speed/ETA are only meaningful when the server provides a real total size.
-    const speed = total > 0 ? smoothed : 0;
+    // Throughput is real even when a chunked response does not expose Content-Length.
+    // ETA/progress still stay unknown until the server provides a trustworthy total.
+    const speed = smoothed;
     const eta = total > written && speed > 1 ? Math.ceil((total - written) / speed) : null;
     const shouldPersist = !previous || now - previous.persistedAt >= 500 || (total > 0 && written >= total);
 

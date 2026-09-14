@@ -15,8 +15,8 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
   theme: ThemePalette;
 }) {
   const { width } = useWindowDimensions();
-  const compact = width < 380;
-  const veryCompact = width < 340;
+  const compact = width < 520;
+  const veryCompact = width < 390;
   const sortItems: SortItem[] = [
     { key: 'recent', label: 'الأحدث', icon: 'time-outline' },
     { key: 'oldest', label: 'الأقدم', icon: 'hourglass-outline' },
@@ -54,7 +54,10 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
       })}
     </ScrollView>
     <View style={[s.modeRow,{backgroundColor:theme.surface,borderColor:theme.border},compact&&s.modeRowCompact]}>
-      <Text style={[s.modeLabel,{color:theme.muted}]}>العرض</Text>
+      <View style={s.modeCopy}>
+        <Text style={[s.modeLabel,{color:theme.muted}]}>طريقة العرض</Text>
+        {compact&&<Text style={[s.modeHint,{color:theme.muted}]}>اختر الشكل الأنسب لحجم الشاشة</Text>}
+      </View>
       <View style={s.modeButtons}>
         <Pressable
           onPress={() => onViewMode('grid')}
@@ -82,14 +85,16 @@ const s=StyleSheet.create({
   sortScrollerCompact:{flexGrow:0},
   sortRow:{flexDirection:'row-reverse',gap:7,paddingVertical:1,paddingHorizontal:1},
   sortRowCompact:{paddingEnd:2},
-  chip:{height:36,minWidth:74,paddingHorizontal:9,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:5},
-  chipCompact:{minWidth:72},
-  chipVeryCompact:{minWidth:66,paddingHorizontal:7},
+  chip:{height:38,minWidth:76,paddingHorizontal:10,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:5},
+  chipCompact:{minWidth:74},
+  chipVeryCompact:{minWidth:68,paddingHorizontal:8},
   chipText:{fontSize:10,fontWeight:'900'},
-  modeRow:{minHeight:38,flexDirection:'row-reverse',alignItems:'center',gap:7,borderRadius:13,padding:3,borderWidth:1,flexShrink:0},
-  modeRowCompact:{alignSelf:'stretch',justifyContent:'space-between',paddingStart:10},
-  modeLabel:{fontSize:9,fontWeight:'800',paddingHorizontal:4},
-  modeButtons:{flexDirection:'row',gap:2},
-  mode:{width:37,height:30,borderRadius:10,alignItems:'center',justifyContent:'center'},
+  modeRow:{minHeight:40,flexDirection:'row-reverse',alignItems:'center',gap:7,borderRadius:14,padding:4,borderWidth:1,flexShrink:0},
+  modeRowCompact:{alignSelf:'stretch',justifyContent:'space-between',paddingHorizontal:10,paddingVertical:6},
+  modeCopy:{flex:1,alignItems:'flex-end'},
+  modeLabel:{fontSize:9,fontWeight:'900'},
+  modeHint:{fontSize:8,marginTop:2},
+  modeButtons:{flexDirection:'row',gap:3},
+  mode:{width:40,height:32,borderRadius:10,alignItems:'center',justifyContent:'center'},
   press:{opacity:.82,transform:[{scale:.97}]}
 });

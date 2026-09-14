@@ -43,20 +43,23 @@ const KEY = 'raid_performance_settings_v1';
 const VIDEO_HOSTS = [
   'youtube.com', 'youtu.be', 'twitch.tv', 'vimeo.com', 'dailymotion.com',
   'shahid.net', 'tiktok.com', 'kick.com', 'rumble.com', 'odysee.com',
-  'watch.plex.tv', 'crunchyroll.com',
+  'watch.plex.tv', 'crunchyroll.com', 'streamable.com', 'video.google.com',
 ];
 const READING_HOSTS = [
   'wikipedia.org', 'wikimedia.org', 'developer.mozilla.org', 'medium.com',
   'substack.com', 'arxiv.org', 'github.com', 'stackoverflow.com',
   'bbc.com', 'reuters.com', 'apnews.com', 'aljazeera.net', 'rudaw.net',
   'shafaq.com', 'alsumaria.tv', 'ina.iq', '964media.com', 'nbanews.net',
+  'nasnews.com', 'baghdadtoday.news', 'alforatnews.iq', 'alsabaah.iq',
   'uobaghdad.edu.iq', 'uokufa.edu.iq', 'uomustansiriyah.edu.iq',
+  'ur.gov.iq', 'moh.gov.iq', 'moi.gov.iq',
 ];
 const DOWNLOAD_HOSTS = [
   'githubusercontent.com', 'objects.githubusercontent.com', 'sourceforge.net', 'fosshub.com',
   'apkpure.com', 'archive.org', 'cdn.discordapp.com', 'download.microsoft.com',
   'dl.google.com', 'releases.ubuntu.com', 'mediafire.com', 'mega.nz',
   'drive.usercontent.google.com', 'storage.googleapis.com', 'download.mozilla.org',
+  'download.documentfoundation.org', 'download.jetbrains.com',
 ];
 const LOW_DATA_FRIENDLY_HOSTS = [
   'lite.cnn.com', 'text.npr.org', 'mbasic.facebook.com', 'm.facebook.com',
@@ -66,10 +69,11 @@ const DOWNLOAD_EXT_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|x
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|m3u8|mpd)(?:$|[?#])/i;
 const DOWNLOAD_PATH_RE = /(?:^|\/)(?:download|downloads|releases?|files?|attachments?|packages?|artifacts?|dist|builds?|exports?)(?:\/|$)/i;
 const VIDEO_PATH_RE = /(?:^|\/)(?:watch|video|videos|live|stream|player|shorts|reels?|episodes?|movies?)(?:\/|$)/i;
-const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp|reader)(?:\/|$)/i;
+const READING_PATH_RE = /(?:^|\/)(?:article|articles|news|blog|docs|documentation|guide|guides|wiki|read|story|stories|amp|reader|print)(?:\/|$)/i;
 const DOWNLOAD_QUERY_KEYS = ['download', 'attachment', 'filename', 'artifact', 'export'];
 const VIDEO_QUERY_KEYS = ['video', 'stream', 'watch', 'play', 'episode'];
-const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic', 'save-data', 'datasaver', 'data-saver'];
+const READING_QUERY_KEYS = ['reader', 'print', 'text', 'article'];
+const LOW_DATA_QUERY_KEYS = ['lite', 'lowdata', 'low-data', 'basic', 'save-data', 'datasaver', 'data-saver', 'nojs'];
 
 export function isBrowsingProfile(value: unknown): value is BrowsingProfile {
   return value === 'balanced' || value === 'boost' || value === 'video' || value === 'reading' || value === 'downloads' || value === 'low-data';
@@ -119,8 +123,15 @@ function queryHasAny(params: URLSearchParams, keys: readonly string[]) {
 function queryValueSignalsDownload(params: URLSearchParams) {
   const disposition = normalizedParam(params.get('response-content-disposition'));
   const contentDisposition = normalizedParam(params.get('content-disposition'));
+  const contentType = normalizedParam(params.get('response-content-type')) || normalizedParam(params.get('content-type'));
   const raw = normalizedParam(params.get('raw'));
-  return disposition.includes('attachment') || contentDisposition.includes('attachment') || raw === '1' || raw === 'true';
+  const exportValue = normalizedParam(params.get('export'));
+  return disposition.includes('attachment')
+    || contentDisposition.includes('attachment')
+    || contentType === 'application/octet-stream'
+    || raw === '1'
+    || raw === 'true'
+    || exportValue === 'download';
 }
 
 function looksLikeReadingVariant(parsed: URL) {
@@ -128,12 +139,16 @@ function looksLikeReadingVariant(parsed: URL) {
   const output = normalizedParam(parsed.searchParams.get('output'));
   const format = normalizedParam(parsed.searchParams.get('format'));
   const view = normalizedParam(parsed.searchParams.get('view'));
+  const mode = normalizedParam(parsed.searchParams.get('mode'));
   return path.startsWith('/amp/')
     || path.endsWith('/amp')
     || output === '1'
     || output === 'amp'
     || format === 'amp'
-    || view === 'reader';
+    || view === 'reader'
+    || view === 'print'
+    || mode === 'reader'
+    || queryHasAny(parsed.searchParams, READING_QUERY_KEYS);
 }
 
 function looksLikeLowDataVariant(parsed: URL) {
@@ -143,6 +158,7 @@ function looksLikeLowDataVariant(parsed: URL) {
   const view = normalizedParam(parsed.searchParams.get('view'));
   const data = normalizedParam(parsed.searchParams.get('data'));
   const quality = normalizedParam(parsed.searchParams.get('quality'));
+  const nojs = normalizedParam(parsed.searchParams.get('nojs'));
   return hostMatches(host, LOW_DATA_FRIENDLY_HOSTS)
     || path.startsWith('/lite/')
     || path.includes('/low-data/')
@@ -157,12 +173,16 @@ function looksLikeLowDataVariant(parsed: URL) {
     || data === 'low'
     || data === 'save'
     || quality === 'low'
-    || quality === 'lite';
+    || quality === 'lite'
+    || nojs === '1'
+    || nojs === 'true';
 }
 
 function isCloudDownloadUrl(host: string, parsed: URL) {
-  if (host === 'drive.google.com' && /\/(?:uc|download)\b/i.test(parsed.pathname)) return true;
-  if (host === 'dropbox.com' && normalizedParam(parsed.searchParams.get('dl')) === '1') return true;
+  const exportValue = normalizedParam(parsed.searchParams.get('export'));
+  if (host === 'drive.google.com' && (/\/(?:uc|download)\b/i.test(parsed.pathname) || exportValue === 'download')) return true;
+  if (host === 'docs.google.com' && /\/(?:document|spreadsheets|presentation)\/d\//i.test(parsed.pathname) && /\/export\b/i.test(parsed.pathname)) return true;
+  if (host === 'dropbox.com' && (normalizedParam(parsed.searchParams.get('dl')) === '1' || normalizedParam(parsed.searchParams.get('raw')) === '1')) return true;
   if (host.endsWith('.dropboxusercontent.com')) return true;
   if (host === 'onedrive.live.com' && (parsed.searchParams.has('download') || normalizedParam(parsed.searchParams.get('download')) === '1')) return true;
   return false;
@@ -207,23 +227,24 @@ export function resolveBrowsingProfile(url: string, settings: PerformanceSetting
 }
 
 function retryScheduleForProfile(profile: BrowsingProfile, aggressiveRetry: boolean): readonly number[] {
-  if (!aggressiveRetry) return [3200] as const;
+  if (!aggressiveRetry) return [3600] as const;
 
-  // Staggered backoff reduces duplicate request bursts on unstable connections without
-  // pretending to increase the ISP's bandwidth. The browser only controls its own work.
+  // Conservative staggered backoff is friendlier to unstable or high-latency links
+  // (including congested mobile/ISP paths) because RAID avoids duplicate request bursts.
+  // This optimizes only browser behavior and never claims to increase ISP bandwidth.
   switch (profile) {
     case 'boost':
-      return [750, 2200, 5600] as const;
+      return [900, 2600, 6500] as const;
     case 'video':
-      return [1350, 3900, 9800] as const;
+      return [1600, 4800, 12000] as const;
     case 'downloads':
-      return [1700, 4800, 12000] as const;
+      return [2000, 6000, 15000] as const;
     case 'low-data':
-      return [2200, 6500, 16000] as const;
+      return [2600, 7800, 19000] as const;
     case 'reading':
-      return [1000, 3100, 7600] as const;
+      return [1200, 3600, 9000] as const;
     default:
-      return [950, 2800, 6800] as const;
+      return [1200, 3600, 9000] as const;
   }
 }
 
@@ -238,7 +259,7 @@ export function deriveBrowserPerformancePolicy(input: PerformanceSettings, conte
       preferCache: true,
       deferNonCriticalWork: false,
       lowBandwidthImages: false,
-      retryDelaysMs: [2200],
+      retryDelaysMs: [2600],
       visualDensity: 'full',
       mediaBias: 'normal',
       lightweightNavigation: false,
@@ -295,10 +316,10 @@ export function profileLabel(profile: BrowsingProfile) {
 export function profileDescription(profile: BrowsingProfile) {
   switch (profile) {
     case 'boost': return 'يركّز موارد RAID على الصفحة الحالية ويخفف الشغل الخلفي بدون ادعاء زيادة سرعة الاشتراك.';
-    case 'video': return 'يضبط سلوك RAID حول صفحات الفيديو مع Retry متدرج، ويحترم خيارات أولوية التبويب وتعليق الخلفية التي حددتها.';
-    case 'reading': return 'تحميل أخف للقراءة الطويلة وصفحات AMP مع احترام إعداداتك اليدوية بدل فرضها تلقائيًا.';
-    case 'downloads': return 'يركّز سياسة RAID على التنزيل ويباعد إعادة المحاولة، مع بقاء تحكمك اليدوي بالخلفية والأولوية فعالًا.';
-    case 'low-data': return 'للشبكات الضعيفة أو المتذبذبة: يخفف الصور والعمل غير الضروري ويستخدم Backoff أكثر تحفظًا لتقليل الطلبات المتكررة واستهلاك البيانات.';
-    default: return 'الوضع الافتراضي السلس: يوازن أولوية الصفحة والخلفية وRetry حسب إعداداتك، ثم يغيّر السياق تلقائيًا عند تفعيل Adaptive Browsing.';
+    case 'video': return 'يضبط سلوك RAID حول صفحات الفيديو مع Backoff محافظ حتى لا تنافس إعادة المحاولة تدفق الفيديو، ويحترم خياراتك اليدوية.';
+    case 'reading': return 'تحميل أخف للقراءة الطويلة وصفحات AMP/Reader/Print مع تقليل العمل غير الضروري واحترام إعداداتك اليدوية.';
+    case 'downloads': return 'يميّز روابط التنزيل والسحابات الشائعة بدقة أكبر ويستخدم Backoff أطول لتقليل تكرار الطلبات على الاتصال المتذبذب.';
+    case 'low-data': return 'للشبكات الضعيفة أو المتذبذبة: يخفف الصور والعمل غير الضروري ويستخدم Backoff محافظ لتقليل الطلبات المتكررة واستهلاك البيانات.';
+    default: return 'الوضع الافتراضي السلس: يوازن أولوية الصفحة والخلفية حسب إعداداتك، ثم يغيّر السياق تلقائيًا بين Video وReading وDownloads وLow Data.';
   }
 }

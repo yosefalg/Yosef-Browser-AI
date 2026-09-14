@@ -11,7 +11,7 @@ import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/read
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
 import { isVpnConnected } from '@/lib/vpn';
 import { DEFAULT_SITE_PREFERENCES, getSitePreferences, resetSitePreferences, saveSitePreferences, type SitePreferences } from '@/lib/site-preferences';
-import { DEFAULT_PERFORMANCE_SETTINGS, deriveBrowserPerformancePolicy, getPerformanceSettings, type PerformanceSettings } from '@/lib/performance';
+import { DEFAULT_PERFORMANCE_SETTINGS, deriveBrowserPerformancePolicy, getPerformanceSettings, policySummary, profileLabel, type PerformanceSettings } from '@/lib/performance';
 import { routeBrowserDownload } from '@/features/downloads/browser-download';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
@@ -599,6 +599,12 @@ export default function BrowserScreen() {
   const host = hostOf(loadedUrl);
   const addressValue = addressFocused ? input : host;
   const playerHtml = useMemo(() => mediaUrl ? mediaPlayerHtml(mediaUrl) : '', [mediaUrl]);
+  const activePolicy = useMemo(() => deriveBrowserPerformancePolicy(performanceSettings, loadedUrl || url), [performanceSettings, loadedUrl, url]);
+  const webSource = useMemo(() => {
+    const lowDataHeaders = activePolicy.profile === 'low-data' ? { 'Save-Data': 'on' } : undefined;
+    return lowDataHeaders ? { uri: url, headers: lowDataHeaders } : { uri: url };
+  }, [activePolicy.profile, url]);
+  const adaptiveHint = activePolicy.profile === 'balanced' ? '' : `${profileLabel(activePolicy.profile)} • ${policySummary(activePolicy)}`;
   const hasCustomSitePrefs = sitePrefs.desktopMode || !sitePrefs.thirdPartyCookies || !sitePrefs.autoplayMedia;
 
   return (
@@ -632,17 +638,19 @@ export default function BrowserScreen() {
 
       {privateMode && <View style={styles.private}><Text style={styles.privateText}>وضع خاص • لا سجل • لا سياق للذكاء الاصطناعي</Text></View>}
       {!!rendererNotice && <View style={styles.rendererNotice} accessibilityRole="alert"><Text style={styles.rendererNoticeText}>{rendererNotice}</Text></View>}
+      {!!adaptiveHint && <View style={[styles.adaptiveHint, activePolicy.profile === 'low-data' && styles.adaptiveHintLowData, activePolicy.profile === 'video' && styles.adaptiveHintVideo, activePolicy.profile === 'downloads' && styles.adaptiveHintDownloads]}><Ionicons name={activePolicy.profile === 'video' ? 'play-circle-outline' : activePolicy.profile === 'downloads' ? 'download-outline' : activePolicy.profile === 'reading' ? 'reader-outline' : activePolicy.profile === 'low-data' ? 'leaf-outline' : 'flash-outline'} size={13} color="#F8F3EE" /><Text numberOfLines={1} style={styles.adaptiveHintText}>{adaptiveHint}</Text></View>}
       {loading && <View style={styles.progressTrack} accessibilityLabel={`جار تحميل الصفحة ${Math.round(loadProgress * 100)} بالمئة`}><View style={[styles.progress, { width: `${Math.max(4, Math.round(loadProgress * 100))}%` }]} /></View>}
 
       <View style={styles.webWrap}>
         <WebView
           key={webKey}
           ref={web}
-          source={{ uri: url }}
+          source={webSource}
           style={styles.web}
           javaScriptEnabled
           domStorageEnabled={!privateMode}
           cacheEnabled={!privateMode}
+          cacheMode={activePolicy.preferCache ? 'LOAD_CACHE_ELSE_NETWORK' : 'LOAD_DEFAULT'}
           incognito={privateMode}
           sharedCookiesEnabled={!privateMode}
           thirdPartyCookiesEnabled={!privateMode && sitePrefs.thirdPartyCookies}
@@ -813,7 +821,7 @@ const styles = StyleSheet.create({
   top:{height:58,flexDirection:'row',alignItems:'center',paddingHorizontal:8,gap:6,backgroundColor:'#242725',borderBottomWidth:1,borderBottomColor:'#3D403D'},
   icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#303330'},
   omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#303330',flexDirection:'row',alignItems:'center',paddingHorizontal:9,borderWidth:1,borderColor:'#484B47'},securityButton:{width:28,height:38,alignItems:'center',justifyContent:'center'},input:{flex:1,color:'#F8F3EE',fontSize:14,paddingVertical:0,textAlign:'left'},siteBadge:{width:24,height:24,borderRadius:9,alignItems:'center',justifyContent:'center',backgroundColor:'#41443F'},
-  private:{paddingVertical:6,paddingHorizontal:12,backgroundColor:'#3A302E'},privateText:{color:'#E7C9B6',fontSize:11,textAlign:'center',fontWeight:'700'},rendererNotice:{paddingVertical:7,paddingHorizontal:12,backgroundColor:'#343735',borderBottomWidth:1,borderBottomColor:'#555A55'},rendererNoticeText:{color:'#E7DED5',fontSize:11,textAlign:'center',fontWeight:'800'},
+  private:{paddingVertical:6,paddingHorizontal:12,backgroundColor:'#3A302E'},privateText:{color:'#E7C9B6',fontSize:11,textAlign:'center',fontWeight:'700'},rendererNotice:{paddingVertical:7,paddingHorizontal:12,backgroundColor:'#343735',borderBottomWidth:1,borderBottomColor:'#555A55'},rendererNoticeText:{color:'#E7DED5',fontSize:11,textAlign:'center',fontWeight:'800'},adaptiveHint:{minHeight:28,flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:11,backgroundColor:'#353935',borderBottomWidth:1,borderBottomColor:'#4B4F4B'},adaptiveHintLowData:{backgroundColor:'#2F4135'},adaptiveHintVideo:{backgroundColor:'#2D3547'},adaptiveHintDownloads:{backgroundColor:'#3E352D'},adaptiveHintText:{flex:1,color:'#F8F3EE',fontSize:10,fontWeight:'800'},
   progressTrack:{height:3,backgroundColor:'#282B29',overflow:'hidden'},progress:{height:3,backgroundColor:'#D5AA88'},webWrap:{flex:1,backgroundColor:'#fff'},web:{flex:1},
   errorCard:{position:'absolute',left:20,right:20,top:26,padding:22,borderRadius:22,backgroundColor:'#2B2E2C',borderWidth:1,borderColor:'#4B4F4B',shadowColor:'#000',shadowOpacity:.22,shadowRadius:14,elevation:8},errorTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'center'},errorHost:{color:'#D5AA88',fontSize:12,fontWeight:'800',textAlign:'center',marginTop:6},errorText:{color:'#D9D2CB',fontSize:13,lineHeight:19,textAlign:'center',marginTop:10},errorActions:{flexDirection:'row-reverse',gap:10,marginTop:18},retryBtn:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#B88766'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#3B3E3B'},errorSecondaryText:{color:'#D9D2CB',fontWeight:'800'},
   bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:7,backgroundColor:'#242725',borderTopWidth:1,borderTopColor:'#3D403D'},nav:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},disabled:{opacity:.25},navPrimary:{width:44,height:44,borderRadius:16,backgroundColor:'#3A3D3A',alignItems:'center',justifyContent:'center'},vpn:{minWidth:52,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:4,backgroundColor:'#343A36',paddingHorizontal:7},vpnOn:{backgroundColor:'#315044'},vpnText:{fontSize:10,fontWeight:'900',color:'#D1FAE5'},ai:{width:42,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#8B654E'},aiDisabled:{opacity:.3},aiText:{fontSize:11,fontWeight:'900',color:'#fff'},

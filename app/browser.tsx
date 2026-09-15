@@ -282,6 +282,7 @@ export default function BrowserScreen() {
   const rendererFailures = useRef<number[]>([]);
   const rendererNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualMediaRequest = useRef(false);
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
   const intentionalStop = useRef<{ url: string; expiresAt: number } | null>(null);
@@ -627,12 +628,22 @@ export default function BrowserScreen() {
       } catch {}
       return;
     }
+    if (raw === 'RAID_MEDIA_STATUS:PLAYING') {
+      manualMediaRequest.current = false;
+      return;
+    }
     if (raw === 'RAID_MEDIA_STATUS:NO_VIDEO') {
-      Alert.alert('RAID Media Player', 'لم يعثر RAID على عنصر فيديو مباشر بعد. أبقِ صفحة المشاهدة مفتوحة وشغّل مشغل الموقع من داخل المتصفح.');
+      if (manualMediaRequest.current) {
+        Alert.alert('RAID Media Player', 'لم يعثر RAID على فيديو في هذه الصفحة. افتح صفحة مشاهدة تحتوي على فيديو ثم جرّب مرة أخرى.');
+      }
+      manualMediaRequest.current = false;
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:FAILED') {
-      Alert.alert('RAID Media Player', 'تعذر تشغيل فيديو الصفحة مباشرة داخل RAID.');
+      if (manualMediaRequest.current) {
+        Alert.alert('RAID Media Player', 'تعذر تشغيل فيديو الصفحة مباشرة داخل RAID.');
+      }
+      manualMediaRequest.current = false;
       return;
     }
     const page = parsePageContext(raw);
@@ -660,6 +671,7 @@ export default function BrowserScreen() {
 
   const openMediaPlayer = () => {
     setMenuOpen(false);
+    manualMediaRequest.current = true;
     scanMedia();
     web.current?.injectJavaScript(PLAY_PAGE_VIDEO_JS);
   };
@@ -805,6 +817,7 @@ export default function BrowserScreen() {
             setLoadProgress(0.05);
             setLoadError('');
             setMediaUrls([]);
+            manualMediaRequest.current = false;
             setPageProtection({ adsRemoved: 0, popupsBlocked: 0 });
           }}
           onLoadProgress={(event) => updateLoadProgress(event.nativeEvent.progress)}

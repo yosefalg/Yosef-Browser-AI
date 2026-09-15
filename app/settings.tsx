@@ -71,7 +71,7 @@ export default function SettingsScreen(){
 
       <View style={s.sectionWrap}>
         <View style={s.sectionHead}><MaterialCommunityIcons name="palette-outline" size={18} color={theme.accent}/><Text style={[s.sectionTitle,{color:theme.accent}]}>المظهر Premium</Text></View>
-        <View style={[s.themeCard,{backgroundColor:theme.surface,borderColor:theme.border}]}><ThemeSwitcher value={themeName} onChange={value=>void choose(value)}/><Text style={[s.themeNote,{color:theme.muted}]}>6 ثيمات مصممة لـRAID: سينمائي، Graphite، Deep Teal، AMOLED، Light وWarm Ivory. الاختيار يُحفظ مباشرة.</Text></View>
+        <View style={[s.themeCard,{backgroundColor:theme.surface,borderColor:theme.border}]}><ThemeSwitcher value={themeName} onChange={value=>void choose(value)}/><Text style={[s.themeNote,{color:theme.muted}]}>6 ثيمات مصممة لـRAID: Canva Sage الافتراضي، Graphite، Deep Teal، AMOLED، Light وWarm Ivory. الاختيار يُحفظ مباشرة.</Text></View>
       </View>
 
       <Section title="النظام والدعم" rows={system} theme={theme}/>

@@ -3,7 +3,7 @@ import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { deleteVaultEntry, generateStrongPassword, listVaultEntries, lockVault, saveVaultEntry, VaultEntry } from '@/lib/passwords';
+import { deleteVaultEntry, generateStrongPassword, getVaultSessionRemainingMs, listVaultEntries, lockVault, saveVaultEntry, VaultEntry } from '@/lib/passwords';
 import { getSetting } from '@/lib/db';
 import { getTheme, type ThemeName } from '@/lib/theme';
 
@@ -17,6 +17,7 @@ export default function PasswordsScreen() {
   const [showDraftPassword, setShowDraftPassword] = useState(false);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
   const [locked, setLocked] = useState(true);
+  const [vaultSessionDeadline, setVaultSessionDeadline] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [themeName, setThemeName] = useState<ThemeName>('cinematic');
@@ -27,6 +28,7 @@ export default function PasswordsScreen() {
     setRevealedIds(new Set());
     setShowDraftPassword(false);
     setLocked(true);
+    setVaultSessionDeadline(0);
     lockVault();
   }, []);
 
@@ -40,6 +42,7 @@ export default function PasswordsScreen() {
       setItems(entries);
       setRevealedIds(new Set());
       setLocked(false);
+      setVaultSessionDeadline(Date.now() + getVaultSessionRemainingMs());
     } catch (error) {
       setLocked(true);
       setItems([]);
@@ -73,11 +76,23 @@ export default function PasswordsScreen() {
     return () => sub.remove();
   }, [clearSensitiveView, unlock]);
 
+  useEffect(() => {
+    if (locked) return;
+    const remaining = getVaultSessionRemainingMs();
+    if (remaining <= 0) {
+      clearSensitiveView();
+      return;
+    }
+    const timer = setTimeout(clearSensitiveView, remaining);
+    return () => clearTimeout(timer);
+  }, [clearSensitiveView, locked, vaultSessionDeadline]);
+
   const refreshUnlocked = async () => {
     const entries = await listVaultEntries();
     setItems(entries);
     setRevealedIds(new Set());
     setLocked(false);
+    setVaultSessionDeadline(Date.now() + getVaultSessionRemainingMs());
   };
 
   const generate = async () => {

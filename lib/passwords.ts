@@ -55,6 +55,10 @@ export function isVaultUnlocked() {
   return Date.now() < unlockedUntil;
 }
 
+export function getVaultSessionRemainingMs() {
+  return Math.max(0, unlockedUntil - Date.now());
+}
+
 function normalizeOrigin(value: string) {
   const raw = value.trim();
   if (!raw) throw new Error('أدخل موقعًا صالحًا.');

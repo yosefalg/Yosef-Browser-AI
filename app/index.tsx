@@ -42,7 +42,7 @@ export default function HomeScreen(){
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
   const dismissWelcome=()=>{setWelcomeOpen(false);void setSetting('raid_2_11_welcome_seen',true)};
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
-  const lightSurface=themeName==='light'||themeName==='ivory';
+  const lightSurface=themeName==='cinematic'||themeName==='light'||themeName==='ivory';
   const glass=lightSurface?'rgba(255,255,255,.78)':'rgba(255,255,255,.07)';
   const heroText=lightSurface?'#182126':'#F7FAFC';
   const heroMuted=lightSurface?'#66727A':'#AEBBC7';
@@ -76,7 +76,7 @@ export default function HomeScreen(){
       <HomeHeader theme={theme} vpnConnected={vpnConnected} tabsCount={tabsCount} downloadsCount={activeDownloads} onMenu={()=>setMenuOpen(true)} onTabs={()=>router.push('/tabs')} onDownloads={()=>router.push('/downloads')} onVpn={()=>router.push('/vpn')}/>
 
       <LinearGradient
-        colors={lightSurface?['rgba(238,248,245,.98)','rgba(231,238,248,.98)']:['rgba(25,55,62,.98)','rgba(28,37,53,.98)','rgba(48,34,57,.98)']}
+        colors={lightSurface?['rgba(255,252,245,.98)','rgba(226,237,223,.98)']:['rgba(25,55,62,.98)','rgba(28,37,53,.98)','rgba(48,34,57,.98)']}
         start={{x:0,y:0}}
         end={{x:1,y:1}}
         style={[s.hero,{borderColor:lightSurface?'rgba(30,70,75,.12)':'rgba(255,255,255,.12)'}]}>
@@ -117,7 +117,7 @@ export default function HomeScreen(){
 
 const s=StyleSheet.create({
   fill:{flex:1},safe:{flex:1},content:{paddingHorizontal:15,paddingBottom:22,gap:12},
-  hero:{minHeight:210,borderRadius:28,borderWidth:1,padding:15,gap:12,overflow:'hidden'},heroGlowA:{position:'absolute',width:170,height:170,borderRadius:85,backgroundColor:'rgba(88,214,190,.10)',top:-95,right:-35},heroGlowB:{position:'absolute',width:150,height:150,borderRadius:75,backgroundColor:'rgba(178,119,204,.10)',bottom:-100,left:-25},heroTop:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:12},greeting:{alignItems:'flex-end'},hello:{fontSize:24,fontWeight:'900',textAlign:'right'},question:{fontSize:11.5,fontWeight:'700',textAlign:'right',marginTop:3},commandPill:{height:28,borderRadius:14,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:6,borderWidth:1,borderColor:'rgba(255,255,255,.08)'},liveDot:{width:6,height:6,borderRadius:3,backgroundColor:'#64D7A5'},commandText:{fontSize:8,fontWeight:'900',letterSpacing:.8},
+  hero:{minHeight:210,borderRadius:28,borderWidth:1,padding:15,gap:12,overflow:'hidden'},heroGlowA:{position:'absolute',width:170,height:170,borderRadius:85,backgroundColor:'rgba(78,123,97,.14)',top:-95,right:-35},heroGlowB:{position:'absolute',width:150,height:150,borderRadius:75,backgroundColor:'rgba(194,167,123,.15)',bottom:-100,left:-25},heroTop:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',gap:12},greeting:{alignItems:'flex-end'},hello:{fontSize:24,fontWeight:'900',textAlign:'right'},question:{fontSize:11.5,fontWeight:'700',textAlign:'right',marginTop:3},commandPill:{height:28,borderRadius:14,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:6,borderWidth:1,borderColor:'rgba(255,255,255,.08)'},liveDot:{width:6,height:6,borderRadius:3,backgroundColor:'#64D7A5'},commandText:{fontSize:8,fontWeight:'900',letterSpacing:.8},
   search:{minHeight:56,borderRadius:20,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',paddingHorizontal:7,gap:6},searchIcon:{width:38,height:38,borderRadius:13,alignItems:'center',justifyContent:'center'},input:{flex:1,fontSize:14,textAlign:'right',paddingHorizontal:3,paddingVertical:0},aiQuick:{width:38,height:38,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},go:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center'},
   searchShortcutRow:{gap:7,paddingHorizontal:1},searchShortcut:{height:30,borderRadius:11,borderWidth:1,paddingHorizontal:9,flexDirection:'row',alignItems:'center',gap:5},shortcutPrefix:{fontSize:9.5,fontWeight:'900'},shortcutLabel:{fontSize:9,fontWeight:'800'},sectionHead:{height:24,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',paddingHorizontal:2},sectionTitle:{fontSize:13,fontWeight:'900'},sectionAction:{fontSize:10,fontWeight:'900'},
   quickRail:{minHeight:94,borderRadius:28,borderWidth:1,flexDirection:'row-reverse',alignItems:'stretch',padding:8,shadowColor:'#000',shadowOpacity:.10,shadowRadius:22,elevation:3,overflow:'hidden'},quickSlot:{flex:1,position:'relative',justifyContent:'center'},quickAction:{flex:1,minHeight:76,borderRadius:20,alignItems:'center',justifyContent:'center',paddingHorizontal:7,paddingVertical:7},quickPressed:{transform:[{scale:.965}],backgroundColor:'rgba(255,255,255,.055)'},quickIcon:{width:40,height:40,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center',marginBottom:7},quickTitle:{fontSize:11.5,fontWeight:'900',textAlign:'center'},quickSub:{fontSize:8.5,fontWeight:'600',textAlign:'center',marginTop:3,maxWidth:92},quickDivider:{position:'absolute',left:0,top:18,bottom:18,width:StyleSheet.hairlineWidth,opacity:.55},

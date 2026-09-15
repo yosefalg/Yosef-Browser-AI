@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getTheme, type ThemeName } from '@/lib/theme';
 
 const options: Array<{name:ThemeName;label:string;hint:string;icon:keyof typeof Ionicons.glyphMap}> = [
-  {name:'cinematic',label:'Cinematic',hint:'زجاج داكن متوازن',icon:'moon-outline'},
+  {name:'cinematic',label:'Canva Sage',hint:'بيج وأخضر وكريمي',icon:'leaf-outline'},
   {name:'graphite',label:'Graphite',hint:'رمادي فاخر بارد',icon:'diamond-outline'},
   {name:'teal',label:'Deep Teal',hint:'أخضر مزرق هادئ',icon:'water-outline'},
   {name:'amoled',label:'AMOLED',hint:'أسود عميق',icon:'contrast-outline'},

@@ -21,6 +21,35 @@ const MAX_RENDERER_RECOVERIES = 2;
 const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
 const DOWNLOAD_URL_HINT_RE = /(?:^|[\/?&#=_-])(?:download|downloads|attachment|attachments|export|file|files|getfile|get-file|dl|save)(?:$|[\/?&#=_-])/i;
+const SPEECH_CHUNK_LIMIT = 3500;
+
+function splitSpeechText(text: string, platformLimit: number) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const limit = Math.max(256, Math.min(platformLimit, SPEECH_CHUNK_LIMIT));
+  const chunks: string[] = [];
+  let remaining = normalized;
+
+  while (remaining.length > limit) {
+    const window = remaining.slice(0, limit + 1);
+    const boundary = Math.max(
+      window.lastIndexOf('؟'),
+      window.lastIndexOf('!'),
+      window.lastIndexOf('.'),
+      window.lastIndexOf('؛'),
+      window.lastIndexOf('،'),
+      window.lastIndexOf(' '),
+    );
+    const cut = boundary >= Math.floor(limit * 0.55) ? boundary + 1 : limit;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 const MEDIA_SCAN_JS = `(() => {
   try {
     const urls = [];
@@ -628,8 +657,12 @@ export default function BrowserScreen() {
 
   const speakReader = () => {
     if (!reader?.text) return;
-    Speech.stop();
-    Speech.speak(reader.text.slice(0, 12000), { language: 'ar', rate: 0.92, pitch: 1 });
+    const chunks = splitSpeechText(reader.text.slice(0, 12000), Speech.maxSpeechInputLength);
+    void Speech.stop().then(() => {
+      chunks.forEach((chunk) => {
+        Speech.speak(chunk, { language: 'ar', rate: 0.92, pitch: 1 });
+      });
+    });
   };
   const stopSpeech = () => Speech.stop();
 

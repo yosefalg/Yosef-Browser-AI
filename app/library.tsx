@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { clearHistory, getBookmarks, getHistory, removeBookmark } from '@/lib/db';
+import { clearHistory, getBookmarks, getHistory, removeBookmark, removeHistoryEntry } from '@/lib/db';
 
 type Bookmark = { id:number; url:string; title:string; created_at:number };
 type HistoryItem = { id:number; url:string; title:string; visited_at:number };
@@ -38,6 +38,13 @@ export default function LibraryScreen(){
     ]);
   };
 
+  const deleteHistoryEntry=(id:number)=>{
+    Alert.alert('حذف من السجل','هل تريد حذف هذه الزيارة فقط؟',[
+      {text:'إلغاء',style:'cancel'},
+      {text:'حذف',style:'destructive',onPress:()=>removeHistoryEntry(id).then(load).catch(()=>{})},
+    ]);
+  };
+
   const rows=tab==='bookmarks'?bookmarks:history;
 
   return <SafeAreaView style={styles.root}>
@@ -56,12 +63,12 @@ export default function LibraryScreen(){
 
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       {rows.length===0?<View style={styles.empty}><Text style={styles.emptyTitle}>{tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={styles.emptyText}>{tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:
-      rows.map((item)=><Pressable key={`${tab}-${item.id}`} onPress={()=>open(item.url)} onLongPress={()=>tab==='bookmarks'&&deleteBookmark(item.url)} style={styles.row}>
+      rows.map((item)=><Pressable key={`${tab}-${item.id}`} accessibilityRole="button" accessibilityLabel={`${item.title?.trim()||host(item.url)}، ${tab==='bookmarks'?'ضغط مطوّل للإزالة من المفضلة':'ضغط مطوّل للحذف من السجل'}`} onPress={()=>open(item.url)} onLongPress={()=>tab==='bookmarks'?deleteBookmark(item.url):deleteHistoryEntry(item.id)} style={styles.row}>
         <View style={styles.badge}><Text style={styles.badgeText}>{host(item.url).slice(0,1).toUpperCase()}</Text></View>
         <View style={styles.rowBody}>
           <Text style={styles.rowTitle} numberOfLines={1}>{item.title?.trim()||host(item.url)}</Text>
           <Text style={styles.rowHost} numberOfLines={1}>{host(item.url)}</Text>
-          {tab==='bookmarks'&&<Text style={styles.hint}>ضغط مطوّل للإزالة</Text>}
+          <Text style={styles.hint}>{tab==='bookmarks'?'ضغط مطوّل للإزالة':'ضغط مطوّل للحذف'}</Text>
         </View>
       </Pressable>)}
     </ScrollView>

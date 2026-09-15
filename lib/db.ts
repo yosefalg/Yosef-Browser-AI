@@ -60,6 +60,7 @@ async function trimOpenTabs(d: SQLite.SQLiteDatabase, closedAt = Date.now()) {
 }
 
 export async function addHistory(url:string,title?:string){const d=await db();await d.runAsync('INSERT INTO history (url,title,visited_at) VALUES (?,?,?)',url,title??'',Date.now());await d.runAsync('DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY visited_at DESC LIMIT 2000)');}
+export async function removeHistoryEntry(id:number){if(!Number.isInteger(id)||id<=0)return;const d=await db();await d.runAsync('DELETE FROM history WHERE id=?',id);}
 export async function clearHistory(){const d=await db();await d.execAsync('DELETE FROM history');}
 export async function getHistory(limit=100){const d=await db();return d.getAllAsync<{id:number;url:string;title:string;visited_at:number}>('SELECT * FROM history ORDER BY visited_at DESC LIMIT ?',limit);}
 export async function getRecentSites(limit=8){const d=await db();return d.getAllAsync<{url:string;title:string;visited_at:number}>('SELECT url,MAX(title) AS title,MAX(visited_at) AS visited_at FROM history GROUP BY url ORDER BY visited_at DESC LIMIT ?',limit);}

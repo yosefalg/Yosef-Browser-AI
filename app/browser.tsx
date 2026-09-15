@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import { addBookmark, addHistory, createBrowserTab, getBrowserTabs, getHistory, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
+import { addBookmark, addHistory, createBrowserTab, getBrowserTabs, getRecentSites, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -290,7 +290,7 @@ export default function BrowserScreen() {
   const [loadedUrl, setLoadedUrl] = useState(startUrl);
   const [input, setInput] = useState(startUrl);
   const [addressFocused, setAddressFocused] = useState(false);
-  const [historySuggestions, setHistorySuggestions] = useState<Array<{id:number;url:string;title:string;visited_at:number}>>([]);
+  const [historySuggestions, setHistorySuggestions] = useState<Array<{url:string;title:string;visited_at:number}>>([]);
   const [pageProtection, setPageProtection] = useState({ adsRemoved: 0, popupsBlocked: 0 });
   const [title, setTitle] = useState('RAID Browser');
   const [canBack, setCanBack] = useState(false);
@@ -714,7 +714,7 @@ export default function BrowserScreen() {
           </Pressable>
           <TextInput
             value={addressValue}
-            onFocus={() => { setAddressFocused(true); setInput(loadedUrl); if (!privateMode) void getHistory(24).then(setHistorySuggestions).catch(() => setHistorySuggestions([])); }}
+            onFocus={() => { setAddressFocused(true); setInput(loadedUrl); if (!privateMode) void getRecentSites(40).then(setHistorySuggestions).catch(() => setHistorySuggestions([])); }}
             onBlur={() => setAddressFocused(false)}
             onChangeText={setInput}
             onSubmitEditing={go}
@@ -748,7 +748,7 @@ export default function BrowserScreen() {
       </View>
 
       {visibleSuggestions.length>0 && <View style={styles.suggestionPanel}>
-        {visibleSuggestions.map((item,index)=><Pressable key={`${item.id}-${item.url}`} onPressIn={()=>openHistorySuggestion(item)} style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>
+        {visibleSuggestions.map((item,index)=><Pressable key={item.url} onPressIn={()=>openHistorySuggestion(item)} style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>
           <Ionicons name="time-outline" size={17} color="#D5AA88"/>
           <View style={styles.suggestionCopy}><Text numberOfLines={1} style={styles.suggestionTitle}>{item.title||hostOf(item.url)}</Text><Text numberOfLines={1} style={styles.suggestionUrl}>{item.url}</Text></View>
           <Ionicons name="arrow-back-outline" size={16} color="#8E969F"/>

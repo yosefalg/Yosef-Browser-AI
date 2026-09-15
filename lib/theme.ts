@@ -14,8 +14,8 @@ export type ThemePalette = {
 
 export const themes: Record<ThemeName, ThemePalette> = {
   cinematic: {
-    bg: '#0B1118', surface: 'rgba(22,31,41,.72)', surface2: 'rgba(37,49,61,.76)', text: '#F4F8FB', muted: '#9EABB7', accent: '#76D8C8', border: 'rgba(255,255,255,.13)',
-    gradient: ['#071018', '#0D1822', '#17162A'], accentGradient: ['#76D8C8', '#7767D8'],
+    bg: '#F4F0E7', surface: 'rgba(255,253,248,.90)', surface2: 'rgba(227,235,223,.92)', text: '#233129', muted: '#6F786F', accent: '#4E7B61', border: 'rgba(64,94,76,.18)',
+    gradient: ['#FBF8F1', '#EEE8DB', '#E3EEE3'], accentGradient: ['#6E9B7D', '#C2A77B'],
   },
   graphite: {
     bg: '#0A0D11', surface: 'rgba(22,25,31,.78)', surface2: 'rgba(34,39,47,.82)', text: '#F7F8FA', muted: '#9CA5B1', accent: '#8DA7FF', border: 'rgba(255,255,255,.12)',

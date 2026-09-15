@@ -211,6 +211,18 @@ function isLikelyStreamPage(value: string) {
   } catch { return false; }
 }
 
+function urlsReferToSameDocument(first: string, second: string) {
+  try {
+    const left = new URL(first);
+    const right = new URL(second);
+    left.hash = '';
+    right.hash = '';
+    return left.href === right.href;
+  } catch {
+    return false;
+  }
+}
+
 function mediaPlayerHtml(mediaUrl: string) {
   const source = JSON.stringify(mediaUrl).replace(/</g, '\u003c');
   return `<!doctype html>
@@ -242,6 +254,7 @@ export default function BrowserScreen() {
   const rendererNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPersistedNavigation = useRef('');
+  const mainDocumentUrl = useRef(startUrl);
   const lastProgressRef = useRef(0);
   const [webKey, setWebKey] = useState(0);
   const [url, setUrl] = useState(startUrl);
@@ -374,6 +387,7 @@ export default function BrowserScreen() {
   };
 
   const changed = async (nav: WebViewNavigation) => {
+    mainDocumentUrl.current = nav.url;
     setCanBack(nav.canGoBack);
     setCanForward(nav.canGoForward);
     setTitle(nav.title || nav.url);
@@ -711,7 +725,8 @@ export default function BrowserScreen() {
           allowUniversalAccessFromFileURLs={false}
           injectedJavaScriptBeforeContentLoaded={DOWNLOAD_CAPTURE_JS}
           onNavigationStateChange={changed}
-          onLoadStart={() => {
+          onLoadStart={(event) => {
+            mainDocumentUrl.current = event.nativeEvent.url;
             if (postLoadWorkTimer.current) {
               clearTimeout(postLoadWorkTimer.current);
               postLoadWorkTimer.current = null;
@@ -736,7 +751,13 @@ export default function BrowserScreen() {
             setLoadError(event.nativeEvent.description || 'تعذر تحميل الصفحة');
           }}
           onHttpError={(event) => {
-            if (event.nativeEvent.statusCode >= 400) setLoadError(`خطأ HTTP ${event.nativeEvent.statusCode}`);
+            const { statusCode, url: failedUrl } = event.nativeEvent;
+            // Android reports HTTP failures for page resources too (images,
+            // scripts, favicons and frames). Only a failure of the main document
+            // should replace an otherwise usable page with RAID's error card.
+            if (statusCode >= 400 && urlsReferToSameDocument(failedUrl, mainDocumentUrl.current)) {
+              setLoadError(`خطأ HTTP ${statusCode}`);
+            }
           }}
           onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
           onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}

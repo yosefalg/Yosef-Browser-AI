@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { clearHistory, getBookmarks, getHistory, removeBookmark } from '@/lib/db';
 
 type Bookmark = { id:number; url:string; title:string; created_at:number };
@@ -10,15 +10,18 @@ function host(url:string){try{return new URL(url).hostname.replace(/^www\./,'');
 function open(url:string){router.push({ pathname:'/browser', params:{ url } });}
 
 export default function LibraryScreen(){
+  const params=useLocalSearchParams<{tab?:string}>();
+  const requestedTab=params.tab==='history'?'history':'bookmarks';
   const [bookmarks,setBookmarks]=useState<Bookmark[]>([]);
   const [history,setHistory]=useState<HistoryItem[]>([]);
-  const [tab,setTab]=useState<'bookmarks'|'history'>('bookmarks');
+  const [tab,setTab]=useState<'bookmarks'|'history'>(requestedTab);
 
   const load=useCallback(async()=>{
     const [b,h]=await Promise.all([getBookmarks(),getHistory(150)]);
     setBookmarks(b); setHistory(h);
   },[]);
 
+  useEffect(()=>setTab(requestedTab),[requestedTab]);
   useFocusEffect(useCallback(()=>{load().catch(()=>{});},[load]));
 
   const deleteBookmark=(url:string)=>{

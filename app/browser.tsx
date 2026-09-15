@@ -860,8 +860,8 @@ export default function BrowserScreen() {
               <Pressable style={styles.menuItem} onPress={openVpn}><Ionicons name={vpnConnected ? 'shield-checkmark' : 'shield-outline'} size={19} color="#D5AA88" /><Text style={styles.menuText}>{vpnConnected ? 'RAID VPN • متصل' : 'RAID VPN'}</Text></Pressable>
               {!privateMode && <Pressable style={styles.menuItem} onPress={openAI}><Ionicons name="sparkles-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>اسأل RAID AI عن الصفحة</Text></Pressable>}
               <View style={styles.menuDivider} />
-              <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/history'); }}><Ionicons name="time-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>السجل</Text></Pressable>
-              <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/bookmarks'); }}><Ionicons name="bookmark-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>المفضلة</Text></Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push({ pathname: '/library', params: { tab: 'history' } }); }}><Ionicons name="time-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>السجل</Text></Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push({ pathname: '/library', params: { tab: 'bookmarks' } }); }}><Ionicons name="bookmark-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>المفضلة</Text></Pressable>
               <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/settings'); }}><Ionicons name="settings-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>الإعدادات</Text></Pressable>
             </ScrollView>
           </Pressable>

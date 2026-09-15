@@ -801,6 +801,14 @@ export default function BrowserScreen() {
           }}
           onLoadProgress={(event) => updateLoadProgress(event.nativeEvent.progress)}
           onLoadEnd={(event) => {
+            // react-native-webview calls onLoadEnd after onError as well. Do not
+            // treat a failed navigation as a loaded page or inject post-load work.
+            if ('code' in event.nativeEvent) {
+              lastProgressRef.current = 0;
+              setLoading(false);
+              setLoadProgress(0);
+              return;
+            }
             lastProgressRef.current = 1;
             setLoading(false);
             setLoadProgress(1);

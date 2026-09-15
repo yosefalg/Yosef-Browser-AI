@@ -18,9 +18,10 @@ function canonicalUrl(value:string){
   try{
     const parsed=new URL(value);
     parsed.hash='';
-    const path=parsed.pathname.replace(/\/+$/,'')||'/';
-    return `${parsed.protocol}//${parsed.host}${path}${parsed.search}`.toLowerCase();
-  }catch{return value.trim().toLowerCase();}
+    // URL already normalizes the case-insensitive scheme and hostname. Keep
+    // path/query case and trailing slashes because servers may distinguish them.
+    return parsed.href;
+  }catch{return value.trim();}
 }
 
 export default function TabsScreen(){

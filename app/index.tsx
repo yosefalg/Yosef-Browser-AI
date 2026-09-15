@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { normalizeInput, SEARCH_SHORTCUTS } from '@/lib/url';
-import { getBrowserTabs, getSetting, setSetting } from '@/lib/db';
+import { getBrowserTabs, getRecentSites, getSetting, setSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { isVpnConnected } from '@/lib/vpn';
 import { HomeMenu, type HomeMenuItem } from '@/components/HomeMenu';
@@ -13,6 +13,7 @@ import { listDownloads } from '@/features/downloads/store';
 import type { DownloadItem } from '@/features/downloads/types';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { HomeShortcuts } from '@/components/home/HomeShortcuts';
+import { HomeRecentSites, type RecentSite } from '@/components/home/HomeRecentSites';
 import { RaidLogo } from '@/components/RaidLogo';
 
 function looksLikeAIQuery(value:string){const q=value.trim();return /[؟?]$/.test(q)||/^(يا\s+raid|اسأل|اشرح|لخص|قارن|شنو |شكو |وين |ما |ماذا |كيف |لماذا |هل )/i.test(q)}
@@ -21,6 +22,7 @@ export default function HomeScreen(){
   const [query,setQuery]=useState('');
   const [downloads,setDownloads]=useState<DownloadItem[]>([]);
   const [tabsCount,setTabsCount]=useState(0);
+  const [recentSites,setRecentSites]=useState<RecentSite[]>([]);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [menuOpen,setMenuOpen]=useState(false);
   const [vpnConnected,setVpnConnected]=useState(false);
@@ -30,10 +32,11 @@ export default function HomeScreen(){
   useFocusEffect(useCallback(()=>{let alive=true;Promise.all([
     listDownloads(12).catch(()=>[] as DownloadItem[]),
     getBrowserTabs().catch(()=>[]),
+    getRecentSites(6).catch(()=>[] as RecentSite[]),
     getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
     isVpnConnected().catch(()=>false),
     getSetting<boolean>('raid_2_11_welcome_seen',false).catch(()=>false),
-  ]).then(([items,tabs,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setThemeName(isThemeName(saved)?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
+  ]).then(([items,tabs,recent,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setRecentSites(recent);setThemeName(isThemeName(saved)?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
 
   const openUrl=(value:string)=>{const clean=value.trim();if(!clean)return;Keyboard.dismiss();router.push({pathname:'/browser',params:{url:normalizeInput(clean)}})};
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
@@ -102,7 +105,7 @@ export default function HomeScreen(){
       <View style={s.sectionHead}><Text style={[s.sectionTitle,{color:theme.text}]}>اختصاراتك</Text><Pressable onPress={()=>setMenuOpen(true)} hitSlop={8}><Text style={[s.sectionAction,{color:theme.accent}]}>الكل</Text></Pressable></View>
       <HomeShortcuts theme={theme} items={shortcuts} onMore={()=>setMenuOpen(true)}/>
 
-
+      <HomeRecentSites theme={theme} items={recentSites} onOpen={openUrl} onViewAll={()=>router.push('/library?section=history')}/>
 
       <Pressable onPress={()=>router.push('/privacy')} style={({pressed})=>[s.security,{backgroundColor:glass,borderColor:theme.border},pressed&&s.press]}><View style={[s.securityIcon,{backgroundColor:vpnConnected?'rgba(76,184,132,.14)':theme.surface2}]}><Ionicons name={vpnConnected?'shield-checkmark':'shield-checkmark-outline'} size={22} color={vpnConnected?'#4CB884':theme.accent}/></View><View style={s.securityCopy}><Text style={[s.securityTitle,{color:theme.text}]}>حماية RAID</Text><Text style={[s.securitySub,{color:theme.muted}]}>{vpnConnected?'VPN متصل • الحماية شغالة':'الحماية الأساسية شغالة • اضغط للتفاصيل'}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>
     </ScrollView>

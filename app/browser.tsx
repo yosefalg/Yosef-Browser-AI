@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import { addBookmark, addHistory, createBrowserTab, getHistory, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
+import { addBookmark, addHistory, createBrowserTab, getBrowserTabs, getHistory, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -282,6 +282,7 @@ export default function BrowserScreen() {
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
+  const [tabCount, setTabCount] = useState(0);
 
   const refreshVpnStatus = useCallback(() => {
     void isVpnConnected().then(setVpnConnected).catch(() => setVpnConnected(false));
@@ -293,11 +294,18 @@ export default function BrowserScreen() {
       .catch(() => setPerformanceSettings({ ...DEFAULT_PERFORMANCE_SETTINGS }));
   }, []);
 
+  const refreshTabCount = useCallback(() => {
+    void getBrowserTabs()
+      .then((tabs) => setTabCount(tabs.length))
+      .catch(() => setTabCount(0));
+  }, []);
+
   useFocusEffect(useCallback(() => {
     refreshVpnStatus();
     refreshPerformance();
+    refreshTabCount();
     return () => {};
-  }, [refreshPerformance, refreshVpnStatus]));
+  }, [refreshPerformance, refreshTabCount, refreshVpnStatus]));
 
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -407,6 +415,7 @@ export default function BrowserScreen() {
         else {
           const id = await createBrowserTab(nav.url, nav.title || 'علامة تبويب جديدة');
           setActiveTabId(id);
+          refreshTabCount();
         }
       } catch {}
     }
@@ -687,7 +696,10 @@ export default function BrowserScreen() {
           />
           {hasCustomSitePrefs && <View style={styles.siteBadge}><Ionicons name="options" size={12} color="#D5AA88" /></View>}
         </View>
-        <Pressable onPress={() => router.push('/tabs')} style={styles.icon} accessibilityRole="button" accessibilityLabel="التبويبات"><Ionicons name="albums-outline" size={20} color="#CBD5E1" /></Pressable>
+        <Pressable onPress={() => router.push('/tabs')} style={[styles.icon, styles.tabsButton]} accessibilityRole="button" accessibilityLabel={`التبويبات، ${tabCount} مفتوحة`}>
+          <Ionicons name="albums-outline" size={20} color="#CBD5E1" />
+          {tabCount > 0 && <View pointerEvents="none" style={styles.tabCountBadge}><Text numberOfLines={1} style={styles.tabCountText}>{tabCount > 99 ? '99+' : tabCount}</Text></View>}
+        </Pressable>
         <Pressable onPress={() => setMenuOpen(true)} style={styles.icon} accessibilityRole="button" accessibilityLabel="قائمة وإعدادات المتصفح"><Ionicons name="menu" size={22} color="#CBD5E1" /></Pressable>
       </View>
 
@@ -898,6 +910,7 @@ const styles = StyleSheet.create({
   root:{flex:1,backgroundColor:'#1D201F'},
   top:{height:58,flexDirection:'row',alignItems:'center',paddingHorizontal:8,gap:6,backgroundColor:'#242725',borderBottomWidth:1,borderBottomColor:'#3D403D'},
   icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#303330'},
+  tabsButton:{position:'relative'},tabCountBadge:{position:'absolute',top:-4,right:-4,minWidth:20,height:20,paddingHorizontal:4,borderRadius:10,alignItems:'center',justifyContent:'center',backgroundColor:'#B88766',borderWidth:2,borderColor:'#242725'},tabCountText:{color:'#fff',fontSize:9,fontWeight:'900',fontVariant:['tabular-nums']},
   omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#303330',flexDirection:'row',alignItems:'center',paddingHorizontal:9,borderWidth:1,borderColor:'#484B47'},securityButton:{width:28,height:38,alignItems:'center',justifyContent:'center'},input:{flex:1,color:'#F8F3EE',fontSize:14,paddingVertical:0,textAlign:'left'},siteBadge:{width:24,height:24,borderRadius:9,alignItems:'center',justifyContent:'center',backgroundColor:'#41443F'},
   suggestionPanel:{backgroundColor:'#252927',borderBottomWidth:1,borderBottomColor:'#454A46',paddingHorizontal:10},suggestionRow:{minHeight:52,flexDirection:'row',alignItems:'center',gap:9,paddingHorizontal:8},suggestionDivider:{borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:'#454A46'},suggestionCopy:{flex:1},suggestionTitle:{color:'#F2EEE9',fontSize:12,fontWeight:'800',textAlign:'right'},suggestionUrl:{color:'#8E969F',fontSize:9,marginTop:3,textAlign:'right'},
   private:{paddingVertical:6,paddingHorizontal:12,backgroundColor:'#3A302E'},privateText:{color:'#E7C9B6',fontSize:11,textAlign:'center',fontWeight:'700'},rendererNotice:{paddingVertical:7,paddingHorizontal:12,backgroundColor:'#343735',borderBottomWidth:1,borderBottomColor:'#555A55'},rendererNoticeText:{color:'#E7DED5',fontSize:11,textAlign:'center',fontWeight:'800'},

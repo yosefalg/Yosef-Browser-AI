@@ -329,6 +329,11 @@ export default function BrowserScreen() {
       .catch(() => setTabCount(0));
   }, []);
 
+  const closeReader = useCallback(() => {
+    void Speech.stop();
+    setReader(null);
+  }, []);
+
   useFocusEffect(useCallback(() => {
     refreshVpnStatus();
     refreshPerformance();
@@ -338,7 +343,7 @@ export default function BrowserScreen() {
 
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (reader) { setReader(null); return true; }
+      if (reader) { closeReader(); return true; }
       if (mediaOpen) { setMediaOpen(false); return true; }
       if (siteInfoOpen) { setSiteInfoOpen(false); return true; }
       if (menuOpen) { setMenuOpen(false); return true; }
@@ -346,7 +351,7 @@ export default function BrowserScreen() {
       return false;
     });
     return () => subscription.remove();
-  }, [canBack, mediaOpen, menuOpen, reader, siteInfoOpen]));
+  }, [canBack, closeReader, mediaOpen, menuOpen, reader, siteInfoOpen]));
 
   useEffect(() => {
     let alive = true;
@@ -929,10 +934,10 @@ export default function BrowserScreen() {
         </SafeAreaView>
       </Modal>
 
-      <Modal visible={!!reader} animationType="slide" onRequestClose={() => setReader(null)}>
+      <Modal visible={!!reader} animationType="slide" onRequestClose={closeReader}>
         <SafeAreaView style={[styles.readerRoot, readerDark ? styles.readerDark : styles.readerLight]} edges={['top','bottom']}>
           <View style={styles.readerTop}>
-            <Pressable onPress={() => setReader(null)} style={styles.readerBtn}><Text style={styles.readerBtnText}>×</Text></Pressable>
+            <Pressable onPress={closeReader} style={styles.readerBtn} accessibilityRole="button" accessibilityLabel="إغلاق وضع القراءة وإيقاف الاستماع"><Text style={styles.readerBtnText}>×</Text></Pressable>
             <Text style={[styles.readerTitle, !readerDark && styles.readerInk]} numberOfLines={1}>{reader?.title || 'وضع القراءة'}</Text>
             <Pressable onPress={() => setReaderDark(v => !v)} style={styles.readerBtn}><Ionicons name={readerDark ? 'sunny-outline' : 'moon-outline'} size={20} color="#fff" /></Pressable>
           </View>

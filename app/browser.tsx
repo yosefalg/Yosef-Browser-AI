@@ -284,6 +284,7 @@ export default function BrowserScreen() {
   const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
+  const intentionalStop = useRef<{ url: string; expiresAt: number } | null>(null);
   const lastProgressRef = useRef(0);
   const [webKey, setWebKey] = useState(0);
   const [url, setUrl] = useState(startUrl);
@@ -419,6 +420,7 @@ export default function BrowserScreen() {
   const go = () => {
     try {
       const next = normalizeInput(input);
+      intentionalStop.current = null;
       setLoadError('');
       setMediaUrls([]);
       setUrl(next);
@@ -470,11 +472,13 @@ export default function BrowserScreen() {
 
   const reloadOrStop = () => {
     if (loading) {
+      intentionalStop.current = { url: mainDocumentUrl.current, expiresAt: Date.now() + 1500 };
       web.current?.stopLoading();
       setLoading(false);
       setLoadProgress(0);
       return;
     }
+    intentionalStop.current = null;
     setLoadError('');
     web.current?.reload();
   };
@@ -787,6 +791,10 @@ export default function BrowserScreen() {
           injectedJavaScriptBeforeContentLoaded={DOWNLOAD_CAPTURE_JS}
           onNavigationStateChange={changed}
           onLoadStart={(event) => {
+            const stopped = intentionalStop.current;
+            if (stopped && (Date.now() > stopped.expiresAt || !urlsReferToSameDocument(event.nativeEvent.url, stopped.url))) {
+              intentionalStop.current = null;
+            }
             mainDocumentUrl.current = event.nativeEvent.url;
             if (postLoadWorkTimer.current) {
               clearTimeout(postLoadWorkTimer.current);
@@ -801,6 +809,13 @@ export default function BrowserScreen() {
           }}
           onLoadProgress={(event) => updateLoadProgress(event.nativeEvent.progress)}
           onLoadEnd={(event) => {
+            const stopped = intentionalStop.current;
+            if (stopped && Date.now() <= stopped.expiresAt && urlsReferToSameDocument(event.nativeEvent.url, stopped.url)) {
+              lastProgressRef.current = 0;
+              setLoading(false);
+              setLoadProgress(0);
+              return;
+            }
             // react-native-webview calls onLoadEnd after onError as well. Do not
             // treat a failed navigation as a loaded page or inject post-load work.
             if ('code' in event.nativeEvent) {
@@ -815,6 +830,15 @@ export default function BrowserScreen() {
             schedulePostLoadWork(event.nativeEvent.url);
           }}
           onError={(event) => {
+            const stopped = intentionalStop.current;
+            if (stopped && Date.now() <= stopped.expiresAt && urlsReferToSameDocument(event.nativeEvent.url, stopped.url)) {
+              intentionalStop.current = null;
+              setLoading(false);
+              setLoadProgress(0);
+              setLoadError('');
+              return;
+            }
+            intentionalStop.current = null;
             setLoading(false);
             setLoadProgress(0);
             setLoadError(event.nativeEvent.description || 'تعذر تحميل الصفحة');

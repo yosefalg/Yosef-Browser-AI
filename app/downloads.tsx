@@ -226,7 +226,7 @@ export default function DownloadsScreen() {
                 {item.state === 'paused' && <Pressable onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}
                 {(item.state === 'failed' || item.state === 'cancelled') && <Pressable onPress={() => void perform(() => retryDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="refresh" size={16} color="#fff" /><Text style={s.primaryText}>إعادة</Text></Pressable>}
                 {(item.state === 'downloading' || item.state === 'paused') && <Pressable onPress={() => void perform(() => cancelDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="close" size={17} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إلغاء</Text></Pressable>}
-                <Pressable onPress={() => void perform(() => removeDownload(item.id, item.state === 'completed'))} style={[s.action,s.danger]}><Ionicons name="trash-outline" size={16} color="#F2D2CB" /><Text style={s.dangerText}>حذف</Text></Pressable>
+                <Pressable onPress={() => void perform(() => removeDownload(item.id, true))} style={[s.action,s.danger]}><Ionicons name="trash-outline" size={16} color="#F2D2CB" /><Text style={s.dangerText}>حذف</Text></Pressable>
               </View>
             </View>;
           })}

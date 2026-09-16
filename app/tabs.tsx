@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
 import { TabCard } from '@/components/TabCard';
 import { SiteIcon } from '@/components/SiteIcon';
 import { TabSortMode, TabViewControls, TabViewMode } from '@/components/TabViewControls';
@@ -107,7 +108,10 @@ export default function TabsScreen(){
   const restore=async(item:ClosedBrowserTab)=>{if(busy)return;setBusy(true);try{const restored=await restoreClosedBrowserTab(item.id);if(restored)router.replace({pathname:'/browser',params:{url:restored.url,tabId:String(restored.id)}});else await refresh();}finally{setBusy(false);}};
   const duplicate=async(tab:BrowserTab)=>{if(busy)return;setBusy(true);try{await createBrowserTab(tab.url,tab.title||hostOf(tab.url));await refresh();}finally{setBusy(false);}};
   const shareTab=(tab:BrowserTab)=>{void Share.share({title:tab.title||hostOf(tab.url),message:`${tab.title||hostOf(tab.url)}\n${tab.url}`,url:tab.url});};
-  const openExternal=(tab:BrowserTab)=>{if(/^https?:\/\//i.test(tab.url))void Linking.openURL(tab.url).catch(()=>Alert.alert('RAID Browser','تعذر فتح الرابط في تطبيق خارجي.'));};
+  const openExternal=(tab:BrowserTab)=>{
+    if(!/^https?:\/\//i.test(tab.url))return;
+    void WebBrowser.openBrowserAsync(tab.url).catch(()=>Alert.alert('RAID Browser','تعذر فتح الرابط في متصفح خارجي.'));
+  };
 
   const exitSelection=()=>{setSelectionMode(false);setSelectedIds([]);};
   const startSelection=(tab:BrowserTab)=>{if(busy)return;setMenuTab(null);setSelectionMode(true);setSelectedIds([tab.id]);};

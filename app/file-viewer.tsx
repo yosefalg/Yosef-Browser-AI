@@ -10,6 +10,7 @@ import { getSetting } from '@/lib/db';
 import { getTheme, type ThemeName } from '@/lib/theme';
 
 const TEXT_EXTENSIONS = ['txt','md','json','csv','log','xml','html','htm','css','js','ts'];
+const MAX_INTERNAL_TEXT_BYTES = 8 * 1024 * 1024;
 
 function extension(name:string){return name.toLowerCase().split('?')[0].split('#')[0].split('.').pop()||'';}
 
@@ -27,6 +28,10 @@ export default function FileViewerScreen(){
   useEffect(()=>{void getSetting<ThemeName>('theme','cinematic').then(setThemeName).catch(()=>{});},[]);
   useEffect(()=>{
     let active=true;
+    setLoading(true);
+    setError('');
+    setName('ملف');
+    setContent('');
     void (async()=>{
       try{
         if(!Number.isFinite(id))throw new Error('معرّف الملف غير صالح.');
@@ -35,6 +40,8 @@ export default function FileViewerScreen(){
         const info=await FileSystem.getInfoAsync(item.local_uri);
         if(!info.exists)throw new Error('الملف لم يعد موجودًا على الجهاز.');
         if(!TEXT_EXTENSIONS.includes(extension(item.file_name)))throw new Error('هذا النوع يحتاج عارضًا متخصصًا. يمكنك فتحه بتطبيق مناسب من زر الفتح الخارجي.');
+        const size='size' in info&&typeof info.size==='number'?info.size:0;
+        if(size>MAX_INTERNAL_TEXT_BYTES)throw new Error('الملف كبير للعرض الداخلي الآمن. استخدم الفتح الخارجي لهذا الملف.');
         const text=await FileSystem.readAsStringAsync(item.local_uri,{encoding:FileSystem.EncodingType.UTF8});
         if(active){setName(item.file_name);setContent(text);}
       }catch(e){if(active)setError(e instanceof Error?e.message:'تعذر قراءة الملف.');}
@@ -43,13 +50,18 @@ export default function FileViewerScreen(){
     return()=>{active=false;};
   },[id]);
 
+  const openExternal=async()=>{
+    try{await openDownload(id);}
+    catch(e){setError(e instanceof Error?`تعذر الفتح الخارجي: ${e.message}`:'تعذر فتح الملف خارجيًا.');}
+  };
+
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={()=>router.back()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="chevron-back" size={22} color={theme.text}/></Pressable>
       <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text style={[s.sub,{color:theme.muted}]}>RAID Reader • قراءة داخل التطبيق</Text></View>
       <View style={s.controls}><Pressable accessibilityLabel="تصغير الخط" onPress={()=>setFontSize(v=>Math.max(13,v-2))} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityLabel="تكبير الخط" onPress={()=>setFontSize(v=>Math.min(34,v+2))} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></View>
     </View>
-    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name="document-text-outline" size={44} color={theme.muted}/><Text style={[s.error,{color:theme.text}]}>{error}</Text><Pressable onPress={()=>void openDownload(id).catch(()=>{})} style={[s.external,{backgroundColor:theme.accent}]}><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.externalText}>فتح خارجي</Text></Pressable></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[s.body,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
+    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name="document-text-outline" size={44} color={theme.muted}/><Text style={[s.error,{color:theme.text}]}>{error}</Text><Pressable onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent}]}><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.externalText}>فتح خارجي</Text></Pressable></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[s.body,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
   </SafeAreaView>;
 }
 

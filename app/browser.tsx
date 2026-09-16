@@ -769,7 +769,12 @@ export default function BrowserScreen() {
       </View>
 
       {visibleSuggestions.length>0 && <View style={styles.suggestionPanel}>
-        {visibleSuggestions.map((item,index)=><Pressable key={item.url} onPressIn={()=>openHistorySuggestion(item)} style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>
+        {visibleSuggestions.map((item,index)=><Pressable
+          key={item.url}
+          onPress={()=>openHistorySuggestion(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`فتح ${item.title||hostOf(item.url)} من سجل التصفح`}
+          style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>
           <Ionicons name="time-outline" size={17} color="#D5AA88"/>
           <View style={styles.suggestionCopy}><Text numberOfLines={1} style={styles.suggestionTitle}>{item.title||hostOf(item.url)}</Text><Text numberOfLines={1} style={styles.suggestionUrl}>{item.url}</Text></View>
           <Ionicons name="arrow-back-outline" size={16} color="#8E969F"/>

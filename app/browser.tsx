@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import { addBookmark, addHistory, createBrowserTab, getBrowserTabs, getRecentSites, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, updateBrowserTab } from '@/lib/db';
+import { addBookmark, addHistory, createBrowserTab, getBrowserTabs, getRecentSites, getSetting, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, setSetting, updateBrowserTab } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -314,6 +314,19 @@ export default function BrowserScreen() {
   const [mediaOpen, setMediaOpen] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
   const [tabCount, setTabCount] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([
+      getSetting<number>('reader_font_size', 19),
+      getSetting<boolean>('reader_dark', true),
+    ]).then(([savedFontSize, savedDark]) => {
+      if (!alive) return;
+      if (Number.isFinite(savedFontSize)) setFontSize(Math.min(30, Math.max(15, savedFontSize)));
+      setReaderDark(typeof savedDark === 'boolean' ? savedDark : true);
+    });
+    return () => { alive = false; };
+  }, []);
 
   const refreshVpnStatus = useCallback(() => {
     void isVpnConnected().then(setVpnConnected).catch(() => setVpnConnected(false));
@@ -686,6 +699,16 @@ export default function BrowserScreen() {
     });
   };
   const stopSpeech = () => Speech.stop();
+  const changeReaderFont = (delta: number) => setFontSize((current) => {
+    const next = Math.min(30, Math.max(15, current + delta));
+    void setSetting('reader_font_size', next);
+    return next;
+  });
+  const toggleReaderTheme = () => setReaderDark((current) => {
+    const next = !current;
+    void setSetting('reader_dark', next);
+    return next;
+  });
 
   const shareCurrent = () => {
     setMenuOpen(false);
@@ -989,17 +1012,17 @@ export default function BrowserScreen() {
           <View style={styles.readerTop}>
             <Pressable onPress={closeReader} style={styles.readerBtn} accessibilityRole="button" accessibilityLabel="إغلاق وضع القراءة وإيقاف الاستماع"><Text style={styles.readerBtnText}>×</Text></Pressable>
             <Text style={[styles.readerTitle, !readerDark && styles.readerInk]} numberOfLines={1}>{reader?.title || 'وضع القراءة'}</Text>
-            <Pressable onPress={() => setReaderDark(v => !v)} style={styles.readerBtn}><Ionicons name={readerDark ? 'sunny-outline' : 'moon-outline'} size={20} color="#fff" /></Pressable>
+            <Pressable onPress={toggleReaderTheme} style={styles.readerBtn} accessibilityRole="button" accessibilityLabel={readerDark ? 'استخدام خلفية فاتحة للقراءة' : 'استخدام خلفية داكنة للقراءة'}><Ionicons name={readerDark ? 'sunny-outline' : 'moon-outline'} size={20} color="#fff" /></Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.readerContent}>
             <Text style={[styles.readerHeadline, !readerDark && styles.readerInk]}>{reader?.title}</Text>
-            <Text style={[styles.readerBody, {fontSize, lineHeight: fontSize * 1.75}, !readerDark && styles.readerInk]}>{reader?.text}</Text>
+            <Text selectable style={[styles.readerBody, {fontSize, lineHeight: fontSize * 1.75}, !readerDark && styles.readerInk]}>{reader?.text}</Text>
           </ScrollView>
           <View style={styles.readerTools}>
-            <Pressable onPress={() => setFontSize(v => Math.max(15, v-2))} style={styles.readerTool}><Text style={styles.readerToolText}>A−</Text></Pressable>
-            <Pressable onPress={() => setFontSize(v => Math.min(30, v+2))} style={styles.readerTool}><Text style={styles.readerToolText}>A+</Text></Pressable>
-            <Pressable onPress={speakReader} style={styles.readerTool}><Text style={styles.readerToolText}>استماع</Text></Pressable>
-            <Pressable onPress={stopSpeech} style={styles.readerTool}><Text style={styles.readerToolText}>إيقاف</Text></Pressable>
+            <Pressable onPress={() => changeReaderFont(-2)} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="تصغير خط القراءة"><Text style={styles.readerToolText}>A−</Text></Pressable>
+            <Pressable onPress={() => changeReaderFont(2)} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="تكبير خط القراءة"><Text style={styles.readerToolText}>A+</Text></Pressable>
+            <Pressable onPress={speakReader} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="الاستماع إلى النص"><Text style={styles.readerToolText}>استماع</Text></Pressable>
+            <Pressable onPress={stopSpeech} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="إيقاف الاستماع"><Text style={styles.readerToolText}>إيقاف</Text></Pressable>
           </View>
         </SafeAreaView>
       </Modal>

@@ -137,6 +137,17 @@ export default function DownloadsScreen() {
     if (failed) Alert.alert('التنزيلات', `تم استكمال ${ids.length - failed} تنزيل، وتعذر استكمال ${failed}.`);
   };
 
+  const confirmRemove = (item: DownloadItem) => {
+    const fileName = item.file_name || 'هذا الملف';
+    const message = item.state === 'completed'
+      ? `سيتم حذف «${fileName}» من الهاتف وإزالة سجل التنزيل. لا يمكن التراجع عن ذلك.`
+      : `سيتم إيقاف «${fileName}» وحذف بياناته الجزئية وإزالة سجل التنزيل.`;
+    Alert.alert('حذف التنزيل؟', message, [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'حذف', style: 'destructive', onPress: () => void perform(() => removeDownload(item.id, true)) },
+    ]);
+  };
+
   const filters:Array<{key:Filter;label:string;count:number;icon:keyof typeof Ionicons.glyphMap}> = [
     {key:'all',label:'الكل',count:items.length,icon:'layers-outline'},
     {key:'active',label:'نشط',count:summary.active,icon:'pulse-outline'},
@@ -226,7 +237,7 @@ export default function DownloadsScreen() {
                 {item.state === 'paused' && <Pressable onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}
                 {(item.state === 'failed' || item.state === 'cancelled') && <Pressable onPress={() => void perform(() => retryDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="refresh" size={16} color="#fff" /><Text style={s.primaryText}>إعادة</Text></Pressable>}
                 {(item.state === 'downloading' || item.state === 'paused') && <Pressable onPress={() => void perform(() => cancelDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="close" size={17} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إلغاء</Text></Pressable>}
-                <Pressable onPress={() => void perform(() => removeDownload(item.id, true))} style={[s.action,s.danger]}><Ionicons name="trash-outline" size={16} color="#F2D2CB" /><Text style={s.dangerText}>حذف</Text></Pressable>
+                <Pressable onPress={() => confirmRemove(item)} accessibilityRole="button" accessibilityLabel={`حذف التنزيل ${item.file_name}`} style={[s.action,s.danger]}><Ionicons name="trash-outline" size={16} color="#F2D2CB" /><Text style={s.dangerText}>حذف</Text></Pressable>
               </View>
             </View>;
           })}

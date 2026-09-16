@@ -10,6 +10,7 @@ export type ProtectionStats = { ads_removed:number; popups_blocked:number; updat
 
 const MAX_OPEN_TABS = 50;
 const MAX_RECENTLY_CLOSED = 30;
+const HISTORY_DUPLICATE_WINDOW_MS = 30_000;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 async function db() {
@@ -59,7 +60,17 @@ async function trimOpenTabs(d: SQLite.SQLiteDatabase, closedAt = Date.now()) {
   await trimRecentlyClosed(d);
 }
 
-export async function addHistory(url:string,title?:string){const d=await db();await d.runAsync('INSERT INTO history (url,title,visited_at) VALUES (?,?,?)',url,title??'',Date.now());await d.runAsync('DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY visited_at DESC LIMIT 2000)');}
+export async function addHistory(url:string,title?:string){
+  const d=await db();
+  const now=Date.now();
+  const latest=await d.getFirstAsync<{id:number;url:string;title:string;visited_at:number}>('SELECT id,url,title,visited_at FROM history ORDER BY visited_at DESC LIMIT 1');
+  if(latest?.url===url&&now-latest.visited_at<=HISTORY_DUPLICATE_WINDOW_MS){
+    await d.runAsync('UPDATE history SET title=?,visited_at=? WHERE id=?',title?.trim()||latest.title||'',now,latest.id);
+  }else{
+    await d.runAsync('INSERT INTO history (url,title,visited_at) VALUES (?,?,?)',url,title??'',now);
+  }
+  await d.runAsync('DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY visited_at DESC LIMIT 2000)');
+}
 export async function removeHistoryEntry(id:number){if(!Number.isInteger(id)||id<=0)return;const d=await db();await d.runAsync('DELETE FROM history WHERE id=?',id);}
 export async function clearHistory(){const d=await db();await d.execAsync('DELETE FROM history');}
 export async function getHistory(limit=100){const d=await db();return d.getAllAsync<{id:number;url:string;title:string;visited_at:number}>('SELECT * FROM history ORDER BY visited_at DESC LIMIT ?',limit);}

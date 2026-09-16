@@ -18,22 +18,41 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "category": ["BROWSABLE", "DEFAULT"],
-          "data": [{"scheme":"http"},{"scheme":"https"}]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "http"
+            },
+            {
+              "scheme": "https"
+            }
+          ]
         }
       ],
-      "adaptiveIcon": {"backgroundColor":"#071018"}
+      "adaptiveIcon": {
+        "backgroundColor": "#071018"
+      }
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-local-authentication",
       "expo-sqlite",
-      ["expo-web-browser", {"experimentalLauncherActivity":true}],
+      [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": true
+        }
+      ],
       "./plugins/withRaidWebViewSecurity",
       "./plugins/withRaidWireGuard",
       "./plugins/withRaidLauncherIcon"
     ],
-    "experiments": {"typedRoutes":true}
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

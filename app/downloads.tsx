@@ -30,6 +30,11 @@ function downloadKind(item:DownloadItem):Exclude<KindFilter,'all'>{
   return 'other';
 }
 
+function isRaidReadable(item: DownloadItem) {
+  const name = String(item.file_name || '').toLowerCase().split(/[?#]/)[0];
+  return ['.txt','.md','.json','.csv','.log','.xml','.html','.htm','.css','.js','.ts'].some(extension => name.endsWith(extension));
+}
+
 function bytes(value: number | null) {
   if (!value || value <= 0) return '—';
   const units = ['B','KB','MB','GB'];
@@ -231,7 +236,7 @@ export default function DownloadsScreen() {
               <View style={[s.track,{backgroundColor:theme.surface2}]}><View style={[s.progress,{backgroundColor:theme.accent,width:`${Math.max(item.state === 'completed' ? 100 : 2, Math.round(item.progress * 100))}%`}]} /></View>
               {!!item.error && <View style={s.errorRow}><Ionicons name="warning-outline" size={15} color="#E1A091" /><Text style={s.error} numberOfLines={3}>{item.error}</Text></View>}
               <View style={s.actions}>
-                {item.state === 'completed' && <Pressable onPress={() => void perform(() => openDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="open-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>فتح</Text></Pressable>}
+                {item.state === 'completed' && <Pressable onPress={() => isRaidReadable(item) ? router.push({ pathname: '/file-viewer', params: { id: String(item.id) } }) : void perform(() => openDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name={isRaidReadable(item) ? 'reader-outline' : 'open-outline'} size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>{isRaidReadable(item) ? 'قراءة' : 'فتح'}</Text></Pressable>}
                 {item.state === 'completed' && <Pressable onPress={() => void perform(() => shareDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="share-social-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>مشاركة</Text></Pressable>}
                 {item.state === 'downloading' && <Pressable onPress={() => void perform(() => pauseDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pause" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إيقاف</Text></Pressable>}
                 {item.state === 'paused' && <Pressable onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}

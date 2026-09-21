@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -74,13 +74,25 @@ function stateIcon(item: DownloadItem): keyof typeof Ionicons.glyphMap {
 export default function DownloadsScreen() {
   const [items, setItems] = useState<DownloadItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshError, setRefreshError] = useState(false);
   const [filter,setFilter] = useState<Filter>('all');
   const [kindFilter,setKindFilter] = useState<KindFilter>('all');
   const [themeName,setThemeName] = useState<ThemeName>('cinematic');
+  const refreshInFlight = useRef(false);
   const theme = useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh = useCallback(async () => {
-    try { setItems(await listDownloads()); } finally { setLoading(false); }
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    try {
+      setItems(await listDownloads());
+      setRefreshError(false);
+    } catch {
+      setRefreshError(true);
+    } finally {
+      refreshInFlight.current = false;
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -181,6 +193,11 @@ export default function DownloadsScreen() {
 
       {loading ? <View style={s.center}><ActivityIndicator color={theme.accent} /></View> : (
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+          {refreshError && <View style={[s.refreshError,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+            <Ionicons name="warning-outline" size={22} color="#E1A091" />
+            <View style={s.refreshErrorCopy}><Text style={[s.refreshErrorTitle,{color:theme.text}]}>تعذر تحديث قائمة التنزيلات</Text><Text style={[s.refreshErrorText,{color:theme.muted}]}>{items.length ? 'التنزيلات الظاهرة محفوظة، ويمكنك المحاولة مجددًا.' : 'لم يتمكن RAID من قراءة التنزيلات الآن.'}</Text></View>
+            <Pressable onPress={() => void refresh()} accessibilityRole="button" accessibilityLabel="إعادة محاولة تحديث التنزيلات" style={[s.retryRefresh,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="refresh" size={18} color={theme.accent} /></Pressable>
+          </View>}
           {summary.active > 0 && <View style={[s.livePanel,{backgroundColor:theme.surface,borderColor:theme.border}]}>
             <View style={s.liveTop}>
               <View style={[s.liveIcon,{backgroundColor:theme.surface2}]}><Ionicons name="speedometer-outline" size={24} color={theme.accent}/></View>
@@ -213,9 +230,9 @@ export default function DownloadsScreen() {
             {kindFilters.map(item=>{const active=kindFilter===item.key;return <Pressable key={item.key} onPress={()=>setKindFilter(item.key)} style={({pressed})=>[s.kindFilter,{backgroundColor:active?theme.surface2:'transparent',borderColor:active?theme.accent:theme.border},pressed&&s.press]}><Ionicons name={item.icon} size={15} color={active?theme.accent:theme.muted}/><Text style={[s.kindFilterText,{color:active?theme.text:theme.muted}]}>{item.label}</Text></Pressable>})}
           </ScrollView>
 
-          {items.length === 0 ? (
+          {items.length === 0 && !refreshError ? (
             <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={[s.emptyIcon,{backgroundColor:theme.surface2}]}><Ionicons name="cloud-download-outline" size={34} color={theme.accent} /></View><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد تنزيلات بعد</Text><Text style={[s.emptyText,{color:theme.muted}]}>عندما يبدأ RAID تنزيل ملف سيظهر هنا مع السرعة والوقت المتبقي والتحكم الكامل.</Text></View>
-          ) : visible.length===0 ? (
+          ) : items.length > 0 && visible.length===0 ? (
             <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="filter-outline" size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد عناصر هنا</Text><Text style={[s.emptyText,{color:theme.muted}]}>غيّر الفلتر لعرض بقية التنزيلات.</Text></View>
           ) : visible.map((item) => {
             const remaining = eta(item.eta_seconds);
@@ -254,6 +271,7 @@ export default function DownloadsScreen() {
 
 const s = StyleSheet.create({
   root:{flex:1},header:{minHeight:72,paddingHorizontal:16,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1},headerButton:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',borderWidth:1},headerCopy:{flex:1},title:{fontSize:21,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,textAlign:'right',marginTop:3},body:{padding:16,gap:12,paddingBottom:42},center:{flex:1,alignItems:'center',justifyContent:'center'},
+  refreshError:{minHeight:72,padding:12,borderRadius:18,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:10},refreshErrorCopy:{flex:1},refreshErrorTitle:{fontSize:13,fontWeight:'900',textAlign:'right'},refreshErrorText:{fontSize:10,lineHeight:16,textAlign:'right',marginTop:2},retryRefresh:{width:40,height:40,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},
   livePanel:{padding:16,borderRadius:24,borderWidth:1,gap:10},liveTop:{flexDirection:'row-reverse',alignItems:'center',gap:11},liveIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},liveCopy:{flex:1,alignItems:'flex-end'},liveTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},liveSpeed:{marginTop:3,fontSize:18,fontWeight:'900',textAlign:'right'},liveNumbers:{alignItems:'center',minWidth:44},liveCount:{fontSize:18,fontWeight:'900'},liveLabel:{fontSize:9,marginTop:1},liveDetail:{fontSize:11,textAlign:'right',fontWeight:'700'},liveHint:{fontSize:10,lineHeight:17,textAlign:'right'},liveTrack:{height:7,borderRadius:99,overflow:'hidden'},liveProgress:{height:'100%',borderRadius:99},bulkActions:{flexDirection:'row-reverse',gap:8,flexWrap:'wrap'},bulkButton:{height:38,paddingHorizontal:13,borderRadius:13,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:6},bulkText:{fontSize:11,fontWeight:'800'},bulkPrimary:{fontSize:11,fontWeight:'900',color:'#fff'},
   summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},kindFilters:{gap:7,paddingVertical:1},kindFilter:{height:34,borderRadius:12,borderWidth:1,paddingHorizontal:10,flexDirection:'row-reverse',alignItems:'center',gap:5},kindFilterText:{fontSize:9.5,fontWeight:'800'},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},press:{transform:[{scale:.985}],opacity:.86}
 });

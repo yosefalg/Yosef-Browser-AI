@@ -735,7 +735,11 @@ export default function BrowserScreen() {
       return false;
     }
     if (safeExternalUrl(requestUrl)) return true;
-    if (/^(mailto:|tel:|sms:)/i.test(requestUrl)) Linking.openURL(requestUrl).catch(() => {});
+    if (/^(mailto:|tel:|sms:)/i.test(requestUrl)) {
+      void Linking.openURL(requestUrl).catch(() => {
+        Alert.alert('RAID Browser', 'لا يوجد تطبيق مناسب لفتح هذا الرابط.');
+      });
+    }
     return false;
   };
 

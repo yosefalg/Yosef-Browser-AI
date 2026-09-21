@@ -24,6 +24,30 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'audio/mp4': '.m4a',
   'text/plain': '.txt',
 };
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  apk: 'application/vnd.android.package-archive',
+  csv: 'text/csv',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  epub: 'application/epub+zip',
+  gif: 'image/gif',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  json: 'application/json',
+  m4a: 'audio/mp4',
+  mp3: 'audio/mpeg',
+  mp4: 'video/mp4',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  webm: 'video/webm',
+  webp: 'image/webp',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  zip: 'application/zip',
+};
 
 function sanitizeFileName(value: string, fallback = `download-${Date.now()}.bin`) {
   const cleaned = value.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_').trim().replace(/^\.+/, '').slice(0, 120);
@@ -37,6 +61,11 @@ function safeFileName(url: string) {
   } catch {
     return `download-${Date.now()}.bin`;
   }
+}
+
+function mimeTypeForFile(fileName: string) {
+  const extension = fileName.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase();
+  return extension ? EXTENSION_MIME_TYPES[extension] : undefined;
 }
 
 function headerValue(headers: Record<string, string> | undefined, name: string) {
@@ -400,8 +429,18 @@ export async function openDownload(id: number) {
   }
   const uri = await FileSystem.getContentUriAsync(item.local_uri);
   const supported = await Linking.canOpenURL(uri);
-  if (!supported) throw new Error('لا يوجد تطبيق مناسب لفتح هذا الملف.');
-  await Linking.openURL(uri);
+  if (supported) {
+    try {
+      await Linking.openURL(uri);
+      return;
+    } catch {}
+  }
+  const available = await Sharing.isAvailableAsync();
+  if (!available) throw new Error('لا يوجد تطبيق مناسب لفتح هذا الملف.');
+  await Sharing.shareAsync(item.local_uri, {
+    dialogTitle: `فتح ${item.file_name} باستخدام`,
+    mimeType: mimeTypeForFile(item.file_name),
+  });
 }
 
 export async function shareDownload(id: number) {
@@ -414,7 +453,10 @@ export async function shareDownload(id: number) {
   }
   const available = await Sharing.isAvailableAsync();
   if (!available) throw new Error('المشاركة غير متاحة على هذا الجهاز.');
-  await Sharing.shareAsync(item.local_uri, { dialogTitle: `مشاركة ${item.file_name}` });
+  await Sharing.shareAsync(item.local_uri, {
+    dialogTitle: `مشاركة ${item.file_name}`,
+    mimeType: mimeTypeForFile(item.file_name),
+  });
 }
 
 export async function removeDownload(id: number, deleteFile = false) {

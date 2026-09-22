@@ -308,6 +308,7 @@ export default function BrowserScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [siteInfoOpen, setSiteInfoOpen] = useState(false);
   const [sitePrefs, setSitePrefs] = useState<SitePreferences>({ ...DEFAULT_SITE_PREFERENCES });
+  const [sitePreferencesBusy, setSitePreferencesBusy] = useState(false);
   const [performanceSettings, setPerformanceSettings] = useState<PerformanceSettings>({ ...DEFAULT_PERFORMANCE_SETTINGS });
   const [vpnConnected, setVpnConnected] = useState(false);
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
@@ -508,10 +509,24 @@ export default function BrowserScreen() {
   };
 
   const updateSitePreference = async (patch: Partial<SitePreferences>, reload = false) => {
+    if (sitePreferencesBusy) return;
+    const previous = sitePrefs;
     const next = { ...sitePrefs, ...patch };
     setSitePrefs(next);
-    if (!privateMode) await saveSitePreferences(loadedUrl, next).catch(() => {});
-    if (reload) setWebKey((value) => value + 1);
+    if (privateMode) {
+      if (reload) setWebKey((value) => value + 1);
+      return;
+    }
+    setSitePreferencesBusy(true);
+    try {
+      await saveSitePreferences(loadedUrl, next);
+      if (reload) setWebKey((value) => value + 1);
+    } catch {
+      setSitePrefs(previous);
+      Alert.alert('إعدادات الموقع', 'تعذر حفظ التغيير. بقي الإعداد السابق فعالًا.');
+    } finally {
+      setSitePreferencesBusy(false);
+    }
   };
 
   const toggleDesktop = () => {
@@ -520,9 +535,24 @@ export default function BrowserScreen() {
   };
 
   const resetCurrentSite = async () => {
-    if (!privateMode) await resetSitePreferences(loadedUrl).catch(() => {});
-    setSitePrefs({ ...DEFAULT_SITE_PREFERENCES });
-    setWebKey((value) => value + 1);
+    if (sitePreferencesBusy) return;
+    const previous = sitePrefs;
+    const defaults = { ...DEFAULT_SITE_PREFERENCES };
+    setSitePrefs(defaults);
+    if (privateMode) {
+      setWebKey((value) => value + 1);
+      return;
+    }
+    setSitePreferencesBusy(true);
+    try {
+      await resetSitePreferences(loadedUrl);
+      setWebKey((value) => value + 1);
+    } catch {
+      setSitePrefs(previous);
+      Alert.alert('إعدادات الموقع', 'تعذرت إعادة الإعدادات. بقيت إعدادات الموقع الحالية فعالة.');
+    } finally {
+      setSitePreferencesBusy(false);
+    }
   };
 
   const openReader = () => {
@@ -968,14 +998,14 @@ export default function BrowserScreen() {
             </View>
 
             <View style={styles.siteControls}>
-              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>عرض سطح المكتب</Text><Text style={styles.siteControlHint}>يتذكر RAID هذا الاختيار لهذا الموقع</Text></View><Switch value={sitePrefs.desktopMode} onValueChange={(value) => void updateSitePreference({ desktopMode: value }, true)} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
-              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>كوكيز الطرف الثالث</Text><Text style={styles.siteControlHint}>عطّلها لهذا الموقع لخصوصية أعلى</Text></View><Switch value={!privateMode && sitePrefs.thirdPartyCookies} disabled={privateMode} onValueChange={(value) => void updateSitePreference({ thirdPartyCookies: value }, true)} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
-              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>حجب الإعلانات والنوافذ التلقائية</Text><Text style={styles.siteControlHint}>يعمل فعليًا داخل هذا الموقع وتُسجّل النتائج محليًا</Text></View><Switch value={sitePrefs.adBlock} onValueChange={(value) => void updateSitePreference({ adBlock: value })} trackColor={{false:'#3B4247',true:'#4F8C78'}} thumbColor="#F4EEE8" /></View>
-              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>تشغيل الوسائط تلقائيًا</Text><Text style={styles.siteControlHint}>تحكم مستقل بكل موقع</Text></View><Switch value={sitePrefs.autoplayMedia} onValueChange={(value) => void updateSitePreference({ autoplayMedia: value })} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
+              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>عرض سطح المكتب</Text><Text style={styles.siteControlHint}>يتذكر RAID هذا الاختيار لهذا الموقع</Text></View><Switch value={sitePrefs.desktopMode} disabled={sitePreferencesBusy} onValueChange={(value) => void updateSitePreference({ desktopMode: value }, true)} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
+              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>كوكيز الطرف الثالث</Text><Text style={styles.siteControlHint}>عطّلها لهذا الموقع لخصوصية أعلى</Text></View><Switch value={!privateMode && sitePrefs.thirdPartyCookies} disabled={privateMode || sitePreferencesBusy} onValueChange={(value) => void updateSitePreference({ thirdPartyCookies: value }, true)} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
+              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>حجب الإعلانات والنوافذ التلقائية</Text><Text style={styles.siteControlHint}>يعمل فعليًا داخل هذا الموقع وتُسجّل النتائج محليًا</Text></View><Switch value={sitePrefs.adBlock} disabled={sitePreferencesBusy} onValueChange={(value) => void updateSitePreference({ adBlock: value })} trackColor={{false:'#3B4247',true:'#4F8C78'}} thumbColor="#F4EEE8" /></View>
+              <View style={styles.siteControlRow}><View style={styles.siteControlCopy}><Text style={styles.siteControlTitle}>تشغيل الوسائط تلقائيًا</Text><Text style={styles.siteControlHint}>تحكم مستقل بكل موقع</Text></View><Switch value={sitePrefs.autoplayMedia} disabled={sitePreferencesBusy} onValueChange={(value) => void updateSitePreference({ autoplayMedia: value })} trackColor={{false:'#3B4247',true:'#8C6D58'}} thumbColor="#F4EEE8" /></View>
             </View>
 
             {privateMode && <Text style={styles.privateSiteNote}>الوضع الخاص لا يحفظ تغييرات إعدادات الموقع بعد إغلاق الجلسة.</Text>}
-            {hasCustomSitePrefs && <Pressable onPress={() => void resetCurrentSite()} style={styles.siteReset}><Ionicons name="refresh-outline" size={17} color="#D5AA88" /><Text style={styles.siteResetText}>إعادة إعدادات هذا الموقع</Text></Pressable>}
+            {hasCustomSitePrefs && <Pressable disabled={sitePreferencesBusy} onPress={() => void resetCurrentSite()} style={[styles.siteReset, sitePreferencesBusy && styles.disabled]} accessibilityRole="button" accessibilityState={{disabled:sitePreferencesBusy}}><Ionicons name="refresh-outline" size={17} color="#D5AA88" /><Text style={styles.siteResetText}>إعادة إعدادات هذا الموقع</Text></Pressable>}
             <Pressable onPress={() => setSiteInfoOpen(false)} style={styles.siteClose}><Text style={styles.siteCloseText}>تم</Text></Pressable>
           </Pressable>
         </Pressable>

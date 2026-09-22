@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { saveLocalWireGuardConfig } from '@/lib/vpn-import';
 import { getSetting } from '@/lib/db';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 type Provider={name:string;note:string;url:string};
 const providers:Provider[]=[
@@ -22,7 +22,7 @@ export default function VpnProviderScreen(){
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
-  useFocusEffect(useCallback(()=>{let alive=true;getSetting<ThemeName>('theme','cinematic').then(value=>{if(alive)setThemeName(value==='cinematic'||value==='amoled'||value==='light'?value:'cinematic')}).catch(()=>{});return()=>{alive=false};},[]));
+  useFocusEffect(useCallback(()=>{let alive=true;getSetting<ThemeName>('theme','cinematic').then(value=>{if(alive)setThemeName(isThemeName(value)?value:'cinematic')}).catch(()=>{});return()=>{alive=false};},[]));
 
   const openProvider=(url:string)=>void Linking.openURL(url).catch(()=>setMessage('تعذر فتح موقع المزود الآن.'));
   const save=async()=>{

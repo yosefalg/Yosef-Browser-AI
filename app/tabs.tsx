@@ -8,7 +8,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { TabCard } from '@/components/TabCard';
 import { SiteIcon } from '@/components/SiteIcon';
 import { TabSortMode, TabViewControls, TabViewMode } from '@/components/TabViewControls';
-import { getTheme, ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, ThemeName } from '@/lib/theme';
 import {
   BrowserTab, ClosedBrowserTab, clearRecentlyClosedTabs, closeAllBrowserTabs, closeBrowserTab, closeBrowserTabs,
   createBrowserTab, getBrowserTabs, getRecentlyClosedTabs, getSetting, restoreClosedBrowserTab, setSetting,
@@ -55,7 +55,7 @@ export default function TabsScreen(){
 
   useFocusEffect(useCallback(()=>{
     void refresh();
-    void getSetting<ThemeName>('theme','cinematic').then(value=>setThemeName(value==='cinematic'||value==='amoled'||value==='light'?value:'cinematic'));
+    void getSetting<ThemeName>('theme','cinematic').then(value=>setThemeName(isThemeName(value)?value:'cinematic'));
     return()=>{};
   },[refresh]));
 

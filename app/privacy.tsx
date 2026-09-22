@@ -9,7 +9,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { clearHistory, getBookmarks, getHistory, getProtectionStats, getSetting, resetProtectionStats } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { getVpnProvisioningState, isVpnConnected } from '@/lib/vpn';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 type LiveState={signedIn:boolean;vpnConnected:boolean;vpnReady:boolean;vpnSource:string;history:number;bookmarks:number;biometric:boolean;adsRemoved:number;popupsBlocked:number};
 
@@ -38,7 +38,7 @@ export default function PrivacyScreen(){
         getProtectionStats().catch(()=>({ads_removed:0,popups_blocked:0,updated_at:0})),
       ]);
       setLive({signedIn:Boolean(session),vpnConnected:Boolean(connected),vpnReady:Boolean(profile.configured),vpnSource:profile.source,history:history.length,bookmarks:bookmarks.length,biometric:Boolean(biometric),adsRemoved:protection.ads_removed,popupsBlocked:protection.popups_blocked});
-      setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
+      setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
     } finally {busy.current=false;setChecking(false);}
   },[]);
 

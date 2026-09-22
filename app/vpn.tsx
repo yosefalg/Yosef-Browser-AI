@@ -6,7 +6,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { connectVpn, disconnectVpn, getVpnProvisioningState, isVpnConnected } from '@/lib/vpn';
 import { getCurrentSession } from '@/lib/auth';
 import { getSetting } from '@/lib/db';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 type VpnSource='service'|'local'|'cache'|'none';
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -33,7 +33,7 @@ export default function VpnScreen(){
         getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
       ]);
       setSignedIn(Boolean(session));setConnected(active);
-      setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
+      setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
       const profile=await getVpnProvisioningState().catch(()=>({configured:false,source:'none' as const}));
       setReady(profile.configured);setSource(profile.source);
       if(active)setMessage('النفق متصل فعليًا على Android.');

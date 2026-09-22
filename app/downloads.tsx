@@ -7,7 +7,7 @@ import { listDownloads } from '@/features/downloads/store';
 import { cancelDownload, openDownload, pauseDownload, reconcileInterruptedDownloads, removeDownload, resumeDownload, retryDownload, shareDownload } from '@/features/downloads/download-manager';
 import type { DownloadItem } from '@/features/downloads/types';
 import { getSetting } from '@/lib/db';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 type Filter = 'all' | 'active' | 'completed' | 'failed';
 type KindFilter = 'all' | 'media' | 'documents' | 'apps' | 'archives' | 'other';
@@ -101,7 +101,7 @@ export default function DownloadsScreen() {
     void Promise.all([
       reconcileInterruptedDownloads().catch(()=>0),
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
-    ]).then(([,saved])=>{setThemeName(saved);void refresh();});
+    ]).then(([,saved])=>{setThemeName(isThemeName(saved)?saved:'cinematic');void refresh();});
     return () => {};
   }, [refresh]));
 

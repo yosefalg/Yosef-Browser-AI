@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { deleteVaultEntry, generateStrongPassword, getVaultSessionRemainingMs, listVaultEntries, lockVault, saveVaultEntry, VaultEntry } from '@/lib/passwords';
 import { getSetting } from '@/lib/db';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 export default function PasswordsScreen() {
   const focused = useRef(false);
@@ -56,7 +56,7 @@ export default function PasswordsScreen() {
   useFocusEffect(useCallback(() => {
     focused.current = true;
     void getSetting<ThemeName>('theme', 'cinematic').then((value) => {
-      if (value === 'cinematic' || value === 'amoled' || value === 'light') setThemeName(value);
+      setThemeName(isThemeName(value) ? value : 'cinematic');
     }).catch(() => {});
     void unlock(true);
     return () => {

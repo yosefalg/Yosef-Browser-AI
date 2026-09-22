@@ -7,7 +7,7 @@ import { getCurrentProfile, getCurrentSession, signOut, updateCurrentProfile } f
 import { syncAccountData } from '@/lib/sync';
 import { disconnectVpn, isVpnConnected } from '@/lib/vpn';
 import { getSetting } from '@/lib/db';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 type QuickItem={title:string;sub:string;icon:string;route:'/ai'|'/vpn'|'/library'|'/tabs'};
 
@@ -35,7 +35,7 @@ export default function AccountScreen(){
       setEmail(session.user.email||'');
       setUserId(session.user.id);
       setVpnConnected(vpn);
-      setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
+      setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
       const profile=await getCurrentProfile();
       setName(profile?.display_name||String(session.user.user_metadata?.display_name||''));
     }catch(e){setMsg(e instanceof Error?e.message:'تعذر تحميل الحساب.');}

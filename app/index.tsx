@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,7 +38,16 @@ export default function HomeScreen(){
     getSetting<boolean>('raid_2_11_welcome_seen',false).catch(()=>false),
   ]).then(([items,tabs,recent,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setRecentSites(recent);setThemeName(isThemeName(saved)?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
 
-  const openUrl=(value:string)=>{const clean=value.trim();if(!clean)return;Keyboard.dismiss();router.push({pathname:'/browser',params:{url:normalizeInput(clean)}})};
+  const openUrl=(value:string)=>{
+    const clean=value.trim();
+    if(!clean)return;
+    Keyboard.dismiss();
+    try{
+      router.push({pathname:'/browser',params:{url:normalizeInput(clean)}});
+    }catch{
+      Alert.alert('RAID Browser','تعذر فهم العنوان أو عبارة البحث. تحقق من الرابط وحاول مرة أخرى.');
+    }
+  };
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
   const submit=()=>looksLikeAIQuery(query)?askAI():openUrl(query);
   const applySearchShortcut=(prefix:string)=>{const clean=query.trim();if(clean&&!clean.startsWith('!')){openUrl(`${prefix} ${clean}`);return;}setQuery(`${prefix} `)};

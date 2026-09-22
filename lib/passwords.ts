@@ -128,7 +128,8 @@ export async function saveVaultEntry(input: Omit<VaultEntry, 'id' | 'createdAt' 
   await ensureBiometric();
   const now = Date.now();
   const id = input.id ?? await createEntryId();
-  const existingRaw = await SecureStore.getItemAsync(PREFIX + id);
+  const entryKey = PREFIX + id;
+  const existingRaw = await SecureStore.getItemAsync(entryKey);
   let createdAt = now;
   if (existingRaw) {
     try { createdAt = (JSON.parse(existingRaw) as VaultEntry).createdAt ?? now; } catch {}
@@ -141,9 +142,21 @@ export async function saveVaultEntry(input: Omit<VaultEntry, 'id' | 'createdAt' 
     createdAt,
     updatedAt: now,
   };
-  await SecureStore.setItemAsync(PREFIX + id, JSON.stringify(entry), SECURE_OPTIONS);
+  await SecureStore.setItemAsync(entryKey, JSON.stringify(entry), SECURE_OPTIONS);
   const ids = await getIndex();
-  if (!ids.includes(id)) await setIndex([...ids, id]);
+  if (!ids.includes(id)) {
+    try {
+      await setIndex([...ids, id]);
+    } catch {
+      // Do not leave an unreachable password behind if the vault index could
+      // not be updated. Restore an existing value, or remove a brand-new one.
+      try {
+        if (existingRaw) await SecureStore.setItemAsync(entryKey, existingRaw, SECURE_OPTIONS);
+        else await SecureStore.deleteItemAsync(entryKey);
+      } catch {}
+      throw new Error('تعذر إكمال حفظ بيانات الدخول بأمان. حاول مرة أخرى.');
+    }
+  }
   return entry;
 }
 

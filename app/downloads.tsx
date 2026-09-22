@@ -78,7 +78,9 @@ export default function DownloadsScreen() {
   const [filter,setFilter] = useState<Filter>('all');
   const [kindFilter,setKindFilter] = useState<KindFilter>('all');
   const [themeName,setThemeName] = useState<ThemeName>('cinematic');
+  const [operationBusy,setOperationBusy] = useState(false);
   const refreshInFlight = useRef(false);
+  const operationInFlight = useRef(false);
   const theme = useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh = useCallback(async () => {
@@ -131,30 +133,57 @@ export default function DownloadsScreen() {
     return stateMatches&&(kindFilter==='all'||downloadKind(item)===kindFilter);
   }),[items,filter,kindFilter]);
 
+  const beginOperation = () => {
+    if (operationInFlight.current) return false;
+    operationInFlight.current = true;
+    setOperationBusy(true);
+    return true;
+  };
+
+  const endOperation = () => {
+    operationInFlight.current = false;
+    setOperationBusy(false);
+  };
+
   const perform = async (fn: () => Promise<unknown>) => {
+    if (!beginOperation()) return;
     try { await fn(); await refresh(); }
     catch (error) { Alert.alert('التنزيلات', error instanceof Error ? error.message : 'تعذر تنفيذ العملية.'); }
+    finally { endOperation(); }
   };
 
   const pauseAll = async () => {
     const ids = items.filter(item => item.state === 'downloading').map(item => item.id);
-    if (!ids.length) return;
-    const results = await Promise.allSettled(ids.map(id => pauseDownload(id)));
-    const failed = results.filter(result => result.status === 'rejected').length;
-    await refresh();
-    if (failed) Alert.alert('التنزيلات', `تم إيقاف ${ids.length - failed} تنزيل، وتعذر إيقاف ${failed}.`);
+    if (!ids.length || !beginOperation()) return;
+    try {
+      const results = await Promise.allSettled(ids.map(id => pauseDownload(id)));
+      const failed = results.filter(result => result.status === 'rejected').length;
+      await refresh();
+      if (failed) Alert.alert('التنزيلات', `تم إيقاف ${ids.length - failed} تنزيل، وتعذر إيقاف ${failed}.`);
+    } catch {
+      Alert.alert('التنزيلات', 'تعذر إيقاف التنزيلات الآن.');
+    } finally {
+      endOperation();
+    }
   };
 
   const resumeAll = async () => {
     const ids = items.filter(item => item.state === 'paused').map(item => item.id);
-    if (!ids.length) return;
-    const results = await Promise.allSettled(ids.map(id => resumeDownload(id)));
-    const failed = results.filter(result => result.status === 'rejected').length;
-    await refresh();
-    if (failed) Alert.alert('التنزيلات', `تم استكمال ${ids.length - failed} تنزيل، وتعذر استكمال ${failed}.`);
+    if (!ids.length || !beginOperation()) return;
+    try {
+      const results = await Promise.allSettled(ids.map(id => resumeDownload(id)));
+      const failed = results.filter(result => result.status === 'rejected').length;
+      await refresh();
+      if (failed) Alert.alert('التنزيلات', `تم استكمال ${ids.length - failed} تنزيل، وتعذر استكمال ${failed}.`);
+    } catch {
+      Alert.alert('التنزيلات', 'تعذر استكمال التنزيلات الآن.');
+    } finally {
+      endOperation();
+    }
   };
 
   const confirmRemove = (item: DownloadItem) => {
+    if (operationInFlight.current) return;
     const fileName = item.file_name || 'هذا الملف';
     const message = item.state === 'completed'
       ? `سيتم حذف «${fileName}» من الهاتف وإزالة سجل التنزيل. لا يمكن التراجع عن ذلك.`
@@ -211,8 +240,8 @@ export default function DownloadsScreen() {
             {summary.unknownSize > 0 && <Text style={[s.liveHint,{color:theme.muted}]}>هناك {summary.unknownSize} تنزيل لا يرسل حجمه الكامل؛ لن يعرض RAID له وقتًا متبقيًا وهميًا.</Text>}
             {summary.aggregateProgress !== null && <View style={[s.liveTrack,{backgroundColor:theme.surface2}]}><View style={[s.liveProgress,{backgroundColor:theme.accent,width:`${Math.max(2,Math.round(summary.aggregateProgress*100))}%`}]} /></View>}
             <View style={s.bulkActions}>
-              {summary.running > 0 && <Pressable onPress={() => void pauseAll()} style={[s.bulkButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pause" size={16} color={theme.text}/><Text style={[s.bulkText,{color:theme.text}]}>إيقاف الكل</Text></Pressable>}
-              {summary.paused > 0 && <Pressable onPress={() => void resumeAll()} style={[s.bulkButton,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff"/><Text style={s.bulkPrimary}>استكمال الكل</Text></Pressable>}
+              {summary.running > 0 && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void pauseAll()} style={[s.bulkButton,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="pause" size={16} color={theme.text}/><Text style={[s.bulkText,{color:theme.text}]}>إيقاف الكل</Text></Pressable>}
+              {summary.paused > 0 && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void resumeAll()} style={[s.bulkButton,{backgroundColor:theme.accent,borderColor:theme.accent},operationBusy&&s.disabled]}><Ionicons name="play" size={16} color="#fff"/><Text style={s.bulkPrimary}>استكمال الكل</Text></Pressable>}
             </View>
           </View>}
 
@@ -253,13 +282,13 @@ export default function DownloadsScreen() {
               <View style={[s.track,{backgroundColor:theme.surface2}]}><View style={[s.progress,{backgroundColor:theme.accent,width:`${Math.max(item.state === 'completed' ? 100 : 2, Math.round(item.progress * 100))}%`}]} /></View>
               {!!item.error && <View style={s.errorRow}><Ionicons name="warning-outline" size={15} color="#E1A091" /><Text style={s.error} numberOfLines={3}>{item.error}</Text></View>}
               <View style={s.actions}>
-                {item.state === 'completed' && <Pressable onPress={() => isRaidReadable(item) ? router.push({ pathname: '/file-viewer', params: { id: String(item.id) } }) : void perform(() => openDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name={isRaidReadable(item) ? 'reader-outline' : 'open-outline'} size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>{isRaidReadable(item) ? 'قراءة' : 'فتح'}</Text></Pressable>}
-                {item.state === 'completed' && <Pressable onPress={() => void perform(() => shareDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="share-social-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>مشاركة</Text></Pressable>}
-                {item.state === 'downloading' && <Pressable onPress={() => void perform(() => pauseDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pause" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إيقاف</Text></Pressable>}
-                {item.state === 'paused' && <Pressable onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}
-                {(item.state === 'failed' || item.state === 'cancelled') && <Pressable onPress={() => void perform(() => retryDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent}]}><Ionicons name="refresh" size={16} color="#fff" /><Text style={s.primaryText}>إعادة</Text></Pressable>}
-                {(item.state === 'downloading' || item.state === 'paused') && <Pressable onPress={() => void perform(() => cancelDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="close" size={17} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إلغاء</Text></Pressable>}
-                <Pressable onPress={() => confirmRemove(item)} accessibilityRole="button" accessibilityLabel={`حذف التنزيل ${item.file_name}`} style={[s.action,s.danger]}><Ionicons name="trash-outline" size={16} color="#F2D2CB" /><Text style={s.dangerText}>حذف</Text></Pressable>
+                {item.state === 'completed' && <Pressable disabled={operationBusy} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => isRaidReadable(item) ? router.push({ pathname: '/file-viewer', params: { id: String(item.id) } }) : void perform(() => openDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name={isRaidReadable(item) ? 'reader-outline' : 'open-outline'} size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>{isRaidReadable(item) ? 'قراءة' : 'فتح'}</Text></Pressable>}
+                {item.state === 'completed' && <Pressable disabled={operationBusy} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => shareDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="share-social-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>مشاركة</Text></Pressable>}
+                {item.state === 'downloading' && <Pressable disabled={operationBusy} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => pauseDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="pause" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إيقاف</Text></Pressable>}
+                {item.state === 'paused' && <Pressable disabled={operationBusy} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent},operationBusy&&s.disabled]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}
+                {(item.state === 'failed' || item.state === 'cancelled') && <Pressable disabled={operationBusy} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => retryDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent},operationBusy&&s.disabled]}><Ionicons name="refresh" size={16} color="#fff" /><Text style={s.primaryText}>إعادة</Text></Pressable>}
+                {(item.state === 'downloading' || item.state === 'paused') && <Pressable disabled={operationBusy} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => cancelDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="close" size={17} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إلغاء</Text></Pressable>}
+                <Pressable disabled={operationBusy} onPress={() => confirmRemove(item)} accessibilityRole="button" accessibilityLabel={`حذف التنزيل ${item.file_name}`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} style={[s.action,s.danger,operationBusy&&s.disabled]}><Ionicons name="trash-outline" size={16} color="#F2D2CB" /><Text style={s.dangerText}>حذف</Text></Pressable>
               </View>
             </View>;
           })}
@@ -273,5 +302,5 @@ const s = StyleSheet.create({
   root:{flex:1},header:{minHeight:72,paddingHorizontal:16,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1},headerButton:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',borderWidth:1},headerCopy:{flex:1},title:{fontSize:21,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,textAlign:'right',marginTop:3},body:{padding:16,gap:12,paddingBottom:42},center:{flex:1,alignItems:'center',justifyContent:'center'},
   refreshError:{minHeight:72,padding:12,borderRadius:18,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:10},refreshErrorCopy:{flex:1},refreshErrorTitle:{fontSize:13,fontWeight:'900',textAlign:'right'},refreshErrorText:{fontSize:10,lineHeight:16,textAlign:'right',marginTop:2},retryRefresh:{width:40,height:40,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},
   livePanel:{padding:16,borderRadius:24,borderWidth:1,gap:10},liveTop:{flexDirection:'row-reverse',alignItems:'center',gap:11},liveIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},liveCopy:{flex:1,alignItems:'flex-end'},liveTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},liveSpeed:{marginTop:3,fontSize:18,fontWeight:'900',textAlign:'right'},liveNumbers:{alignItems:'center',minWidth:44},liveCount:{fontSize:18,fontWeight:'900'},liveLabel:{fontSize:9,marginTop:1},liveDetail:{fontSize:11,textAlign:'right',fontWeight:'700'},liveHint:{fontSize:10,lineHeight:17,textAlign:'right'},liveTrack:{height:7,borderRadius:99,overflow:'hidden'},liveProgress:{height:'100%',borderRadius:99},bulkActions:{flexDirection:'row-reverse',gap:8,flexWrap:'wrap'},bulkButton:{height:38,paddingHorizontal:13,borderRadius:13,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:6},bulkText:{fontSize:11,fontWeight:'800'},bulkPrimary:{fontSize:11,fontWeight:'900',color:'#fff'},
-  summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},kindFilters:{gap:7,paddingVertical:1},kindFilter:{height:34,borderRadius:12,borderWidth:1,paddingHorizontal:10,flexDirection:'row-reverse',alignItems:'center',gap:5},kindFilterText:{fontSize:9.5,fontWeight:'800'},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},press:{transform:[{scale:.985}],opacity:.86}
+  summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},kindFilters:{gap:7,paddingVertical:1},kindFilter:{height:34,borderRadius:12,borderWidth:1,paddingHorizontal:10,flexDirection:'row-reverse',alignItems:'center',gap:5},kindFilterText:{fontSize:9.5,fontWeight:'800'},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},disabled:{opacity:.45},press:{transform:[{scale:.985}],opacity:.86}
 });

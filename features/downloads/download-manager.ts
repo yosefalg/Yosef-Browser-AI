@@ -196,6 +196,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
   await updateDownload(id, { state: 'downloading', error: null });
   try {
     const result = await task.downloadAsync();
+    if (paused.has(id)) return;
     active.delete(id);
     paused.delete(id);
     progressStats.delete(id);

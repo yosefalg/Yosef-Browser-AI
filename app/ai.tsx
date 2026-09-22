@@ -47,6 +47,7 @@ export default function AIScreen() {
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const lastAutoPrompt=useRef('');
+  const requestInFlight=useRef(false);
   const listRef=useRef<FlatList<AgentMessage>>(null);
 
   const refreshState=useCallback(async()=>{
@@ -71,7 +72,8 @@ export default function AIScreen() {
 
   const sendValue=useCallback(async(raw:string)=>{
     const value=raw.trim();
-    if(!value||busy)return;
+    if(!value||requestInFlight.current)return;
+    requestInFlight.current=true;
     const next=[...messages,{role:'user',content:value} as AgentMessage];
     setMessages(next);setText('');setLastFailedText('');setBusy(true);
     try{
@@ -100,8 +102,8 @@ export default function AIScreen() {
       setLastFailedText(value);
       setMessages([...next,{role:'assistant',content:error instanceof Error?error.message:'صار خلل بتشغيل RAID AI هسه.'}]);
       void refreshState();
-    }finally{setBusy(false);}
-  },[busy,messages,params.url,refreshState]);
+    }finally{requestInFlight.current=false;setBusy(false);}
+  },[messages,params.url,refreshState]);
 
   useEffect(()=>{
     const prompt=typeof params.prompt==='string'?params.prompt.trim():'';

@@ -102,11 +102,12 @@ export default function TabsScreen(){
   const changeView=(mode:TabViewMode)=>{setViewMode(mode);void setSetting('tabs_view_mode',mode);};
   const changeSort=(mode:TabSortMode)=>{setSortMode(mode);void setSetting('tabs_sort_mode',mode);};
   const openTab=(tab:BrowserTab)=>{if(!busy)router.replace({pathname:'/browser',params:{url:tab.url,tabId:String(tab.id)}});};
-  const newTab=async()=>{if(busy)return;setBusy(true);try{const url='https://www.google.com';const id=await createBrowserTab(url,'علامة تبويب جديدة');router.replace({pathname:'/browser',params:{url,tabId:String(id)}});}finally{setBusy(false);}};
+  const showActionError=(message:string)=>Alert.alert('إدارة التبويبات',message);
+  const newTab=async()=>{if(busy)return;setBusy(true);try{const url='https://www.google.com';const id=await createBrowserTab(url,'علامة تبويب جديدة');router.replace({pathname:'/browser',params:{url,tabId:String(id)}});}catch{showActionError('تعذر إنشاء تبويب جديد. حاول مرة أخرى.');}finally{setBusy(false);}};
   const newPrivate=()=>{if(!busy)router.replace({pathname:'/browser',params:{privateMode:'1'}});};
-  const close=async(id:number)=>{if(busy)return;setBusy(true);try{await closeBrowserTab(id);await refresh();}finally{setBusy(false);}};
-  const restore=async(item:ClosedBrowserTab)=>{if(busy)return;setBusy(true);try{const restored=await restoreClosedBrowserTab(item.id);if(restored)router.replace({pathname:'/browser',params:{url:restored.url,tabId:String(restored.id)}});else await refresh();}finally{setBusy(false);}};
-  const duplicate=async(tab:BrowserTab)=>{if(busy)return;setBusy(true);try{await createBrowserTab(tab.url,tab.title||hostOf(tab.url));await refresh();}finally{setBusy(false);}};
+  const close=async(id:number)=>{if(busy)return;setBusy(true);try{await closeBrowserTab(id);await refresh();}catch{showActionError('تعذر إغلاق التبويب. بقي مفتوحًا ويمكنك المحاولة مجددًا.');}finally{setBusy(false);}};
+  const restore=async(item:ClosedBrowserTab)=>{if(busy)return;setBusy(true);try{const restored=await restoreClosedBrowserTab(item.id);if(restored)router.replace({pathname:'/browser',params:{url:restored.url,tabId:String(restored.id)}});else await refresh();}catch{showActionError('تعذرت استعادة التبويب. بقي محفوظًا في «المغلقة مؤخرًا».');}finally{setBusy(false);}};
+  const duplicate=async(tab:BrowserTab)=>{if(busy)return;setBusy(true);try{await createBrowserTab(tab.url,tab.title||hostOf(tab.url));await refresh();}catch{showActionError('تعذر تكرار التبويب. لم تتم إضافة نسخة جديدة.');}finally{setBusy(false);}};
   const shareTab=(tab:BrowserTab)=>{void Share.share({title:tab.title||hostOf(tab.url),message:`${tab.title||hostOf(tab.url)}\n${tab.url}`,url:tab.url});};
   const openExternal=(tab:BrowserTab)=>{
     if(!/^https?:\/\//i.test(tab.url))return;
@@ -132,7 +133,7 @@ export default function TabsScreen(){
     if(busy||selectedIds.length===0)return;
     Alert.alert('إغلاق التبويبات المحددة؟',`سيتم إغلاق ${selectedIds.length} تبويب ويمكن استعادتها من «المغلقة مؤخرًا».`,[
       {text:'إلغاء',style:'cancel'},
-      {text:'إغلاق',style:'destructive',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(selectedIds);exitSelection();await refresh();}finally{setBusy(false);}}},
+      {text:'إغلاق',style:'destructive',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(selectedIds);exitSelection();await refresh();}catch{showActionError('تعذر إغلاق التبويبات المحددة. بقيت قائمة التحديد كما هي.');}finally{setBusy(false);}}},
     ]);
   };
 
@@ -141,7 +142,7 @@ export default function TabsScreen(){
     if(busy||tabs.length<2)return;
     Alert.alert('إغلاق التبويبات الأخرى؟',`سيبقى «${tab.title||hostOf(tab.url)}» فقط.`,[
       {text:'إلغاء',style:'cancel'},
-      {text:'إغلاق الأخرى',style:'destructive',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(tabs.filter(item=>item.id!==tab.id).map(item=>item.id));setQuery('');await refresh();}finally{setBusy(false);}}},
+      {text:'إغلاق الأخرى',style:'destructive',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(tabs.filter(item=>item.id!==tab.id).map(item=>item.id));setQuery('');await refresh();}catch{showActionError('تعذر إغلاق التبويبات الأخرى. لم تُفقد التبويبات المفتوحة.');}finally{setBusy(false);}}},
     ]);
   };
 
@@ -157,12 +158,12 @@ export default function TabsScreen(){
     if(!duplicates.length){Alert.alert('التبويبات مرتبة','لا توجد نسخ مكررة الآن.');return;}
     Alert.alert('تنظيف التبويبات المكررة؟',`سيتم الاحتفاظ بأحدث نسخة وإغلاق ${duplicates.length} تبويب مكرر.`,[
       {text:'إلغاء',style:'cancel'},
-      {text:'تنظيف',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(duplicates.map(tab=>tab.id));await refresh();}finally{setBusy(false);}}},
+      {text:'تنظيف',onPress:async()=>{setBusy(true);try{await closeBrowserTabs(duplicates.map(tab=>tab.id));await refresh();}catch{showActionError('تعذر تنظيف التبويبات المكررة. بقيت التبويبات الحالية دون تغيير.');}finally{setBusy(false);}}},
     ]);
   };
 
-  const closeAll=()=>{if(busy||tabs.length===0)return;Alert.alert('إغلاق كل التبويبات؟','يمكن استعادة أحدث الصفحات من «المغلقة مؤخرًا».',[{text:'إلغاء',style:'cancel'},{text:'إغلاق الكل',style:'destructive',onPress:async()=>{setBusy(true);try{await closeAllBrowserTabs();setQuery('');exitSelection();await refresh();}finally{setBusy(false);}}}]);};
-  const clearClosed=()=>{if(busy||closed.length===0)return;Alert.alert('مسح المغلقة مؤخرًا؟','سيتم حذف قائمة الاستعادة فقط.',[{text:'إلغاء',style:'cancel'},{text:'مسح',style:'destructive',onPress:async()=>{setBusy(true);try{await clearRecentlyClosedTabs();await refresh();}finally{setBusy(false);}}}]);};
+  const closeAll=()=>{if(busy||tabs.length===0)return;Alert.alert('إغلاق كل التبويبات؟','يمكن استعادة أحدث الصفحات من «المغلقة مؤخرًا».',[{text:'إلغاء',style:'cancel'},{text:'إغلاق الكل',style:'destructive',onPress:async()=>{setBusy(true);try{await closeAllBrowserTabs();setQuery('');exitSelection();await refresh();}catch{showActionError('تعذر إغلاق كل التبويبات. بقيت التبويبات المفتوحة دون تغيير.');}finally{setBusy(false);}}}]);};
+  const clearClosed=()=>{if(busy||closed.length===0)return;Alert.alert('مسح المغلقة مؤخرًا؟','سيتم حذف قائمة الاستعادة فقط.',[{text:'إلغاء',style:'cancel'},{text:'مسح',style:'destructive',onPress:async()=>{setBusy(true);try{await clearRecentlyClosedTabs();await refresh();}catch{showActionError('تعذر مسح قائمة التبويبات المغلقة. بقيت القائمة متاحة للاستعادة.');}finally{setBusy(false);}}}]);};
 
   const menuAction=(action:()=>void)=>{setMenuTab(null);setTimeout(action,80);};
 

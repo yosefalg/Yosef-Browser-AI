@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { clearHistory, getBookmarks, getHistory, getSetting, removeBookmark, removeHistoryEntry } from '@/lib/db';
@@ -18,17 +18,29 @@ export default function LibraryScreen(){
   const [history,setHistory]=useState<HistoryItem[]>([]);
   const [tab,setTab]=useState<'bookmarks'|'history'>(requestedTab);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
+  const [loading,setLoading]=useState(true);
+  const [refreshError,setRefreshError]=useState(false);
+  const loadInFlight=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   const load=useCallback(async()=>{
-    const [b,h]=await Promise.all([getBookmarks(),getHistory(150)]);
-    setBookmarks(b); setHistory(h);
+    if(loadInFlight.current)return;
+    loadInFlight.current=true;
+    try{
+      const [b,h]=await Promise.all([getBookmarks(),getHistory(150)]);
+      setBookmarks(b); setHistory(h); setRefreshError(false);
+    }catch{
+      setRefreshError(true);
+    }finally{
+      loadInFlight.current=false;
+      setLoading(false);
+    }
   },[]);
 
   useEffect(()=>setTab(requestedTab),[requestedTab]);
   useFocusEffect(useCallback(()=>{
-    void load().catch(()=>{});
-    void getSetting<ThemeName>('theme','cinematic').then(value=>setThemeName(isThemeName(value)?value:'cinematic'));
+    void load();
+    void getSetting<ThemeName>('theme','cinematic').then(value=>setThemeName(isThemeName(value)?value:'cinematic')).catch(()=>setThemeName('cinematic'));
   },[load]));
 
   const deleteBookmark=(url:string)=>{
@@ -66,10 +78,15 @@ export default function LibraryScreen(){
       <Pressable onPress={()=>setTab('history')} accessibilityRole="tab" accessibilityState={{selected:tab==='history'}} style={[styles.tab,{backgroundColor:tab==='history'?theme.surface2:theme.surface,borderColor:tab==='history'?theme.accent:theme.border}]}><Text style={[styles.tabText,{color:tab==='history'?theme.text:theme.muted}]}>السجل {history.length}</Text></Pressable>
     </View>
 
+    {refreshError&&<View style={[styles.refreshError,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+      <Text style={[styles.refreshErrorText,{color:theme.text}]}>{bookmarks.length||history.length?'تعذر تحديث المكتبة. البيانات الظاهرة محفوظة وقد تكون أقدم قليلًا.':'تعذر قراءة المفضلة والسجل الآن.'}</Text>
+      <Pressable onPress={()=>void load()} accessibilityRole="button" accessibilityLabel="إعادة محاولة تحديث المكتبة" style={[styles.retry,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Text style={[styles.retryText,{color:theme.accent}]}>إعادة المحاولة</Text></Pressable>
+    </View>}
+
     {tab==='history'&&history.length>0&&<Pressable onPress={wipeHistory} accessibilityRole="button" accessibilityLabel="مسح سجل التصفح بالكامل" style={styles.clear}><Text style={styles.clearText}>مسح السجل</Text></Pressable>}
 
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      {rows.length===0?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>{tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={[styles.emptyText,{color:theme.muted}]}>{tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:
+      {loading&&rows.length===0?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري تحميل المكتبة…</Text></View>:rows.length===0&&!refreshError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>{tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={[styles.emptyText,{color:theme.muted}]}>{tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:
       rows.map((item)=><Pressable key={`${tab}-${item.id}`} accessibilityRole="button" accessibilityLabel={`${item.title?.trim()||host(item.url)}، ${tab==='bookmarks'?'ضغط مطوّل للإزالة من المفضلة':'ضغط مطوّل للحذف من السجل'}`} onPress={()=>open(item.url)} onLongPress={()=>tab==='bookmarks'?deleteBookmark(item.url):deleteHistoryEntry(item.id)} style={[styles.row,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={[styles.badge,{backgroundColor:theme.surface2}]}><Text style={[styles.badgeText,{color:theme.accent}]}>{host(item.url).slice(0,1).toUpperCase()}</Text></View>
         <View style={styles.rowBody}>
@@ -83,5 +100,5 @@ export default function LibraryScreen(){
 }
 
 const styles=StyleSheet.create({
-  root:{flex:1},header:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,borderBottomWidth:1},back:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},backText:{fontSize:32,lineHeight:34},title:{fontSize:20,fontWeight:'900'},spacer:{width:42},tabs:{flexDirection:'row',gap:8,padding:14},tab:{flex:1,height:44,borderRadius:14,alignItems:'center',justifyContent:'center',borderWidth:1},tabText:{fontWeight:'800'},clear:{alignSelf:'flex-start',marginHorizontal:14,marginBottom:4,paddingHorizontal:12,paddingVertical:8,borderRadius:10,backgroundColor:'#2A1020'},clearText:{color:'#FDA4AF',fontWeight:'800'},content:{padding:14,paddingBottom:32,gap:10},row:{minHeight:78,flexDirection:'row',alignItems:'center',gap:12,padding:13,borderRadius:18,borderWidth:1},badge:{width:44,height:44,borderRadius:14,alignItems:'center',justifyContent:'center'},badgeText:{fontWeight:'900',fontSize:18},rowBody:{flex:1},rowTitle:{fontSize:15,fontWeight:'800',textAlign:'right'},rowHost:{marginTop:3,fontSize:11,textAlign:'right'},hint:{marginTop:4,fontSize:10,textAlign:'right',opacity:.72},empty:{marginTop:80,alignItems:'center',paddingHorizontal:26},emptyTitle:{fontSize:18,fontWeight:'900'},emptyText:{marginTop:8,lineHeight:20,textAlign:'center'}
+  root:{flex:1},header:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,borderBottomWidth:1},back:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},backText:{fontSize:32,lineHeight:34},title:{fontSize:20,fontWeight:'900'},spacer:{width:42},tabs:{flexDirection:'row',gap:8,padding:14},tab:{flex:1,height:44,borderRadius:14,alignItems:'center',justifyContent:'center',borderWidth:1},tabText:{fontWeight:'800'},refreshError:{marginHorizontal:14,marginBottom:10,minHeight:58,borderRadius:16,borderWidth:1,padding:10,flexDirection:'row-reverse',alignItems:'center',gap:10},refreshErrorText:{flex:1,fontSize:11,lineHeight:17,fontWeight:'700',textAlign:'right'},retry:{minHeight:38,paddingHorizontal:11,borderRadius:12,borderWidth:1,alignItems:'center',justifyContent:'center'},retryText:{fontSize:10,fontWeight:'900'},clear:{alignSelf:'flex-start',marginHorizontal:14,marginBottom:4,paddingHorizontal:12,paddingVertical:8,borderRadius:10,backgroundColor:'#2A1020'},clearText:{color:'#FDA4AF',fontWeight:'800'},content:{padding:14,paddingBottom:32,gap:10},row:{minHeight:78,flexDirection:'row',alignItems:'center',gap:12,padding:13,borderRadius:18,borderWidth:1},badge:{width:44,height:44,borderRadius:14,alignItems:'center',justifyContent:'center'},badgeText:{fontWeight:'900',fontSize:18},rowBody:{flex:1},rowTitle:{fontSize:15,fontWeight:'800',textAlign:'right'},rowHost:{marginTop:3,fontSize:11,textAlign:'right'},hint:{marginTop:4,fontSize:10,textAlign:'right',opacity:.72},empty:{marginTop:80,alignItems:'center',paddingHorizontal:26},emptyTitle:{fontSize:18,fontWeight:'900'},emptyText:{marginTop:8,lineHeight:20,textAlign:'center'}
 });

@@ -300,6 +300,7 @@ export default function BrowserScreen() {
   const [loading, setLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [rendererNotice, setRendererNotice] = useState('');
   const [reader, setReader] = useState<ReaderPayload | null>(null);
@@ -473,16 +474,24 @@ export default function BrowserScreen() {
   };
 
   const toggleBookmark = async () => {
-    if (!safeExternalUrl(loadedUrl)) return;
+    if (bookmarkBusy || !safeExternalUrl(loadedUrl)) return;
+    const targetUrl = loadedUrl;
+    const wasBookmarked = bookmarked;
+    setBookmarkBusy(true);
     try {
-      if (bookmarked) {
-        await removeBookmark(loadedUrl);
-        setBookmarked(false);
+      if (wasBookmarked) {
+        await removeBookmark(targetUrl);
       } else {
-        await addBookmark(loadedUrl, title);
-        setBookmarked(true);
+        await addBookmark(targetUrl, title);
       }
-    } catch {}
+      if (loadedUrl === targetUrl) setBookmarked(!wasBookmarked);
+    } catch {
+      Alert.alert('المفضلة', wasBookmarked
+        ? 'تعذرت إزالة الصفحة من المفضلة. بقيت محفوظة.'
+        : 'تعذر حفظ الصفحة في المفضلة. حاول مرة أخرى.');
+    } finally {
+      setBookmarkBusy(false);
+    }
   };
 
   const reloadOrStop = () => {
@@ -949,7 +958,7 @@ export default function BrowserScreen() {
         <Pressable disabled={!canBack} onPress={() => web.current?.goBack()} style={styles.nav} accessibilityRole="button" accessibilityLabel="رجوع"><Ionicons name="chevron-back" size={28} color="#E2E8F0" style={!canBack && styles.disabled} /></Pressable>
         <Pressable disabled={!canForward} onPress={() => web.current?.goForward()} style={styles.nav} accessibilityRole="button" accessibilityLabel="تقدم"><Ionicons name="chevron-forward" size={28} color="#E2E8F0" style={!canForward && styles.disabled} /></Pressable>
         <Pressable onPress={reloadOrStop} style={styles.navPrimary} accessibilityRole="button" accessibilityLabel={loading ? 'إيقاف التحميل' : 'تحديث'}><Ionicons name={loading ? 'close' : 'refresh'} size={22} color="#fff" /></Pressable>
-        <Pressable onPress={toggleBookmark} style={styles.nav} accessibilityRole="button" accessibilityLabel={bookmarked ? 'إزالة المفضلة' : 'إضافة للمفضلة'}><Ionicons name={bookmarked ? 'star' : 'star-outline'} size={24} color={bookmarked ? '#FBBF24' : '#CBD5E1'} /></Pressable>
+        <Pressable disabled={bookmarkBusy} onPress={toggleBookmark} style={[styles.nav, bookmarkBusy && styles.disabled]} accessibilityRole="button" accessibilityLabel={bookmarked ? 'إزالة المفضلة' : 'إضافة للمفضلة'} accessibilityState={{ disabled: bookmarkBusy, busy: bookmarkBusy }}><Ionicons name={bookmarked ? 'star' : 'star-outline'} size={24} color={bookmarked ? '#FBBF24' : '#CBD5E1'} /></Pressable>
         <Pressable onPress={openVpn} style={[styles.vpn, vpnConnected && styles.vpnOn]} accessibilityRole="button" accessibilityLabel={vpnConnected ? 'RAID VPN متصل، فتح الحالة' : 'RAID VPN غير متصل، فتح الإعداد'}><Ionicons name={vpnConnected ? 'shield-checkmark' : 'shield-outline'} size={14} color="#D1FAE5" /><Text style={styles.vpnText}>VPN</Text></Pressable>
         <Pressable disabled={privateMode} onPress={openAI} style={[styles.ai, privateMode && styles.aiDisabled]} accessibilityRole="button" accessibilityLabel="RAID AI"><Text style={styles.aiText}>AI</Text></Pressable>
       </View>
@@ -962,7 +971,7 @@ export default function BrowserScreen() {
                 <Text style={styles.menuTitle}>RAID Browser</Text>
                 <Text numberOfLines={1} style={styles.menuHost}>{host}</Text>
               </View>
-              <Pressable style={styles.menuItem} onPress={toggleBookmark}><Ionicons name={bookmarked ? 'star' : 'star-outline'} size={19} color="#D5AA88" /><Text style={styles.menuText}>{bookmarked ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}</Text></Pressable>
+              <Pressable disabled={bookmarkBusy} style={[styles.menuItem, bookmarkBusy && styles.disabled]} onPress={toggleBookmark} accessibilityRole="button" accessibilityState={{ disabled: bookmarkBusy, busy: bookmarkBusy }}><Ionicons name={bookmarked ? 'star' : 'star-outline'} size={19} color="#D5AA88" /><Text style={styles.menuText}>{bookmarked ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة'}</Text></Pressable>
               <Pressable style={styles.menuItem} onPress={openMediaPlayer}><Ionicons name="play-circle-outline" size={20} color="#D5AA88" /><Text style={styles.menuText}>{mediaUrls.length ? `RAID Media Player • ${mediaUrls.length}` : 'تشغيل فيديو الصفحة'}</Text></Pressable>
               <Pressable style={styles.menuItem} onPress={openReader}><Ionicons name="reader-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>وضع القراءة</Text></Pressable>
               <Pressable style={styles.menuItem} onPress={toggleDesktop}><Ionicons name={sitePrefs.desktopMode ? 'phone-portrait-outline' : 'desktop-outline'} size={19} color="#D5AA88" /><Text style={styles.menuText}>{sitePrefs.desktopMode ? 'عرض الهاتف لهذا الموقع' : 'عرض سطح المكتب لهذا الموقع'}</Text></Pressable>

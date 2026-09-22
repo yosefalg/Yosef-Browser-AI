@@ -840,7 +840,7 @@ export default function BrowserScreen() {
       {visibleSuggestions.length>0 && <View style={styles.suggestionPanel}>
         {visibleSuggestions.map((item,index)=><Pressable
           key={item.url}
-          onPress={()=>openHistorySuggestion(item)}
+          onPressIn={()=>openHistorySuggestion(item)}
           accessibilityRole="button"
           accessibilityLabel={`فتح ${item.title||hostOf(item.url)} من سجل التصفح`}
           style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>

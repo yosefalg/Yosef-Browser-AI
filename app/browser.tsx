@@ -285,6 +285,7 @@ export default function BrowserScreen() {
   const manualMediaRequest = useRef(false);
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
+  const canBackRef = useRef(false);
   const intentionalStop = useRef<{ url: string; expiresAt: number } | null>(null);
   const lastProgressRef = useRef(0);
   const [webKey, setWebKey] = useState(0);
@@ -364,11 +365,11 @@ export default function BrowserScreen() {
       if (mediaOpen) { setMediaOpen(false); return true; }
       if (siteInfoOpen) { setSiteInfoOpen(false); return true; }
       if (menuOpen) { setMenuOpen(false); return true; }
-      if (canBack) { web.current?.goBack(); return true; }
+      if (canBackRef.current) { web.current?.goBack(); return true; }
       return false;
     });
     return () => subscription.remove();
-  }, [canBack, closeReader, mediaOpen, menuOpen, reader, siteInfoOpen]));
+  }, [closeReader, mediaOpen, menuOpen, reader, siteInfoOpen]));
 
   useEffect(() => {
     let alive = true;
@@ -422,6 +423,7 @@ export default function BrowserScreen() {
     setLoading(false);
     setLoadProgress(0);
     setLoadError('');
+    canBackRef.current = false;
     setCanBack(false);
     setCanForward(false);
     setReader(null);
@@ -448,6 +450,7 @@ export default function BrowserScreen() {
 
   const changed = async (nav: WebViewNavigation) => {
     mainDocumentUrl.current = nav.url;
+    canBackRef.current = nav.canGoBack;
     setCanBack(nav.canGoBack);
     setCanForward(nav.canGoForward);
     setTitle(nav.title || nav.url);

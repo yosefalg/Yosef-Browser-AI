@@ -7,7 +7,7 @@ import { AgentMessage, askAgent } from '@/lib/ai';
 import { executeLocalAgentCommand } from '@/lib/agent';
 import { getLatestPageContext, getMemories, getSetting, type StoredPageContext } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
-import { getTheme, type ThemeName } from '@/lib/theme';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { AIQuickActions } from '@/components/ai/AIQuickActions';
 
 const SENSITIVE_PATH_RE = /(?:^|\/)(?:login|log-in|signin|sign-in|signup|sign-up|auth|oauth|checkout|payment|billing|password|reset-password|verify|verification|otp|2fa|mfa)(?:\/|$)/i;
@@ -55,7 +55,7 @@ export default function AIScreen() {
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
     ]);
     setSignedIn(Boolean(session));
-    setThemeName(savedTheme==='cinematic'||savedTheme==='amoled'||savedTheme==='light'?savedTheme:'cinematic');
+    setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
   },[]);
 
   useFocusEffect(useCallback(()=>{void refreshState();return()=>{};},[refreshState]));

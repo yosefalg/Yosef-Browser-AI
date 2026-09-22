@@ -698,6 +698,11 @@ export default function BrowserScreen() {
       confirmPageDownload(candidate, event.nativeEvent.url);
       return;
     }
+    if (raw.startsWith('RAID_MEDIA_DOWNLOAD:')) {
+      const candidate = raw.slice('RAID_MEDIA_DOWNLOAD:'.length).trim();
+      confirmPageDownload(candidate, event.nativeEvent.url);
+      return;
+    }
     if (raw.startsWith('RAID_MEDIA:')) {
       try {
         const parsed = JSON.parse(raw.slice('RAID_MEDIA:'.length));

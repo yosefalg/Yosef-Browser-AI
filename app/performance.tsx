@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,6 +50,8 @@ export default function PerformanceScreen(){
   const compact = width < 390;
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [settings,setSettings]=useState<PerformanceSettings>(DEFAULT_PERFORMANCE_SETTINGS);
+  const [saving,setSaving]=useState(false);
+  const savingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const policy=useMemo(()=>deriveBrowserPerformancePolicy(settings),[settings]);
   const activeAccent=useMemo(()=>PROFILES.find(item=>item.id===settings.profile)?.accent||theme.accent,[settings.profile,theme.accent]);
@@ -59,16 +61,27 @@ export default function PerformanceScreen(){
     getPerformanceSettings().catch(()=>DEFAULT_PERFORMANCE_SETTINGS),
   ]).then(([t,p])=>{if(!alive)return;setThemeName(isThemeName(t)?t:'cinematic');setSettings(p);});return()=>{alive=false};},[]));
 
-  const patch=(value:Partial<PerformanceSettings>)=>{
+  const patch=async(value:Partial<PerformanceSettings>)=>{
+    if(savingRef.current)return;
+    const previous=settings;
     const next={...settings,...value};
     if(next.profile==='low-data')next.lowBandwidthImages=true;
+    savingRef.current=true;
+    setSaving(true);
     setSettings(next);
-    void savePerformanceSettings(next);
+    try{await savePerformanceSettings(next);}
+    catch{
+      setSettings(previous);
+      Alert.alert('RAID Performance','تعذر حفظ إعدادات الأداء. بقي الإعداد السابق فعالًا.');
+    }finally{
+      savingRef.current=false;
+      setSaving(false);
+    }
   };
 
-  const choose=(profile:BrowsingProfile)=>patch(PROFILE_PRESETS[profile]);
-  const quickBoost=()=>patch(PROFILE_PRESETS.boost);
-  const applyIraqResilience=()=>patch(IRAQ_RESILIENCE_PRESET);
+  const choose=(profile:BrowsingProfile)=>void patch(PROFILE_PRESETS[profile]);
+  const quickBoost=()=>void patch(PROFILE_PRESETS.boost);
+  const applyIraqResilience=()=>void patch(IRAQ_RESILIENCE_PRESET);
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.head,{borderBottomColor:theme.border,backgroundColor:theme.surface,paddingHorizontal:compact?10:14}]}>
@@ -81,15 +94,15 @@ export default function PerformanceScreen(){
       <View style={[s.hero,{backgroundColor:theme.surface,borderColor:theme.border,padding:compact?12:15}]}>
         <View style={[s.heroIcon,{backgroundColor:settings.enabled?`${activeAccent}20`:theme.surface2,borderColor:theme.border,width:compact?50:60,height:compact?50:60,borderRadius:compact?16:20}]}><Ionicons name="speedometer-outline" size={compact?27:32} color={settings.enabled?activeAccent:theme.accent}/></View>
         <View style={s.heroCopy}><Text style={[s.kicker,{color:activeAccent}]}>INTERNET / APP BOOST</Text><Text style={[s.heroTitle,{color:theme.text,fontSize:compact?16:18}]}>{settings.enabled?'وضع التحسين شغال':'الوضع الطبيعي'}</Text><Text style={[s.heroText,{color:theme.muted}]}>RAID يخفف المنافسة داخل التطبيق، يركز على التبويب النشط، ويقلل العمل الخلفي. لا يغيّر سرعة مزود الإنترنت نفسها.</Text></View>
-        <Switch value={settings.enabled} onValueChange={value=>patch({enabled:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
+        <Switch value={settings.enabled} disabled={saving} onValueChange={value=>void patch({enabled:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
       </View>
 
       <View style={s.quickRow}>
-        <Pressable onPress={quickBoost} style={({pressed})=>[s.quickAction,{backgroundColor:theme.accent,borderColor:theme.border},pressed&&s.pressed]} accessibilityRole="button">
+        <Pressable disabled={saving} onPress={quickBoost} style={({pressed})=>[s.quickAction,{backgroundColor:theme.accent,borderColor:theme.border},pressed&&s.pressed,saving&&s.disabled]} accessibilityRole="button" accessibilityState={{disabled:saving}}>
           <Ionicons name="flash" size={20} color="#071412"/>
           <View style={s.quickCopy}><Text style={s.quickTitle}>Boost هسه</Text><Text style={s.quickHint}>أولوية للتبويب الحالي</Text></View>
         </Pressable>
-        <Pressable onPress={applyIraqResilience} style={({pressed})=>[s.quickAction,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.pressed]} accessibilityRole="button">
+        <Pressable disabled={saving} onPress={applyIraqResilience} style={({pressed})=>[s.quickAction,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.pressed,saving&&s.disabled]} accessibilityRole="button" accessibilityState={{disabled:saving}}>
           <Ionicons name="cellular-outline" size={20} color={theme.accent}/>
           <View style={s.quickCopy}><Text style={[s.quickTitle,{color:theme.text}]}>اتصال متذبذب</Text><Text style={[s.quickHint,{color:theme.muted}]}>Preset مناسب للعراق/Earthlink</Text></View>
         </Pressable>
@@ -109,14 +122,14 @@ export default function PerformanceScreen(){
       <View style={[s.adaptiveCard,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={[s.adaptiveIcon,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="git-network-outline" size={22} color={theme.accent}/></View>
         <View style={s.adaptiveCopy}><Text style={[s.adaptiveTitle,{color:theme.text}]}>Adaptive Browsing</Text><Text style={[s.adaptiveHint,{color:theme.muted}]}>في الوضع المتوازن يكتشف RAID سياق الصفحة ويحوّل السياسة تلقائيًا إلى Video أو Reading أو Downloads أو Low Data عند الحاجة.</Text></View>
-        <Switch value={settings.adaptiveMode} onValueChange={value=>patch({adaptiveMode:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
+        <Switch value={settings.adaptiveMode} disabled={saving} onValueChange={value=>void patch({adaptiveMode:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
       </View>
 
       <View style={s.section}>
         <Text style={[s.sectionTitle,{color:theme.accent}]}>الأوضاع التكيفية</Text>
         <View style={s.grid}>{PROFILES.map(item=>{
           const active=settings.profile===item.id;
-          return <Pressable key={item.id} onPress={()=>choose(item.id)} style={({pressed})=>[s.profile,{width:compact?'100%':'48.5%',backgroundColor:theme.surface,borderColor:active?item.accent:theme.border},active&&s.profileActive,pressed&&s.pressed]}>
+          return <Pressable key={item.id} disabled={saving} onPress={()=>choose(item.id)} accessibilityState={{disabled:saving,selected:active}} style={({pressed})=>[s.profile,{width:compact?'100%':'48.5%',backgroundColor:theme.surface,borderColor:active?item.accent:theme.border},active&&s.profileActive,pressed&&s.pressed,saving&&s.disabled]}>
             <View style={s.profileTop}><View style={[s.profileIcon,{backgroundColor:active?`${item.accent}1F`:theme.surface2,borderColor:active?item.accent:theme.border}]}><Ionicons name={item.icon} size={22} color={active?item.accent:theme.text}/></View><Text style={[s.profileTitle,{color:active?item.accent:theme.text}]}>{item.title}</Text></View>
             <Text style={[s.profileHint,{color:theme.muted}]}>{item.hint}</Text>
             <Text numberOfLines={2} style={[s.profileDesc,{color:theme.muted}]}>{profileDescription(item.id)}</Text>
@@ -126,11 +139,11 @@ export default function PerformanceScreen(){
       <View style={[s.activeCard,{backgroundColor:theme.surface,borderColor:activeAccent}]}><Text style={[s.activeLabel,{color:theme.muted}]}>المود الحالي</Text><Text style={[s.activeName,{color:activeAccent}]}>{profileLabel(settings.profile)}</Text><Text style={[s.activeDesc,{color:theme.muted}]}>{profileDescription(settings.profile)}</Text></View>
 
       <View style={s.section}><Text style={[s.sectionTitle,{color:theme.accent}]}>تحكم دقيق</Text><View style={[s.group,{backgroundColor:theme.surface,borderColor:theme.border}]}>
-        <Toggle title="تركيز الصفحة الحالية" hint="يعطي الأولوية للصفحة النشطة بدل توزيع الموارد بالتساوي." value={settings.prioritizeActiveTab} onChange={value=>patch({prioritizeActiveTab:value})} theme={theme}/>
-        <Toggle title="تعليق التبويبات الخلفية" hint="يخفف استهلاك RAM والشبكة من الصفحات غير النشطة." value={settings.suspendBackgroundTabs} onChange={value=>patch({suspendBackgroundTabs:value})} theme={theme}/>
-        <Toggle title="تقليل العمل الخلفي" hint="يخفض المهام الثانوية عندما تكون الأولوية للتحميل أو الفيديو." value={settings.reduceBackgroundWork} onChange={value=>patch({reduceBackgroundWork:value})} theme={theme}/>
-        <Toggle title="صور أخف للشبكة الضعيفة" hint="يقلل استهلاك البيانات داخل RAID ولا يغيّر سرعة مزود الخدمة." value={settings.lowBandwidthImages} onChange={value=>patch({lowBandwidthImages:value})} theme={theme}/>
-        <Toggle title="إعادة محاولة ذكية" hint="يستخدم Retry متدرج بدل إعادة التحميل المتكرر الذي يضغط الاتصال." value={settings.aggressiveRetry} onChange={value=>patch({aggressiveRetry:value})} theme={theme} last/>
+        <Toggle title="تركيز الصفحة الحالية" hint="يعطي الأولوية للصفحة النشطة بدل توزيع الموارد بالتساوي." value={settings.prioritizeActiveTab} disabled={saving} onChange={value=>void patch({prioritizeActiveTab:value})} theme={theme}/>
+        <Toggle title="تعليق التبويبات الخلفية" hint="يخفف استهلاك RAM والشبكة من الصفحات غير النشطة." value={settings.suspendBackgroundTabs} disabled={saving} onChange={value=>void patch({suspendBackgroundTabs:value})} theme={theme}/>
+        <Toggle title="تقليل العمل الخلفي" hint="يخفض المهام الثانوية عندما تكون الأولوية للتحميل أو الفيديو." value={settings.reduceBackgroundWork} disabled={saving} onChange={value=>void patch({reduceBackgroundWork:value})} theme={theme}/>
+        <Toggle title="صور أخف للشبكة الضعيفة" hint="يقلل استهلاك البيانات داخل RAID ولا يغيّر سرعة مزود الخدمة." value={settings.lowBandwidthImages} disabled={saving} onChange={value=>void patch({lowBandwidthImages:value})} theme={theme}/>
+        <Toggle title="إعادة محاولة ذكية" hint="يستخدم Retry متدرج بدل إعادة التحميل المتكرر الذي يضغط الاتصال." value={settings.aggressiveRetry} disabled={saving} onChange={value=>void patch({aggressiveRetry:value})} theme={theme} last/>
       </View></View>
 
       <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>Video يحافظ على جودة الصور ويقلل الخلفية، Reading يخفف التشتيت، Downloads يعطي أولوية للاستقرار، وLow Data يوفر البيانات. كل الإعدادات اختيارية ويمكن تغييرها فورًا.</Text></View>
@@ -142,8 +155,8 @@ function Chip({label,on,theme}:{label:string;on:boolean;theme:ReturnType<typeof 
   return <View style={[s.chip,{backgroundColor:on?'rgba(76,184,132,.12)':theme.surface,borderColor:on?'#4CB884':theme.border}]}><Text style={[s.chipText,{color:on?'#4CB884':theme.muted}]}>{label}</Text></View>;
 }
 
-function Toggle({title,hint,value,onChange,theme,last=false}:{title:string;hint:string;value:boolean;onChange:(v:boolean)=>void;theme:ReturnType<typeof getTheme>;last?:boolean}){
-  return <View style={[s.toggle,!last&&{borderBottomWidth:1,borderBottomColor:theme.border}]}><View style={s.toggleCopy}><Text style={[s.toggleTitle,{color:theme.text}]}>{title}</Text><Text style={[s.toggleHint,{color:theme.muted}]}>{hint}</Text></View><Switch value={value} onValueChange={onChange} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>;
+function Toggle({title,hint,value,disabled,onChange,theme,last=false}:{title:string;hint:string;value:boolean;disabled:boolean;onChange:(v:boolean)=>void;theme:ReturnType<typeof getTheme>;last?:boolean}){
+  return <View style={[s.toggle,!last&&{borderBottomWidth:1,borderBottomColor:theme.border},disabled&&s.disabled]}><View style={s.toggleCopy}><Text style={[s.toggleTitle,{color:theme.text}]}>{title}</Text><Text style={[s.toggleHint,{color:theme.muted}]}>{hint}</Text></View><Switch value={value} disabled={disabled} onValueChange={onChange} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>;
 }
 
 const s=StyleSheet.create({
@@ -199,5 +212,6 @@ const s=StyleSheet.create({
   toggleHint:{fontSize:9.5,lineHeight:15,marginTop:3,textAlign:'right'},
   note:{borderRadius:19,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'flex-start',gap:9},
   noteText:{flex:1,fontSize:9.8,lineHeight:16,textAlign:'right'},
+  disabled:{opacity:.58},
   pressed:{opacity:.78,transform:[{scale:.995}]},
 });

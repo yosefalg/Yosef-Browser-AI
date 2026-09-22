@@ -283,6 +283,7 @@ export default function BrowserScreen() {
   const rendererNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualMediaRequest = useRef(false);
+  const pendingPageDownload = useRef('');
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
   const canBackRef = useRef(false);
@@ -647,6 +648,30 @@ export default function BrowserScreen() {
       .catch((error) => Alert.alert('RAID Downloads', error instanceof Error ? error.message : 'تعذر بدء التنزيل.'));
   };
 
+  const confirmPageDownload = (candidate: string, sourceUrl: string) => {
+    if (!safeExternalUrl(candidate) || !urlsReferToSameDocument(sourceUrl, mainDocumentUrl.current) || pendingPageDownload.current) return;
+    pendingPageDownload.current = candidate;
+    const clearPending = () => {
+      if (pendingPageDownload.current === candidate) pendingPageDownload.current = '';
+    };
+    Alert.alert(
+      'تأكيد تنزيل الملف',
+      `طلب ${hostOf(sourceUrl)} تنزيل ملف من ${hostOf(candidate)}. ابدأ التنزيل فقط إذا كنت تثق بالمصدر.`,
+      [
+        { text: 'إلغاء', style: 'cancel', onPress: clearPending },
+        { text: 'تنزيل', onPress: () => {
+          clearPending();
+          if (!urlsReferToSameDocument(sourceUrl, mainDocumentUrl.current)) {
+            Alert.alert('RAID Downloads', 'انتهى طلب التنزيل لأن الصفحة تغيّرت. اضغط رابط الملف من الصفحة الحالية للمحاولة مجددًا.');
+            return;
+          }
+          handleFileDownload(candidate);
+        } },
+      ],
+      { cancelable: true, onDismiss: clearPending },
+    );
+  };
+
   const onMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
     if (raw.startsWith('RAID_PROTECTION:')) {
@@ -670,7 +695,7 @@ export default function BrowserScreen() {
     }
     if (raw.startsWith('RAID_DOWNLOAD:')) {
       const candidate = raw.slice('RAID_DOWNLOAD:'.length).trim();
-      if (/^https:\/\//i.test(candidate)) handleFileDownload(candidate);
+      confirmPageDownload(candidate, event.nativeEvent.url);
       return;
     }
     if (raw.startsWith('RAID_MEDIA:')) {

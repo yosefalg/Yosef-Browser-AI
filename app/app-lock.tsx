@@ -59,23 +59,35 @@ export default function AppLockScreen(){
       Alert.alert('قفل RAID','فعّل قفل شاشة آمن في Android أولًا (رمز PIN أو نمط أو كلمة مرور أو بصمة/وجه)، ثم ارجع وفعّل القفل.');
       return;
     }
+    const previous=settings;
     setBusy(true);
     try{
       const ok=await verify();
       if(!ok)return;
       const next={...settings,enabled:value};
       setSettings(next);
-      await saveAppLockSettings(next);
+      const saved=await saveAppLockSettings(next);
+      setSettings(saved);
       Alert.alert('RAID',value?'تم تفعيل قفل التطبيق باستخدام حماية الجهاز.':'تم إيقاف قفل التطبيق.');
     }catch{
-      Alert.alert('RAID','تعذر تغيير إعداد القفل الآن. حاول مرة ثانية.');
+      setSettings(previous);
+      Alert.alert('قفل RAID','تعذر حفظ إعداد القفل. بقي الإعداد السابق فعالًا.');
     }finally{setBusy(false)}
   };
 
   const patch=async(value:Partial<AppLockSettings>)=>{
+    if(busy)return;
+    const previous=settings;
     const next={...settings,...value};
+    setBusy(true);
     setSettings(next);
-    await saveAppLockSettings(next).catch(()=>{});
+    try{
+      const saved=await saveAppLockSettings(next);
+      setSettings(saved);
+    }catch{
+      setSettings(previous);
+      Alert.alert('قفل RAID','تعذر حفظ إعداد القفل. بقي الإعداد السابق فعالًا.');
+    }finally{setBusy(false)}
   };
 
   const lockNow=()=>{
@@ -104,7 +116,7 @@ export default function AppLockScreen(){
 
       <View style={[s.group,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={s.row}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>قفل التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>اطلب تحقق Android قبل فتح محتوى RAID.</Text></View><Switch value={settings.enabled} disabled={busy} onValueChange={value=>void toggleEnabled(value)} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
-        <View style={[s.row,{borderTopWidth:1,borderTopColor:theme.border}]}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>القفل بعد مغادرة التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>يعيد القفل عند الرجوع بعد المدة المحددة.</Text></View><Switch value={settings.lockOnBackground} disabled={!settings.enabled} onValueChange={value=>void patch({lockOnBackground:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
+        <View style={[s.row,{borderTopWidth:1,borderTopColor:theme.border}]}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>القفل بعد مغادرة التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>يعيد القفل عند الرجوع بعد المدة المحددة.</Text></View><Switch value={settings.lockOnBackground} disabled={!settings.enabled||busy} onValueChange={value=>void patch({lockOnBackground:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
       </View>
 
       <Pressable disabled={!settings.enabled||busy} onPress={lockNow} style={({pressed})=>[s.lockNow,{backgroundColor:theme.surface2,borderColor:theme.border},(!settings.enabled||busy)&&s.disabled,pressed&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!settings.enabled||busy}} accessibilityLabel="اقفل RAID الآن">
@@ -114,7 +126,7 @@ export default function AppLockScreen(){
 
       <View style={s.section}><Text style={[s.sectionTitle,{color:theme.accent}]}>مهلة الرجوع</Text><View style={s.graceGrid}>{APP_LOCK_GRACE_OPTIONS.map(ms=>{
         const active=settings.gracePeriodMs===ms;
-        return <Pressable key={ms} disabled={!settings.enabled||!settings.lockOnBackground} onPress={()=>void patch({gracePeriodMs:ms})} style={({pressed})=>[s.grace,{backgroundColor:theme.surface,borderColor:active?theme.accent:theme.border},(!settings.enabled||!settings.lockOnBackground)&&s.disabled,pressed&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!settings.enabled||!settings.lockOnBackground,selected:active}} accessibilityLabel={`مهلة القفل ${appLockGraceLabel(ms)}`}><MaterialCommunityIcons name={active?'check-circle':'clock-outline'} size={19} color={active?theme.accent:theme.muted}/><Text style={[s.graceText,{color:theme.text}]}>{appLockGraceLabel(ms)}</Text></Pressable>})}</View></View>
+        return <Pressable key={ms} disabled={!settings.enabled||!settings.lockOnBackground||busy} onPress={()=>void patch({gracePeriodMs:ms})} style={({pressed})=>[s.grace,{backgroundColor:theme.surface,borderColor:active?theme.accent:theme.border},(!settings.enabled||!settings.lockOnBackground||busy)&&s.disabled,pressed&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!settings.enabled||!settings.lockOnBackground||busy,selected:active}} accessibilityLabel={`مهلة القفل ${appLockGraceLabel(ms)}`}><MaterialCommunityIcons name={active?'check-circle':'clock-outline'} size={19} color={active?theme.accent:theme.muted}/><Text style={[s.graceText,{color:theme.text}]}>{appLockGraceLabel(ms)}</Text></Pressable>})}</View></View>
 
       <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="information-outline" size={20} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>إذا لم يكن هاتفك يحتوي بصمة أو وجه، يمكن لقفل RAID الاعتماد على رمز PIN/النمط/كلمة مرور Android بدل رفض التفعيل. إذا ألغيت نافذة التحقق يبقى RAID مقفولًا.</Text></View>
     </ScrollView>

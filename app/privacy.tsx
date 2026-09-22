@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ export default function PrivacyScreen(){
   const version=Constants.expoConfig?.version||'—';
   const busy=useRef(false);
   const [checking,setChecking]=useState(false);
+  const [privacyAction,setPrivacyAction]=useState<'history'|'protection'|null>(null);
   const [msg,setMsg]=useState('');
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [live,setLive]=useState<LiveState>({signedIn:false,vpnConnected:false,vpnReady:false,vpnSource:'none',history:0,bookmarks:0,biometric:false,adsRemoved:0,popupsBlocked:0});
@@ -48,13 +49,40 @@ export default function PrivacyScreen(){
     const r=await LocalAuthentication.authenticateAsync({promptMessage:'تحقق من هوية مستخدم RAID',cancelLabel:'إلغاء'});
     setMsg(r.success?'تم التحقق بنجاح.':'فشل التحقق أو أُلغي.');
   };
-  const clear=async()=>{await clearHistory();setLive(v=>({...v,history:0}));setMsg('تم مسح سجل التصفح المحلي.');};
-  const resetProtection=async()=>{await resetProtectionStats();setLive(v=>({...v,adsRemoved:0,popupsBlocked:0}));setMsg('تم تصفير عدادات الحماية المحلية.');};
+  const clear=async()=>{
+    if(privacyAction)return;
+    setPrivacyAction('history');setMsg('');
+    try{await clearHistory();setLive(v=>({...v,history:0}));setMsg('تم مسح سجل التصفح المحلي.');}
+    catch{setMsg('تعذر مسح سجل التصفح. بقيت البيانات محفوظة.');}
+    finally{setPrivacyAction(null);}
+  };
+  const resetProtection=async()=>{
+    if(privacyAction)return;
+    setPrivacyAction('protection');setMsg('');
+    try{await resetProtectionStats();setLive(v=>({...v,adsRemoved:0,popupsBlocked:0}));setMsg('تم تصفير عدادات الحماية المحلية.');}
+    catch{setMsg('تعذر تصفير عدادات الحماية. بقيت القيم السابقة محفوظة.');}
+    finally{setPrivacyAction(null);}
+  };
+  const confirmClear=()=>{
+    if(!live.history||privacyAction)return;
+    Alert.alert('مسح سجل التصفح',`سيُحذف ${live.history} سجلًا محليًا نهائيًا. لا يشمل هذا المفضلة.`,[
+      {text:'إلغاء',style:'cancel'},
+      {text:'مسح السجل',style:'destructive',onPress:()=>void clear()},
+    ]);
+  };
+  const confirmProtectionReset=()=>{
+    const total=live.adsRemoved+live.popupsBlocked;
+    if(!total||privacyAction)return;
+    Alert.alert('تصفير إحصاءات الحماية',`سيُحذف ${total} حدث حماية محفوظًا من العدادات المحلية.`,[
+      {text:'إلغاء',style:'cancel'},
+      {text:'تصفير',style:'destructive',onPress:()=>void resetProtection()},
+    ]);
+  };
   const source=live.vpnSource==='service'?'خادم RAID':live.vpnSource==='local'?'WireGuard محلي':live.vpnSource==='cache'?'ملف محفوظ':'غير مهيأ';
 
   const status=(label:string,value:string,ok:boolean,icon:'person-outline'|'shield-outline'|'key-outline'|'finger-print-outline')=><View style={[s.status,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={[s.statusIcon,{backgroundColor:theme.surface2}]}><Ionicons name={icon} size={20} color={ok?'#4DB47A':theme.accent}/></View><View style={s.statusCopy}><Text style={[s.statusLabel,{color:theme.muted}]}>{label}</Text><Text style={[s.statusValue,{color:ok?'#4DB47A':theme.text}]}>{value}</Text></View></View>;
 
-  const action=(label:string,sub:string,icon:'shield-outline'|'trash-outline'|'settings-outline'|'finger-print-outline'|'stats-chart-outline',onPress:()=>void,danger=false)=><Pressable accessibilityRole="button" onPress={onPress} style={({pressed})=>[s.action,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.press]}><View style={[s.actionIcon,{backgroundColor:danger?'rgba(173,74,67,.16)':theme.surface2}]}><Ionicons name={icon} size={21} color={danger?'#C7746D':theme.accent}/></View><View style={s.actionCopy}><Text style={[s.actionTitle,{color:danger?'#D9948D':theme.text}]}>{label}</Text><Text style={[s.actionSub,{color:theme.muted}]}>{sub}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>;
+  const action=(label:string,sub:string,icon:'shield-outline'|'trash-outline'|'settings-outline'|'finger-print-outline'|'stats-chart-outline',onPress:()=>void,danger=false,disabled=false)=><Pressable accessibilityRole="button" accessibilityState={{disabled,busy:disabled&&Boolean(privacyAction)}} disabled={disabled} onPress={onPress} style={({pressed})=>[s.action,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.press,disabled&&s.dim]}><View style={[s.actionIcon,{backgroundColor:danger?'rgba(173,74,67,.16)':theme.surface2}]}><Ionicons name={icon} size={21} color={danger?'#C7746D':theme.accent}/></View><View style={s.actionCopy}><Text style={[s.actionTitle,{color:danger?'#D9948D':theme.text}]}>{label}</Text><Text style={[s.actionSub,{color:theme.muted}]}>{sub}</Text></View><Ionicons name="chevron-back" size={18} color={theme.muted}/></Pressable>;
 
   return <LinearGradient colors={[...theme.gradient]} style={s.fill}><SafeAreaView edges={['top','bottom','left','right']} style={s.root}>
     <View style={[s.head,{borderBottomColor:theme.border}]}>
@@ -91,8 +119,8 @@ export default function PrivacyScreen(){
         {action('فتح RAID VPN',live.vpnConnected?'عرض حالة النفق الحالي':live.vpnReady?'الاتصال بملف WireGuard الجاهز':'إضافة أو استيراد إعداد WireGuard','shield-outline',()=>router.push('/vpn'))}
         {action('التحقق بالبصمة أو الوجه',live.biometric?'اختبار القفل الحيوي على هذا الجهاز':'الجهاز لا يعلن دعمًا حيويًا','finger-print-outline',()=>void auth())}
         {action('الإعدادات','إدارة المظهر والخصوصية وإعدادات المتصفح','settings-outline',()=>router.push('/settings'))}
-        {action('تصفير إحصاءات الحماية',live.adsRemoved||live.popupsBlocked?`حذف ${live.adsRemoved+live.popupsBlocked} حدث حماية محفوظ`:'العدادات المحلية صفر','stats-chart-outline',()=>void resetProtection())}
-        {action('مسح سجل التصفح',live.history?`حذف ${live.history} سجلًا محليًا`:'السجل المحلي فارغ','trash-outline',()=>void clear(),true)}
+        {action('تصفير إحصاءات الحماية',privacyAction==='protection'?'جارٍ تصفير العدادات…':live.adsRemoved||live.popupsBlocked?`حذف ${live.adsRemoved+live.popupsBlocked} حدث حماية محفوظ`:'العدادات المحلية صفر','stats-chart-outline',confirmProtectionReset,false,(!live.adsRemoved&&!live.popupsBlocked)||Boolean(privacyAction))}
+        {action('مسح سجل التصفح',privacyAction==='history'?'جارٍ مسح السجل…':live.history?`حذف ${live.history} سجلًا محليًا`:'السجل المحلي فارغ','trash-outline',confirmClear,true,!live.history||Boolean(privacyAction))}
       </View>
 
       {!!msg&&<View style={[s.message,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="information-circle-outline" size={18} color={theme.accent}/><Text style={[s.messageText,{color:theme.text}]}>{msg}</Text></View>}

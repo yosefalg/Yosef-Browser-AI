@@ -754,7 +754,16 @@ export default function BrowserScreen() {
 
   const shareCurrent = () => {
     setMenuOpen(false);
-    Share.share({ title, message: `${title}\n${loadedUrl}`, url: loadedUrl }).catch(() => {});
+    void Share.share({ title, message: `${title}\n${loadedUrl}`, url: loadedUrl }).catch(() => {
+      Alert.alert('RAID Browser', 'تعذرت مشاركة الصفحة. حاول مرة أخرى.');
+    });
+  };
+
+  const shareMedia = () => {
+    if (!mediaUrl) return;
+    void Share.share({ title: 'RAID Media', message: mediaUrl, url: mediaUrl }).catch(() => {
+      Alert.alert('RAID Media', 'تعذرت مشاركة رابط الفيديو. حاول مرة أخرى.');
+    });
   };
 
   const openAI = () => {
@@ -1028,7 +1037,7 @@ export default function BrowserScreen() {
           <View style={styles.mediaTop}>
             <Pressable onPress={() => setMediaOpen(false)} style={styles.mediaClose} accessibilityRole="button" accessibilityLabel="إغلاق مشغل الفيديو"><Text style={styles.mediaCloseText}>×</Text></Pressable>
             <View style={styles.mediaHeading}><Text style={styles.mediaTitle}>RAID Media Player</Text><Text numberOfLines={1} style={styles.mediaHost}>{hostOf(mediaUrl)}</Text></View>
-            <Pressable onPress={() => mediaUrl && Share.share({ title: 'RAID Media', message: mediaUrl, url: mediaUrl }).catch(() => {})} style={styles.mediaAction} accessibilityRole="button" accessibilityLabel="مشاركة رابط الفيديو"><Ionicons name="share-social-outline" size={19} color="#E2E8F0" /></Pressable>
+            <Pressable onPress={shareMedia} style={styles.mediaAction} accessibilityRole="button" accessibilityLabel="مشاركة رابط الفيديو"><Ionicons name="share-social-outline" size={19} color="#E2E8F0" /></Pressable>
           </View>
           {!!mediaUrl && <WebView
             key={mediaUrl}

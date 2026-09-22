@@ -108,7 +108,7 @@ export default function TabsScreen(){
   const close=async(id:number)=>{if(busy)return;setBusy(true);try{await closeBrowserTab(id);await refresh();}catch{showActionError('تعذر إغلاق التبويب. بقي مفتوحًا ويمكنك المحاولة مجددًا.');}finally{setBusy(false);}};
   const restore=async(item:ClosedBrowserTab)=>{if(busy)return;setBusy(true);try{const restored=await restoreClosedBrowserTab(item.id);if(restored)router.replace({pathname:'/browser',params:{url:restored.url,tabId:String(restored.id)}});else await refresh();}catch{showActionError('تعذرت استعادة التبويب. بقي محفوظًا في «المغلقة مؤخرًا».');}finally{setBusy(false);}};
   const duplicate=async(tab:BrowserTab)=>{if(busy)return;setBusy(true);try{await createBrowserTab(tab.url,tab.title||hostOf(tab.url));await refresh();}catch{showActionError('تعذر تكرار التبويب. لم تتم إضافة نسخة جديدة.');}finally{setBusy(false);}};
-  const shareTab=(tab:BrowserTab)=>{void Share.share({title:tab.title||hostOf(tab.url),message:`${tab.title||hostOf(tab.url)}\n${tab.url}`,url:tab.url});};
+  const shareTab=(tab:BrowserTab)=>{void Share.share({title:tab.title||hostOf(tab.url),message:`${tab.title||hostOf(tab.url)}\n${tab.url}`,url:tab.url}).catch(()=>showActionError('تعذرت مشاركة رابط التبويب. حاول مرة أخرى.'));};
   const openExternal=(tab:BrowserTab)=>{
     if(!/^https?:\/\//i.test(tab.url))return;
     void WebBrowser.openBrowserAsync(tab.url).catch(()=>Alert.alert('RAID Browser','تعذر فتح الرابط في متصفح خارجي.'));
@@ -127,7 +127,7 @@ export default function TabsScreen(){
   const shareSelected=()=>{
     const selected=tabs.filter(tab=>selectedIds.includes(tab.id));
     if(!selected.length)return;
-    void Share.share({message:selected.map(tab=>`${tab.title||hostOf(tab.url)}\n${tab.url}`).join('\n\n')});
+    void Share.share({message:selected.map(tab=>`${tab.title||hostOf(tab.url)}\n${tab.url}`).join('\n\n')}).catch(()=>showActionError('تعذرت مشاركة التبويبات المحددة. بقي التحديد كما هو ويمكنك المحاولة مجددًا.'));
   };
   const closeSelected=()=>{
     if(busy||selectedIds.length===0)return;

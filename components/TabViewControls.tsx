@@ -7,11 +7,13 @@ export type TabSortMode = 'recent' | 'oldest' | 'domain' | 'title';
 
 type SortItem = { key: TabSortMode; label: string; icon: keyof typeof Ionicons.glyphMap };
 
-export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, theme }: {
+export function TabViewControls({ viewMode, sortMode, disabled = false, onViewMode, onSortMode, onResetLayout, theme }: {
   viewMode: TabViewMode;
   sortMode: TabSortMode;
+  disabled?: boolean;
   onViewMode: (mode: TabViewMode) => void;
   onSortMode: (mode: TabSortMode) => void;
+  onResetLayout: (mode: TabViewMode) => void;
   theme: ThemePalette;
 }) {
   const { width } = useWindowDimensions();
@@ -27,8 +29,7 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
   ];
 
   const resetLayout = () => {
-    onSortMode('recent');
-    onViewMode(preferredView);
+    onResetLayout(preferredView);
   };
 
   return <View style={[s.wrap,compact&&s.wrapCompact]}>
@@ -43,16 +44,18 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
         const active = sortMode === item.key;
         return <Pressable
           key={item.key}
+          disabled={disabled}
           onPress={() => onSortMode(item.key)}
           accessibilityRole="button"
-          accessibilityState={{ selected: active }}
+          accessibilityState={{ selected: active, disabled }}
           accessibilityLabel={`ترتيب حسب ${item.label}`}
           style={({pressed})=>[
             s.chip,
             compact&&s.chipCompact,
             veryCompact&&s.chipVeryCompact,
             {backgroundColor:active?theme.surface2:theme.surface,borderColor:active?theme.accent:theme.border},
-            pressed&&s.press,
+            disabled&&s.disabled,
+            pressed&&!disabled&&s.press,
           ]}
         >
           <Ionicons name={item.icon} size={14} color={active?theme.accent:theme.muted}/>
@@ -67,23 +70,27 @@ export function TabViewControls({ viewMode, sortMode, onViewMode, onSortMode, th
       </View>
       <View style={s.modeButtons}>
         {customLayout&&<Pressable
+          disabled={disabled}
           onPress={resetLayout}
-          style={[s.reset,{backgroundColor:theme.surface2,borderColor:theme.border}]}
+          style={[s.reset,{backgroundColor:theme.surface2,borderColor:theme.border},disabled&&s.disabled]}
           accessibilityRole="button"
+          accessibilityState={{ disabled }}
           accessibilityLabel="استعادة العرض المقترح"
         ><Ionicons name="sparkles-outline" size={15} color={theme.accent}/></Pressable>}
         <Pressable
+          disabled={disabled}
           onPress={() => onViewMode('grid')}
-          style={[s.mode,viewMode==='grid'&&{backgroundColor:theme.accent}]}
+          style={[s.mode,viewMode==='grid'&&{backgroundColor:theme.accent},disabled&&s.disabled]}
           accessibilityRole="button"
-          accessibilityState={{ selected: viewMode==='grid' }}
+          accessibilityState={{ selected: viewMode==='grid', disabled }}
           accessibilityLabel="عرض شبكي"
         ><Ionicons name="grid-outline" size={17} color={viewMode==='grid'?'#fff':theme.muted}/></Pressable>
         <Pressable
+          disabled={disabled}
           onPress={() => onViewMode('list')}
-          style={[s.mode,viewMode==='list'&&{backgroundColor:theme.accent}]}
+          style={[s.mode,viewMode==='list'&&{backgroundColor:theme.accent},disabled&&s.disabled]}
           accessibilityRole="button"
-          accessibilityState={{ selected: viewMode==='list' }}
+          accessibilityState={{ selected: viewMode==='list', disabled }}
           accessibilityLabel="عرض قائمة"
         ><Ionicons name="list-outline" size={19} color={viewMode==='list'?'#fff':theme.muted}/></Pressable>
       </View>
@@ -110,5 +117,6 @@ const s=StyleSheet.create({
   modeButtons:{flexDirection:'row',gap:3,alignItems:'center'},
   reset:{width:34,height:32,borderRadius:10,borderWidth:1,alignItems:'center',justifyContent:'center'},
   mode:{width:40,height:32,borderRadius:10,alignItems:'center',justifyContent:'center'},
-  press:{opacity:.82,transform:[{scale:.97}]}
+  press:{opacity:.82,transform:[{scale:.97}]},
+  disabled:{opacity:.46}
 });

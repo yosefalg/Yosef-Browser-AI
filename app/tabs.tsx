@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -15,6 +15,8 @@ import {
 } from '@/lib/db';
 
 function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return value;}}
+function isTabViewMode(value:unknown):value is TabViewMode{return value==='grid'||value==='list';}
+function isTabSortMode(value:unknown):value is TabSortMode{return value==='recent'||value==='oldest'||value==='domain'||value==='title';}
 function canonicalUrl(value:string){
   try{
     const parsed=new URL(value);
@@ -32,6 +34,8 @@ export default function TabsScreen(){
   const [query,setQuery]=useState('');
   const [viewMode,setViewMode]=useState<TabViewMode>('grid');
   const [sortMode,setSortMode]=useState<TabSortMode>('recent');
+  const [preferenceBusy,setPreferenceBusy]=useState(false);
+  const preferenceBusyRef=useRef(false);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [selectionMode,setSelectionMode]=useState(false);
   const [selectedIds,setSelectedIds]=useState<number[]>([]);
@@ -61,11 +65,13 @@ export default function TabsScreen(){
 
   useEffect(()=>{
     void Promise.all([
+      getSetting<unknown>('tabs_layout',null),
       getSetting<TabViewMode>('tabs_view_mode','grid'),
       getSetting<TabSortMode>('tabs_sort_mode','recent'),
-    ]).then(([view,sort])=>{
-      setViewMode(view==='grid'||view==='list'?view:'grid');
-      setSortMode(sort==='recent'||sort==='oldest'||sort==='domain'||sort==='title'?sort:'recent');
+    ]).then(([layout,legacyView,legacySort])=>{
+      const stored=layout&&typeof layout==='object'?layout as {viewMode?:unknown;sortMode?:unknown}:null;
+      setViewMode(isTabViewMode(stored?.viewMode)?stored.viewMode:isTabViewMode(legacyView)?legacyView:'grid');
+      setSortMode(isTabSortMode(stored?.sortMode)?stored.sortMode:isTabSortMode(legacySort)?legacySort:'recent');
     });
   },[]);
 
@@ -99,8 +105,28 @@ export default function TabsScreen(){
     return duplicates;
   },[tabs]);
 
-  const changeView=(mode:TabViewMode)=>{setViewMode(mode);void setSetting('tabs_view_mode',mode);};
-  const changeSort=(mode:TabSortMode)=>{setSortMode(mode);void setSetting('tabs_sort_mode',mode);};
+  const persistLayout=async(nextView:TabViewMode,nextSort:TabSortMode)=>{
+    if(preferenceBusyRef.current||(nextView===viewMode&&nextSort===sortMode))return;
+    const previousView=viewMode;
+    const previousSort=sortMode;
+    preferenceBusyRef.current=true;
+    setPreferenceBusy(true);
+    setViewMode(nextView);
+    setSortMode(nextSort);
+    try{
+      await setSetting('tabs_layout',{viewMode:nextView,sortMode:nextSort});
+    }catch{
+      setViewMode(previousView);
+      setSortMode(previousSort);
+      Alert.alert('إدارة التبويبات','تعذر حفظ طريقة العرض. تمت استعادة الإعداد السابق ويمكنك المحاولة مجددًا.');
+    }finally{
+      preferenceBusyRef.current=false;
+      setPreferenceBusy(false);
+    }
+  };
+  const changeView=(mode:TabViewMode)=>{void persistLayout(mode,sortMode);};
+  const changeSort=(mode:TabSortMode)=>{void persistLayout(viewMode,mode);};
+  const resetLayout=(mode:TabViewMode)=>{void persistLayout(mode,'recent');};
   const openTab=(tab:BrowserTab)=>{if(!busy)router.replace({pathname:'/browser',params:{url:tab.url,tabId:String(tab.id)}});};
   const showActionError=(message:string)=>Alert.alert('إدارة التبويبات',message);
   const newTab=async()=>{if(busy)return;setBusy(true);try{const url='https://www.google.com';const id=await createBrowserTab(url,'علامة تبويب جديدة');router.replace({pathname:'/browser',params:{url,tabId:String(id)}});}catch{showActionError('تعذر إنشاء تبويب جديد. حاول مرة أخرى.');}finally{setBusy(false);}};
@@ -197,7 +223,7 @@ export default function TabsScreen(){
 
       {tabs.length>1&&<View style={[s.searchWrap,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="search-outline" size={19} color={theme.accent}/><TextInput value={query} onChangeText={setQuery} placeholder="ابحث باسم التبويب أو الموقع" placeholderTextColor={theme.muted} autoCapitalize="none" autoCorrect={false} returnKeyType="search" style={[s.searchInput,{color:theme.text}]}/>{!!query&&<Pressable onPress={()=>setQuery('')} hitSlop={10}><Ionicons name="close-circle" size={19} color={theme.muted}/></Pressable>}</View>}
 
-      {tabs.length>0&&<TabViewControls theme={theme} viewMode={viewMode} sortMode={sortMode} onViewMode={changeView} onSortMode={changeSort}/>} 
+      {tabs.length>0&&<TabViewControls theme={theme} viewMode={viewMode} sortMode={sortMode} disabled={preferenceBusy} onViewMode={changeView} onSortMode={changeSort} onResetLayout={resetLayout}/>}
       <View style={s.sectionHead}><Text style={[s.sectionTitle,{color:theme.text}]}>التبويبات المفتوحة</Text><Text style={[s.sectionMeta,{color:theme.muted}]}>{query.trim()?`${visibleTabs.length} نتيجة`:`${sortMode==='recent'?'الأحدث أولًا':sortMode==='oldest'?'الأقدم أولًا':sortMode==='domain'?'حسب الموقع':'حسب الاسم'}`}</Text></View>
 
       {tabs.length===0?<View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="albums-outline" size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد تبويبات مفتوحة</Text><Text style={[s.emptyText,{color:theme.muted}]}>ابدأ بتبويب جديد أو استعد صفحة أغلقتها قبل قليل.</Text></View>:

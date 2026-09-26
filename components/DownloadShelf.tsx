@@ -45,6 +45,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
   const compact = width < 370;
   const previousStates = useRef(new Map<number, DownloadState>());
   const terminalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshId = useRef(0);
   const [items, setItems] = useState<DownloadItem[]>([]);
   const [recentTerminal, setRecentTerminal] = useState<DownloadItem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,6 +60,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
   }, []);
 
   const refresh = useCallback(async () => {
+    const requestId = ++refreshId.current;
     if (!visible) {
       setItems([]);
       setRecentTerminal(null);
@@ -70,7 +72,16 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
       return;
     }
 
-    const nextItems = await listDownloads(20).catch(() => [] as DownloadItem[]);
+    let nextItems: DownloadItem[];
+    try {
+      nextItems = await listDownloads(20);
+    } catch {
+      // Keep the last trustworthy progress instead of hiding an active download
+      // when SQLite has a transient read failure.
+      return;
+    }
+    if (requestId !== refreshId.current) return;
+
     const transitioned = nextItems
       .filter((item) => {
         const previous = previousStates.current.get(item.id);
@@ -88,6 +99,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     const unsubscribe = subscribeDownloads(() => { void refresh(); });
     return () => {
       unsubscribe();
+      refreshId.current += 1;
       if (terminalTimer.current) clearTimeout(terminalTimer.current);
     };
   }, [refresh]);

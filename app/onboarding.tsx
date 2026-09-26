@@ -40,6 +40,7 @@ const STEPS: Step[] = [
 export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState('');
   const { height } = useWindowDimensions();
   const compactHeight = height < 700;
   const step = useMemo(() => STEPS[index], [index]);
@@ -49,9 +50,12 @@ export default function OnboardingScreen() {
   const finish = async () => {
     if (finishing) return;
     setFinishing(true);
+    setFinishError('');
     try {
       await completeOnboarding();
       router.replace('/');
+    } catch {
+      setFinishError('تعذر حفظ إعداد البداية. بقيت بياناتك كما هي؛ تحقق من مساحة الجهاز ثم حاول مجددًا.');
     } finally {
       setFinishing(false);
     }
@@ -62,11 +66,13 @@ export default function OnboardingScreen() {
       void finish();
       return;
     }
+    setFinishError('');
     setIndex((value) => Math.min(value + 1, STEPS.length - 1));
   };
 
   const previous = () => {
     if (finishing || first) return;
+    setFinishError('');
     setIndex((value) => Math.max(value - 1, 0));
   };
 
@@ -98,6 +104,7 @@ export default function OnboardingScreen() {
       </ScrollView>
 
       <View style={s.footer}>
+        {!!finishError && <Text style={s.error} accessibilityRole="alert" accessibilityLiveRegion="assertive" maxFontSizeMultiplier={1.45}>{finishError}</Text>}
         <Text style={s.progressText} accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.35}>{`الخطوة ${index + 1} من ${STEPS.length}`}</Text>
         <View style={s.dots} accessible accessibilityLabel={`الخطوة ${index + 1} من ${STEPS.length}`}>
           {STEPS.map((_, itemIndex) => <View key={itemIndex} style={[s.dot, itemIndex === index && s.dotActive]} />)}
@@ -136,6 +143,7 @@ const s = StyleSheet.create({
   bulletRow:{minHeight:48,flexDirection:'row-reverse',alignItems:'center',gap:11,paddingHorizontal:14,paddingVertical:10,borderRadius:16,backgroundColor:'#222725',borderWidth:1,borderColor:'#383E3A'},
   bulletText:{flex:1,color:'#E9E3DC',fontSize:13,lineHeight:20,textAlign:'right',fontWeight:'700'},
   footer:{paddingTop:10,paddingBottom:8,gap:10},
+  error:{color:'#F2B8AE',fontSize:11,lineHeight:18,textAlign:'center',fontWeight:'800',paddingHorizontal:8},
   progressText:{color:'#9FA8A2',fontSize:11,fontWeight:'800',textAlign:'center'},
   dots:{height:18,flexDirection:'row',justifyContent:'center',alignItems:'center',gap:7},
   dot:{width:7,height:7,borderRadius:4,backgroundColor:'#4B514D'},

@@ -31,6 +31,12 @@ export default function SecurityScreen() {
     return () => { alive = false; };
   }, []));
 
+  const updateInput = (value: string) => {
+    setInput(value);
+    setScan(null);
+    setMessage('');
+  };
+
   const runScan = () => {
     setMessage('');
     try {
@@ -83,7 +89,7 @@ export default function SecurityScreen() {
         <Text style={[s.inputLabel, { color: theme.text }]}>الرابط</Text>
         <TextInput
           value={input}
-          onChangeText={setInput}
+          onChangeText={updateInput}
           onSubmitEditing={runScan}
           placeholder="مثال: https://example.com/login"
           placeholderTextColor={theme.muted}

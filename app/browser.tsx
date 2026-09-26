@@ -812,7 +812,7 @@ export default function BrowserScreen() {
       return true;
     }
     if (isLikelyDownloadRequest(requestUrl)) {
-      handleFileDownload(requestUrl);
+      confirmPageDownload(requestUrl, mainDocumentUrl.current);
       return false;
     }
     if (safeExternalUrl(requestUrl)) return true;
@@ -980,7 +980,7 @@ export default function BrowserScreen() {
           }}
           onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
           onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}
-          onFileDownload={(event) => handleFileDownload(event.nativeEvent.downloadUrl || '')}
+          onFileDownload={(event) => confirmPageDownload(event.nativeEvent.downloadUrl || '', mainDocumentUrl.current)}
           onMessage={onMessage}
         />
         {loadError ? (

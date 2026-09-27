@@ -10,6 +10,7 @@ import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 export default function PasswordsScreen() {
   const focused = useRef(false);
   const unlocking = useRef(false);
+  const viewGeneration = useRef(0);
   const [items, setItems] = useState<VaultEntry[]>([]);
   const [origin, setOrigin] = useState('');
   const [username, setUsername] = useState('');
@@ -24,7 +25,13 @@ export default function PasswordsScreen() {
   const theme = useMemo(() => getTheme(themeName), [themeName]);
 
   const clearSensitiveView = useCallback(() => {
+    viewGeneration.current += 1;
+    unlocking.current = false;
+    setBusy(false);
     setItems([]);
+    setOrigin('');
+    setUsername('');
+    setPassword('');
     setRevealedIds(new Set());
     setShowDraftPassword(false);
     setLocked(true);
@@ -34,22 +41,27 @@ export default function PasswordsScreen() {
 
   const unlock = useCallback(async (silent = false) => {
     if (unlocking.current) return;
+    const generation = ++viewGeneration.current;
     unlocking.current = true;
     setBusy(true);
     if (!silent) setMessage('');
     try {
       const entries = await listVaultEntries();
+      if (!focused.current || generation !== viewGeneration.current) return;
       setItems(entries);
       setRevealedIds(new Set());
       setLocked(false);
       setVaultSessionDeadline(Date.now() + getVaultSessionRemainingMs());
     } catch (error) {
+      if (!focused.current || generation !== viewGeneration.current) return;
       setLocked(true);
       setItems([]);
       if (!silent) setMessage(error instanceof Error ? error.message : 'تعذر فتح الخزنة.');
     } finally {
-      unlocking.current = false;
-      setBusy(false);
+      if (generation === viewGeneration.current) {
+        unlocking.current = false;
+        setBusy(false);
+      }
     }
   }, []);
 
@@ -87,43 +99,52 @@ export default function PasswordsScreen() {
     return () => clearTimeout(timer);
   }, [clearSensitiveView, locked, vaultSessionDeadline]);
 
-  const refreshUnlocked = async () => {
+  const refreshUnlocked = async (generation: number) => {
     const entries = await listVaultEntries();
+    if (!focused.current || generation !== viewGeneration.current) return false;
     setItems(entries);
     setRevealedIds(new Set());
     setLocked(false);
     setVaultSessionDeadline(Date.now() + getVaultSessionRemainingMs());
+    return true;
   };
 
   const generate = async () => {
+    const generation = viewGeneration.current;
     try {
-      setPassword(await generateStrongPassword(20));
+      const generated = await generateStrongPassword(20);
+      if (!focused.current || generation !== viewGeneration.current) return;
+      setPassword(generated);
       setShowDraftPassword(false);
       setMessage('تم توليد كلمة مرور قوية عشوائيًا.');
     } catch {
+      if (!focused.current || generation !== viewGeneration.current) return;
       setMessage('تعذر توليد كلمة مرور الآن.');
     }
   };
 
   const save = async () => {
+    if (busy) return;
     if (!origin.trim() || !username.trim() || !password) {
       Alert.alert('أكمل البيانات', 'أدخل الموقع واسم المستخدم وكلمة المرور.');
       return;
     }
+    const generation = viewGeneration.current;
     setBusy(true);
     setMessage('');
     try {
       await saveVaultEntry({ origin, username, password });
+      if (!focused.current || generation !== viewGeneration.current) return;
       setOrigin('');
       setUsername('');
       setPassword('');
       setShowDraftPassword(false);
-      await refreshUnlocked();
-      setMessage('تم حفظ بيانات الدخول داخل الخزنة الآمنة على الجهاز.');
+      if (await refreshUnlocked(generation)) setMessage('تم حفظ بيانات الدخول داخل الخزنة الآمنة على الجهاز.');
     } catch (error) {
+      if (!focused.current || generation !== viewGeneration.current) return;
       setMessage(error instanceof Error ? error.message : 'تعذر حفظ بيانات الدخول.');
     } finally {
-      setBusy(false);
+      if (generation === viewGeneration.current) setBusy(false);
     }
   };
 
@@ -134,15 +155,18 @@ export default function PasswordsScreen() {
         text: 'حذف',
         style: 'destructive',
         onPress: async () => {
+          if (busy || !focused.current) return;
+          const generation = viewGeneration.current;
           setBusy(true);
           try {
             await deleteVaultEntry(item.id);
-            await refreshUnlocked();
-            setMessage('تم حذف بيانات الدخول.');
+            if (!focused.current || generation !== viewGeneration.current) return;
+            if (await refreshUnlocked(generation)) setMessage('تم حذف بيانات الدخول.');
           } catch (error) {
+            if (!focused.current || generation !== viewGeneration.current) return;
             setMessage(error instanceof Error ? error.message : 'تعذر حذف بيانات الدخول.');
           } finally {
-            setBusy(false);
+            if (generation === viewGeneration.current) setBusy(false);
           }
         },
       },

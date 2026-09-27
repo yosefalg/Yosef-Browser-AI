@@ -24,7 +24,7 @@ export function HomeHeader({theme,onMenu,onTabs,onDownloads,onVpn,vpnConnected,t
       <View style={s.logoRing}><RaidLogo size={39}/></View>
       <View style={s.brandCopy}>
         <Text style={s.title}>RAID</Text>
-        <View style={s.statusRow}><View style={[s.statusDot,vpnConnected&&s.statusDotOn]}/><Text style={s.statusText}>{vpnConnected?'محمي ومتصل':'جاهز للتصفح'}</Text></View>
+        <View style={s.statusRow}><View style={[s.statusDot,vpnConnected&&s.statusDotOn]}/><Text style={s.statusText}>{vpnConnected?'WireGuard متصل':'جاهز للتصفح'}</Text></View>
       </View>
     </View>
     <View style={s.actions}>

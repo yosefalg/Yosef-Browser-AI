@@ -58,14 +58,14 @@ export default function NotificationsScreen(){
     return()=>{appSub.remove();data.subscription.unsubscribe();};
   },[refresh]);
 
-  const vpnText=state.vpnConnected?'متصل ومحمي':state.vpnReady?'جاهز للاتصال':'غير مهيأ بعد';
+  const vpnText=state.vpnConnected?'WireGuard متصل':state.vpnReady?'جاهز للاتصال':'غير مهيأ بعد';
   const accountText=state.signedIn?'الحساب متصل':'غير مسجل الدخول';
   const sourceText=sourceLabel(state.vpnSource);
 
   return <SafeAreaView edges={['top','bottom','left','right']} style={s.root}>
     <View style={s.head}>
       <Pressable onPress={()=>router.back()} style={s.back}><Text style={s.backText}>‹</Text></Pressable>
-      <View style={s.headText}><Text style={s.title}>حالة RAID</Text><Text style={s.sub}>الحساب والحماية في مكان واحد</Text></View>
+      <View style={s.headText}><Text style={s.title}>حالة RAID</Text><Text style={s.sub}>الحساب واتصال WireGuard في مكان واحد</Text></View>
       <View style={{width:42}}/>
     </View>
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
@@ -93,7 +93,7 @@ export default function NotificationsScreen(){
   </SafeAreaView>;
 }
 
-function sourceLabel(value:string){if(value==='service')return 'RAID Server';if(value==='cache')return 'محفوظ آمنًا';if(value==='local')return 'مزود محلي';return 'غير مهيأ';}
+function sourceLabel(value:string){if(value==='service')return 'RAID Server';if(value==='cache')return 'محفوظ محليًا';if(value==='local')return 'مزود محلي';return 'غير مهيأ';}
 function StatusCard({title,value,ok}:{title:string;value:string;ok:boolean}){return <View style={s.card}><View style={s.cardHead}><View style={[s.dot,ok&&s.dotOn]}/><Text style={s.cardTitle} numberOfLines={1}>{title}</Text></View><Text style={s.cardValue} numberOfLines={2}>{value}</Text></View>}
 
 const s=StyleSheet.create({

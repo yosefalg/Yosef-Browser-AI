@@ -98,7 +98,7 @@ export function HomeMenu({ visible, onClose, theme, items }: { visible: boolean;
           <View pointerEvents="none" style={[StyleSheet.absoluteFill,{backgroundColor:lightMode?'rgba(255,255,255,.18)':'rgba(255,255,255,.025)'}]} />
           <View style={[s.topShine,{backgroundColor:theme.accent,opacity:lightMode?.22:.34}]}/>
           <View style={s.header}>
-            <View style={s.brandCopy}><Text style={[s.brand,{color:theme.text}]}>RAID Browser</Text><Text style={[s.brandHint,{color:theme.muted}]}>سريع • مرتب • واضح</Text></View>
+            <View style={s.brandCopy}><Text style={[s.brand,{color:theme.text}]}>RAID Browser</Text><Text style={[s.brandHint,{color:theme.muted}]}>عملي • مرتب • واضح</Text></View>
             <View style={[s.logoDepth,{shadowColor:theme.accent}]}><RaidLogo size={42}/></View>
           </View>
           <View style={[s.divider,{backgroundColor:theme.border}]} />

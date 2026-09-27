@@ -219,6 +219,11 @@ function hostOf(value: string) {
   try { return new URL(value).hostname.replace(/^www\./, ''); } catch { return value; }
 }
 
+function tabIdFromRoute(value?: string) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 function isDirectMediaUrl(value: string) {
   return /^https?:\/\//i.test(value) && DIRECT_MEDIA_RE.test(value);
 }
@@ -273,10 +278,9 @@ export default function BrowserScreen() {
   const startUrl = useMemo(() => {
     try { return normalizeInput(params.url || 'https://www.google.com'); } catch { return 'https://www.google.com'; }
   }, [params.url]);
-  const [activeTabId, setActiveTabId] = useState<number | null>(() => {
-    const id = Number(params.tabId);
-    return Number.isInteger(id) && id > 0 ? id : null;
-  });
+  const activeTabIdRef = useRef<number | null>(tabIdFromRoute(params.tabId));
+  const pendingTabCreation = useRef<{ generation: number; promise: Promise<number> } | null>(null);
+  const tabRouteGeneration = useRef(0);
 
   const web = useRef<WebView>(null);
   const rendererFailures = useRef<number[]>([]);
@@ -331,6 +335,11 @@ export default function BrowserScreen() {
     });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    tabRouteGeneration.current += 1;
+    activeTabIdRef.current = tabIdFromRoute(params.tabId);
+  }, [params.tabId]);
 
   const refreshVpnStatus = useCallback(() => {
     void isVpnConnected().then(setVpnConnected).catch(() => setVpnConnected(false));
@@ -467,11 +476,32 @@ export default function BrowserScreen() {
       lastPersistedNavigation.current = persistKey;
       try { await addHistory(nav.url, nav.title); } catch {}
       try {
-        if (activeTabId) await updateBrowserTab(activeTabId, nav.url, nav.title);
-        else {
-          const id = await createBrowserTab(nav.url, nav.title || 'علامة تبويب جديدة');
-          setActiveTabId(id);
-          refreshTabCount();
+        const existingId = activeTabIdRef.current;
+        if (existingId) {
+          await updateBrowserTab(existingId, nav.url, nav.title);
+          return;
+        }
+
+        const routeGeneration = tabRouteGeneration.current;
+        let pendingCreation = pendingTabCreation.current;
+        if (!pendingCreation || pendingCreation.generation !== routeGeneration) {
+          pendingCreation = {
+            generation: routeGeneration,
+            promise: createBrowserTab(nav.url, nav.title || 'علامة تبويب جديدة'),
+          };
+          pendingTabCreation.current = pendingCreation;
+        }
+
+        try {
+          const id = await pendingCreation.promise;
+          if (tabRouteGeneration.current !== routeGeneration) return;
+          if (!activeTabIdRef.current) {
+            activeTabIdRef.current = id;
+            refreshTabCount();
+          }
+          await updateBrowserTab(activeTabIdRef.current, nav.url, nav.title);
+        } finally {
+          if (pendingTabCreation.current === pendingCreation) pendingTabCreation.current = null;
         }
       } catch {}
     }

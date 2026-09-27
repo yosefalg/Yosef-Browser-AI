@@ -7,6 +7,7 @@ import type { DownloadItem } from './types';
 const active = new Map<number, FileSystem.DownloadResumable>();
 const paused = new Map<number, FileSystem.DownloadPauseState>();
 const progressStats = new Map<number, { at: number; written: number; speed: number; persistedAt: number }>();
+const progressWrites = new Map<number, Promise<void>>();
 const recentStarts = new Map<string, { id: number; at: number }>();
 const RECENT_START_WINDOW_MS = 1800;
 const LEGACY_SYSTEM_PREFIX = 'android:';
@@ -167,8 +168,24 @@ function clearRecentStart(id: number) {
   }
 }
 
+function queueProgressWrite(id: number, patch: Parameters<typeof updateDownload>[1]) {
+  const previous = progressWrites.get(id) || Promise.resolve();
+  const queued = previous
+    .catch(() => {})
+    .then(() => updateDownload(id, patch))
+    .catch(() => {});
+  progressWrites.set(id, queued);
+}
+
+async function drainProgressWrites(id: number) {
+  const pending = progressWrites.get(id);
+  if (!pending) return;
+  await pending.catch(() => {});
+  if (progressWrites.get(id) === pending) progressWrites.delete(id);
+}
+
 function progressHandler(id: number) {
-  return async (progress: FileSystem.DownloadProgressData) => {
+  return (progress: FileSystem.DownloadProgressData) => {
     const now = Date.now();
     const total = progress.totalBytesExpectedToWrite || 0;
     const written = progress.totalBytesWritten || 0;
@@ -188,7 +205,7 @@ function progressHandler(id: number) {
     });
 
     if (!shouldPersist) return;
-    await updateDownload(id, {
+    queueProgressWrite(id, {
       state: 'downloading',
       progress: total > 0 ? Math.min(1, written / total) : 0,
       total_bytes: total || null,
@@ -196,7 +213,7 @@ function progressHandler(id: number) {
       speed_bps: speed,
       eta_seconds: eta,
       error: null,
-    }).catch(() => {});
+    });
   };
 }
 
@@ -207,6 +224,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
   try {
     const result = await task.downloadAsync();
     if (paused.has(id)) return;
+    await drainProgressWrites(id);
     active.delete(id);
     paused.delete(id);
     progressStats.delete(id);
@@ -251,6 +269,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
     progressStats.delete(id);
     clearRecentStart(id);
     if (paused.has(id)) return;
+    await drainProgressWrites(id);
     await updateDownload(id, {
       state: 'failed',
       speed_bps: 0,
@@ -285,6 +304,7 @@ export async function pauseDownload(id: number) {
   paused.set(id, state);
   progressStats.delete(id);
   clearRecentStart(id);
+  await drainProgressWrites(id);
   await updateDownload(id, {
     state: 'paused',
     speed_bps: 0,
@@ -392,6 +412,7 @@ export async function cancelDownload(id: number) {
   paused.delete(id);
   progressStats.delete(id);
   clearRecentStart(id);
+  await drainProgressWrites(id);
   await updateDownload(id, { state: 'cancelled', speed_bps: 0, eta_seconds: null, resume_data: null });
 }
 
@@ -406,6 +427,7 @@ export async function retryDownload(id: number) {
   paused.delete(id);
   progressStats.delete(id);
   clearRecentStart(id);
+  await drainProgressWrites(id);
 
   let destination = item.local_uri;
   if (!destination || isLegacySystemDownload(item)) {
@@ -477,6 +499,7 @@ export async function removeDownload(id: number, deleteFile = false) {
   paused.delete(id);
   progressStats.delete(id);
   clearRecentStart(id);
+  await drainProgressWrites(id);
   if (deleteFile && item?.local_uri) await FileSystem.deleteAsync(item.local_uri, { idempotent: true }).catch(() => {});
   await deleteDownloadRecord(id);
 }

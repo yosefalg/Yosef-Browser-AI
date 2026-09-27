@@ -11,6 +11,8 @@ import { DownloadShelf } from '@/components/DownloadShelf';
 import { deriveBrowserPerformancePolicy, getPerformanceSettings, profileLabel, type BrowsingProfile } from '@/lib/performance';
 import { isOnboardingComplete } from '@/lib/onboarding';
 
+const EXTERNAL_URL_DEDUPE_MS = 1500;
+
 function profileHint(profile: BrowsingProfile) {
   switch (profile) {
     case 'boost': return { bg: 'rgba(34,197,94,.90)', fg: '#052E16', text: 'Boost', icon: 'flash-outline' as const };
@@ -31,7 +33,8 @@ function RootChrome() {
   const [lightweightNavigation, setLightweightNavigation] = useState(false);
   const [activeProfile, setActiveProfile] = useState<BrowsingProfile>('balanced');
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
-  const lastExternalUrl = useRef('');
+  const lastExternalRequest = useRef({ url: '', receivedAt: 0 });
+  const externalNavigationId = useRef(0);
 
   const browserContextUrl = useMemo(() => {
     if (pathname !== '/browser') return undefined;
@@ -73,10 +76,16 @@ function RootChrome() {
   const openExternalWebUrl = useCallback((candidate?: string | null) => {
     const value = typeof candidate === 'string' ? candidate.trim() : '';
     if (!/^https?:\/\//i.test(value)) return;
-    if (lastExternalUrl.current === value) return;
-    lastExternalUrl.current = value;
+    const receivedAt = Date.now();
+    if (
+      lastExternalRequest.current.url === value &&
+      receivedAt - lastExternalRequest.current.receivedAt < EXTERNAL_URL_DEDUPE_MS
+    ) return;
+    lastExternalRequest.current = { url: value, receivedAt };
+    const navigationId = ++externalNavigationId.current;
     void isOnboardingComplete()
       .then((complete) => {
+        if (navigationId !== externalNavigationId.current) return;
         if (!complete) {
           router.replace('/onboarding');
           return;
@@ -84,6 +93,7 @@ function RootChrome() {
         router.replace({ pathname: '/browser', params: { url: value } });
       })
       .catch(() => {
+        if (navigationId !== externalNavigationId.current) return;
         router.replace({ pathname: '/browser', params: { url: value } });
       });
   }, []);

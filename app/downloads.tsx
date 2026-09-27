@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -100,17 +100,21 @@ export default function DownloadsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    let focused = true;
     void Promise.all([
       reconcileInterruptedDownloads().catch(()=>0),
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
-    ]).then(([,saved])=>{setThemeName(isThemeName(saved)?saved:'cinematic');void refresh();});
-    return () => {};
-  }, [refresh]));
-
-  useEffect(() => {
+    ]).then(([,saved])=>{
+      if (!focused) return;
+      setThemeName(isThemeName(saved)?saved:'cinematic');
+      void refresh();
+    });
     const id = setInterval(() => void refresh(), 900);
-    return () => clearInterval(id);
-  }, [refresh]);
+    return () => {
+      focused = false;
+      clearInterval(id);
+    };
+  }, [refresh]));
 
   const summary = useMemo(() => {
     const running = items.filter(item => item.state === 'downloading');

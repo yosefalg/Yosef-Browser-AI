@@ -13,9 +13,8 @@ const MAX_RECENTLY_CLOSED = 30;
 const HISTORY_DUPLICATE_WINDOW_MS = 30_000;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
-async function db() {
-  if (!dbPromise) dbPromise = SQLite.openDatabaseAsync('raid-browser.db');
-  const d = await dbPromise;
+async function openDatabase() {
+  const d = await SQLite.openDatabaseAsync('raid-browser.db');
   await d.execAsync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -40,6 +39,17 @@ async function db() {
     DELETE FROM browser_tabs WHERE private_mode != 0;
   `);
   return d;
+}
+
+function db() {
+  if (!dbPromise) {
+    dbPromise = openDatabase().catch((error) => {
+      // A transient open or migration failure must not poison every later call.
+      dbPromise = null;
+      throw error;
+    });
+  }
+  return dbPromise;
 }
 
 async function trimRecentlyClosed(d: SQLite.SQLiteDatabase) {

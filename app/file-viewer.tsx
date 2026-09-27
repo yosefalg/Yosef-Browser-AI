@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -11,6 +11,7 @@ import { getSetting, setSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 const TEXT_EXTENSIONS = ['txt','md','json','csv','log','xml','html','htm','css','js','ts'];
+const IMAGE_EXTENSIONS = ['jpg','jpeg','png','webp'];
 const STRUCTURED_EXTENSIONS = ['json','csv','log','xml','html','htm','css','js','ts'];
 const MAX_INTERNAL_TEXT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_FONT_SIZE = 18;
@@ -37,6 +38,8 @@ export default function FileViewerScreen(){
   const id=Number(Array.isArray(params.id)?params.id[0]:params.id);
   const [name,setName]=useState('ملف');
   const [content,setContent]=useState('');
+  const [imageUri,setImageUri]=useState('');
+  const [canOpenExternal,setCanOpenExternal]=useState(false);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
   const [fontSize,setFontSize]=useState(DEFAULT_FONT_SIZE);
@@ -62,18 +65,26 @@ export default function FileViewerScreen(){
     setError('');
     setName('ملف');
     setContent('');
+    setImageUri('');
+    setCanOpenExternal(false);
     void (async()=>{
       try{
-        if(!Number.isFinite(id))throw new Error('معرّف الملف غير صالح.');
+        if(!Number.isInteger(id)||id<=0)throw new Error('معرّف الملف غير صالح.');
         const item=await getDownload(id);
         if(!item?.local_uri||item.state!=='completed')throw new Error('الملف غير جاهز للقراءة.');
         const info=await FileSystem.getInfoAsync(item.local_uri);
         if(!info.exists)throw new Error('الملف لم يعد موجودًا على الجهاز.');
-        if(!TEXT_EXTENSIONS.includes(extension(item.file_name)))throw new Error('هذا النوع يحتاج عارضًا متخصصًا. يمكنك فتحه بتطبيق مناسب من زر الفتح الخارجي.');
+        if(active){setName(item.file_name);setCanOpenExternal(true);}
+        const fileExtension=extension(item.file_name);
+        if(IMAGE_EXTENSIONS.includes(fileExtension)){
+          if(active)setImageUri(item.local_uri);
+          return;
+        }
+        if(!TEXT_EXTENSIONS.includes(fileExtension))throw new Error('هذا النوع يحتاج عارضًا متخصصًا. يمكنك فتحه بتطبيق مناسب من زر الفتح الخارجي.');
         const size='size' in info&&typeof info.size==='number'?info.size:0;
         if(size>MAX_INTERNAL_TEXT_BYTES)throw new Error('الملف كبير للعرض الداخلي الآمن. استخدم الفتح الخارجي لهذا الملف.');
         const text=await FileSystem.readAsStringAsync(item.local_uri,{encoding:FileSystem.EncodingType.UTF8});
-        if(active){setName(item.file_name);setContent(text);}
+        if(active)setContent(text);
       }catch(e){if(active)setError(e instanceof Error?e.message:'تعذر قراءة الملف.');}
       finally{if(active)setLoading(false);}
     })();
@@ -94,11 +105,11 @@ export default function FileViewerScreen(){
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={()=>router.back()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="chevron-back" size={22} color={theme.text}/></Pressable>
-      <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text style={[s.sub,{color:theme.muted}]}>RAID Reader • {textLayout.writingDirection==='rtl'?'RTL':'LTR'}</Text></View>
-      <View style={s.controls}><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" onPress={()=>changeFontSize(-2)} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" onPress={()=>changeFontSize(2)} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></View>
+      <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text style={[s.sub,{color:theme.muted}]}>{imageUri?'RAID Image Viewer • محلي':`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'}`}</Text></View>
+      {imageUri?<Pressable accessibilityRole="button" accessibilityLabel="فتح الصورة بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="open-outline" size={20} color={theme.accent}/></Pressable>:<View style={s.controls}><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" onPress={()=>changeFontSize(-2)} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" onPress={()=>changeFontSize(2)} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></View>}
     </View>
-    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name="document-text-outline" size={44} color={theme.muted}/><Text style={[s.error,{color:theme.text}]}>{error}</Text><Pressable onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent}]}><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.externalText}>فتح خارجي</Text></Pressable></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
+    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent}]}><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.externalText}>فتح خارجي</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
   </SafeAreaView>;
 }
 
-const s=StyleSheet.create({root:{flex:1},header:{minHeight:66,borderBottomWidth:1,flexDirection:'row',alignItems:'center',paddingHorizontal:12,gap:10},icon:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},heading:{flex:1,minWidth:0},title:{fontSize:15,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,marginTop:2,textAlign:'right'},controls:{flexDirection:'row',gap:5},small:{height:36,minWidth:38,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},reader:{paddingHorizontal:20,paddingTop:22,paddingBottom:70},center:{flex:1,alignItems:'center',justifyContent:'center',padding:28,gap:14},error:{fontSize:15,lineHeight:24,textAlign:'center'},external:{minHeight:44,borderRadius:14,paddingHorizontal:18,flexDirection:'row',alignItems:'center',gap:7},externalText:{color:'#fff',fontWeight:'900'}});
+const s=StyleSheet.create({root:{flex:1},header:{minHeight:66,borderBottomWidth:1,flexDirection:'row',alignItems:'center',paddingHorizontal:12,gap:10},icon:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},heading:{flex:1,minWidth:0},title:{fontSize:15,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,marginTop:2,textAlign:'right'},controls:{flexDirection:'row',gap:5},small:{height:36,minWidth:38,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},reader:{paddingHorizontal:20,paddingTop:22,paddingBottom:70},imageStage:{flex:1,margin:12,borderRadius:20,overflow:'hidden'},image:{width:'100%',height:'100%'},center:{flex:1,alignItems:'center',justifyContent:'center',padding:28,gap:14},error:{fontSize:15,lineHeight:24,textAlign:'center'},external:{minHeight:44,borderRadius:14,paddingHorizontal:18,flexDirection:'row',alignItems:'center',gap:7},externalText:{color:'#fff',fontWeight:'900'}});

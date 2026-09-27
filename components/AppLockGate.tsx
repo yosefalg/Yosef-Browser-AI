@@ -2,7 +2,13 @@ import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'rea
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Ionicons } from '@expo/vector-icons';
-import { getAppLockSettings, subscribeAppLockNow, subscribeAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
+import { DEFAULT_APP_LOCK_SETTINGS, getAppLockSettings, subscribeAppLockNow, subscribeAppLockSettings, type AppLockSettings } from '@/lib/app-lock';
+
+const FAIL_CLOSED_SETTINGS: AppLockSettings = {
+  ...DEFAULT_APP_LOCK_SETTINGS,
+  enabled: true,
+  gracePeriodMs: 0,
+};
 
 export function AppLockGate({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
@@ -70,8 +76,11 @@ export function AppLockGate({ children }: PropsWithChildren) {
       })
       .catch(() => {
         if (!alive) return;
-        setLocked(false);
-        setPrivacyShield(false);
+        settingsRef.current = FAIL_CLOSED_SETTINGS;
+        backgroundAt.current = null;
+        setLocked(true);
+        setPrivacyShield(true);
+        setMessage('تعذر التحقق من إعداد قفل RAID. لحماية بياناتك، أكد هويتك بواسطة Android للمتابعة.');
         setReady(true);
       });
     return () => { alive = false; };
@@ -166,7 +175,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
       <Text style={styles.kicker}>RAID APP LOCK</Text>
       <Text style={styles.title}>{locked ? 'المتصفح مقفول' : 'RAID محمي'}</Text>
       <Text style={styles.body}>{locked ? 'استخدم بصمة أو وجه الجهاز. إذا كان جهازك يسمح، يبقى رمز القفل كخيار احتياطي.' : 'تم إخفاء محتوى المتصفح أثناء وجود التطبيق في الخلفية لحماية خصوصيتك.'}</Text>
-      {!!message && <Text style={styles.message}>{message}</Text>}
+      {!!message && <Text style={styles.message} accessibilityRole="alert" accessibilityLiveRegion="polite">{message}</Text>}
       {locked && <Pressable onPress={() => void authenticate(true)} style={({ pressed }) => [styles.button, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="فتح RAID Browser">
         <Ionicons name="finger-print" size={22} color="#0B1018" />
         <Text style={styles.buttonText}>فتح RAID</Text>

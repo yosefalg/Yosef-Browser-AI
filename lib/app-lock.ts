@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { getSetting, setSetting } from './db';
+import { getSettingStrict, setSetting } from './db';
 
 export type AppLockSettings = {
   enabled: boolean;
@@ -63,11 +63,12 @@ export function requestAppLockNow() {
 }
 
 export async function getAppLockSettings() {
-  const secure = await SecureStore.getItemAsync(SECURE_KEY).catch(() => null);
+  const secure = await SecureStore.getItemAsync(SECURE_KEY);
   const secureSettings = parseStored(secure);
   if (secureSettings) return secureSettings;
+  if (secure !== null) throw new Error('APP_LOCK_SETTINGS_CORRUPT');
 
-  const legacy = await getSetting<AppLockSettings>(KEY, DEFAULT_APP_LOCK_SETTINGS).catch(() => DEFAULT_APP_LOCK_SETTINGS);
+  const legacy = await getSettingStrict<AppLockSettings>(KEY, DEFAULT_APP_LOCK_SETTINGS);
   const safe = sanitizeAppLockSettings(legacy);
   await SecureStore.setItemAsync(SECURE_KEY, JSON.stringify(safe)).catch(() => {});
   return safe;

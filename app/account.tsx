@@ -57,6 +57,8 @@ export default function AccountScreen(){
     setSyncing(true);setMsg('');
     try{
       const result=await syncAccountData();
+      const syncedTheme=await getSetting<ThemeName>('theme','cinematic');
+      setThemeName(isThemeName(syncedTheme)?syncedTheme:'cinematic');
       setLastSync(new Date().toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'}));
       setMsg(`اكتملت المزامنة: رفع ${result.uploaded} واستعادة ${result.downloaded}.`);
     }catch(e){setMsg(e instanceof Error?e.message:'تعذر إكمال المزامنة الآن.');}

@@ -1,9 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { getSetting, setSetting } from '@/lib/db';
+import { getSetting, setSettings } from '@/lib/db';
 import { getCurrentSession } from '@/lib/auth';
 import { isVpnConnected } from '@/lib/vpn';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
@@ -15,6 +15,7 @@ export default function SettingsScreen(){
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [signedIn,setSignedIn]=useState(false);
   const [vpnConnected,setVpnConnected]=useState(false);
+  const themeSavingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh=useCallback(async()=>{
@@ -29,7 +30,20 @@ export default function SettingsScreen(){
   },[]);
 
   useFocusEffect(useCallback(()=>{void refresh();return()=>{};},[refresh]));
-  const choose=async(t:ThemeName)=>{setThemeName(t);await setSetting('theme',t)};
+  const choose=async(t:ThemeName)=>{
+    if(themeSavingRef.current||t===themeName)return;
+    const previous=themeName;
+    themeSavingRef.current=true;
+    setThemeName(t);
+    try{
+      await setSettings([['theme',t],['theme_updated_at',Date.now()]]);
+    }catch{
+      setThemeName(previous);
+      Alert.alert('تعذّر حفظ المظهر','بقي المظهر السابق محفوظًا. حاول مرة أخرى.');
+    }finally{
+      themeSavingRef.current=false;
+    }
+  };
 
   const browsing:SettingsRow[]=[
     {title:'RAID Performance',hint:'Boost ومودات التصفح للشبكات العراقية والمتذبذبة',icon:'speedometer',route:'/performance',badge:'جديد'},

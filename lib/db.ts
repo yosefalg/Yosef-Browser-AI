@@ -83,6 +83,18 @@ export async function getProtectionStats(){const d=await db();return (await d.ge
 export async function incrementProtectionStats(adsRemoved=0,popupsBlocked=0){const ads=Math.max(0,Math.min(10000,Math.floor(adsRemoved)));const popups=Math.max(0,Math.min(1000,Math.floor(popupsBlocked)));if(!ads&&!popups)return;const d=await db();await d.runAsync('UPDATE protection_stats SET ads_removed=ads_removed+?,popups_blocked=popups_blocked+?,updated_at=? WHERE id=1',ads,popups,Date.now());}
 export async function resetProtectionStats(){const d=await db();await d.runAsync('UPDATE protection_stats SET ads_removed=0,popups_blocked=0,updated_at=? WHERE id=1',Date.now());}
 export async function setSetting(key:string,value:unknown){const d=await db();await d.runAsync('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)',key,JSON.stringify(value));}
+export async function setSettings(entries:readonly (readonly [string,unknown])[]){
+  if(!entries.length)return;
+  const d=await db();
+  await d.execAsync('BEGIN IMMEDIATE TRANSACTION');
+  try{
+    for(const [key,value] of entries)await d.runAsync('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)',key,JSON.stringify(value));
+    await d.execAsync('COMMIT');
+  }catch(error){
+    await d.execAsync('ROLLBACK').catch(()=>{});
+    throw error;
+  }
+}
 export async function getSetting<T>(key:string,fallback:T):Promise<T>{try{const d=await db();const row=await d.getFirstAsync<{value:string}>('SELECT value FROM settings WHERE key=?',key);return row?JSON.parse(row.value) as T:fallback;}catch{return fallback;}}
 export async function getSettingStrict<T>(key:string,fallback:T):Promise<T>{const d=await db();const row=await d.getFirstAsync<{value:string}>('SELECT value FROM settings WHERE key=?',key);return row?JSON.parse(row.value) as T:fallback;}
 export async function setPageContext(url:string,title:string,text:string){const cleanText=text.slice(0,16000);const now=Date.now();const d=await db();await d.runAsync('INSERT OR REPLACE INTO page_context (id,url,title,text,captured_at) VALUES (1,?,?,?,?)',url,title,cleanText,now);await upsertTabContext(url,title,cleanText,null);}

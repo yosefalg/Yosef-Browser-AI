@@ -1,6 +1,9 @@
 import { getSupabase } from './auth';
-import { addBookmark, getBookmarks, getMemories, getSetting, remember, setSetting } from './db';
-import type { ThemeName } from './theme';
+import { addBookmark, getBookmarks, getMemories, getSettingStrict, remember, setSettings } from './db';
+import { isThemeName, type ThemeName } from './theme';
+
+const THEME_KEY = 'theme';
+const THEME_UPDATED_AT_KEY = 'theme_updated_at';
 
 async function currentUser() {
   const supabase = getSupabase();
@@ -85,50 +88,78 @@ export async function pullBookmarksFromCloud() {
   return imported;
 }
 
-export async function pushPreferencesToCloud() {
-  const { supabase, user } = await currentUser();
-  const theme = await getSetting<ThemeName>('theme', 'cinematic');
-  const rows = [
-    { user_id: user.id, key: 'theme', value: theme, updated_at: new Date().toISOString() },
-  ];
-  const { error } = await supabase.from('raid_user_settings').upsert(rows, { onConflict: 'user_id,key' });
-  if (error) throw error;
-  return rows.length;
+function validTimestamp(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
-export async function pullPreferencesFromCloud() {
+function cloudTimestamp(value: unknown) {
+  if (typeof value !== 'string') return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export async function syncPreferencesWithCloud() {
   const { supabase, user } = await currentUser();
+  const [savedTheme, savedUpdatedAt] = await Promise.all([
+    getSettingStrict<unknown>(THEME_KEY, 'cinematic'),
+    getSettingStrict<unknown>(THEME_UPDATED_AT_KEY, 0),
+  ]);
+  const hasValidLocalTheme = isThemeName(savedTheme);
+  const localTheme: ThemeName = hasValidLocalTheme ? savedTheme : 'cinematic';
+  let localUpdatedAt = hasValidLocalTheme ? validTimestamp(savedUpdatedAt) : 0;
   const { data, error } = await supabase
     .from('raid_user_settings')
-    .select('key,value')
+    .select('key,value,updated_at')
     .eq('user_id', user.id)
-    .in('key', ['theme']);
+    .eq('key', THEME_KEY)
+    .limit(1);
   if (error) throw error;
-  let imported = 0;
-  for (const item of data ?? []) {
-    if (item.key === 'theme' && typeof item.value === 'string') {
-      await setSetting('theme', item.value);
-      imported += 1;
-    }
+
+  const cloud = data?.[0];
+  const cloudTheme = isThemeName(cloud?.value) ? cloud.value : null;
+  const cloudUpdatedAt = cloudTimestamp(cloud?.updated_at);
+
+  if (cloudTheme && (localUpdatedAt === 0 || cloudUpdatedAt > localUpdatedAt)) {
+    const appliedAt = cloudUpdatedAt || Date.now();
+    await setSettings([
+      [THEME_KEY, cloudTheme],
+      [THEME_UPDATED_AT_KEY, appliedAt],
+    ]);
+    return { uploaded: 0, downloaded: 1 };
   }
-  return imported;
+
+  if (!cloudTheme || cloudTheme !== localTheme || localUpdatedAt > cloudUpdatedAt) {
+    if (localUpdatedAt === 0) {
+      localUpdatedAt = Date.now();
+      await setSettings([
+        [THEME_KEY, localTheme],
+        [THEME_UPDATED_AT_KEY, localUpdatedAt],
+      ]);
+    }
+    const { error: uploadError } = await supabase.from('raid_user_settings').upsert([
+      { user_id: user.id, key: THEME_KEY, value: localTheme, updated_at: new Date(localUpdatedAt).toISOString() },
+    ], { onConflict: 'user_id,key' });
+    if (uploadError) throw uploadError;
+    return { uploaded: 1, downloaded: 0 };
+  }
+
+  return { uploaded: 0, downloaded: 0 };
 }
 
 export async function syncAccountData() {
   const startedAt = Date.now();
-  const [memoryUp, bookmarksUp, settingsUp] = await Promise.all([
+  const [memoryUp, bookmarksUp, settings] = await Promise.all([
     pushMemoriesToCloud(),
     pushBookmarksToCloud(),
-    pushPreferencesToCloud(),
+    syncPreferencesWithCloud(),
   ]);
-  const [memoryDown, bookmarksDown, settingsDown] = await Promise.all([
+  const [memoryDown, bookmarksDown] = await Promise.all([
     pullMemoriesFromCloud(),
     pullBookmarksFromCloud(),
-    pullPreferencesFromCloud(),
   ]);
   return {
-    uploaded: memoryUp + bookmarksUp + settingsUp,
-    downloaded: memoryDown + bookmarksDown + settingsDown,
+    uploaded: memoryUp + bookmarksUp + settings.uploaded,
+    downloaded: memoryDown + bookmarksDown + settings.downloaded,
     durationMs: Date.now() - startedAt,
   };
 }

@@ -109,22 +109,32 @@ async function uniqueDestination(fileName: string) {
   return destination;
 }
 
-function safeReferer(value?: string | null) {
+function safeReferer(value?: string | null, targetUrl?: string | null) {
   if (!value) return null;
   try {
-    const parsed = new URL(value);
-    if (!/^https?:$/.test(parsed.protocol)) return null;
-    parsed.username = '';
-    parsed.password = '';
-    parsed.hash = '';
-    return parsed.toString();
+    const page = new URL(value);
+    if (!/^https?:$/.test(page.protocol)) return null;
+    page.username = '';
+    page.password = '';
+    page.hash = '';
+
+    if (targetUrl) {
+      const target = new URL(targetUrl);
+      if (target.protocol !== 'https:') return null;
+      if (page.origin !== target.origin) {
+        page.pathname = '/';
+        page.search = '';
+      }
+    }
+
+    return page.toString();
   } catch {
     return null;
   }
 }
 
-function requestOptions(referer?: string | null) {
-  const safe = safeReferer(referer);
+function requestOptions(referer: string | null | undefined, targetUrl: string) {
+  const safe = safeReferer(referer, targetUrl);
   return safe ? { headers: { Referer: safe } } : {};
 }
 
@@ -258,10 +268,10 @@ export async function startDownload(url: string, referer?: string | null) {
   if (recent && Date.now() - recent.at > RECENT_START_WINDOW_MS) recentStarts.delete(key);
 
   const fileName = safeFileName(url);
-  const storedReferer = safeReferer(referer);
+  const storedReferer = safeReferer(referer, url);
   const destination = await uniqueDestination(fileName);
   const id = await createDownload(url, fileName, destination, storedReferer);
-  const task = FileSystem.createDownloadResumable(url, destination, requestOptions(storedReferer), progressHandler(id));
+  const task = FileSystem.createDownloadResumable(url, destination, requestOptions(storedReferer, url), progressHandler(id));
   recentStarts.set(key, { id, at: Date.now() });
   void runTask(id, task);
   return id;
@@ -288,6 +298,7 @@ export async function resumeDownload(id: number) {
   const memoryState = paused.get(id);
   const item = await getDownload(id);
   if (item && isLegacySystemDownload(item)) throw new Error('هذا تنزيل قديم من مدير Android. اضغط إعادة لنقله إلى مدير RAID الداخلي.');
+  if (item && !/^https:\/\//i.test(item.url)) throw new Error('لا يمكن استكمال تنزيل غير مشفّر. استخدم رابط HTTPS وابدأ التنزيل من جديد.');
   const resumeData = memoryState?.resumeData || item?.resume_data || undefined;
   if (!item?.local_uri || !resumeData) throw new Error('لا توجد جلسة تنزيل قابلة للاستكمال. أعد التنزيل إذا تم حذف بيانات الاستئناف.');
   const partial = await FileSystem.getInfoAsync(item.local_uri);
@@ -296,7 +307,7 @@ export async function resumeDownload(id: number) {
     await updateDownload(id, { state: 'failed', resume_data: null, speed_bps: 0, eta_seconds: null, error: 'ملف التنزيل الجزئي لم يعد موجودًا. اضغط إعادة لبدء التنزيل من جديد.' });
     throw new Error('ملف التنزيل الجزئي غير موجود على الجهاز. استخدم إعادة التنزيل.');
   }
-  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, requestOptions(item.referer), progressHandler(id), resumeData);
+  const task = new FileSystem.DownloadResumable(item.url, item.local_uri, requestOptions(item.referer, item.url), progressHandler(id), resumeData);
   void runTask(id, task);
 }
 
@@ -415,7 +426,7 @@ export async function retryDownload(id: number) {
     error: null,
   });
 
-  const task = FileSystem.createDownloadResumable(item.url, destination, requestOptions(item.referer), progressHandler(id));
+  const task = FileSystem.createDownloadResumable(item.url, destination, requestOptions(item.referer, item.url), progressHandler(id));
   void runTask(id, task);
   return id;
 }

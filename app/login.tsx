@@ -13,6 +13,7 @@ export default function LoginScreen(){
   const [mode,setMode]=useState<'signin'|'signup'>('signin');
   const [msg,setMsg]=useState('');
   const [busy,setBusy]=useState(false);
+  const busyRef=useRef(false);
   const fade=useRef(new Animated.Value(0)).current;
   const lift=useRef(new Animated.Value(22)).current;
 
@@ -23,7 +24,24 @@ export default function LoginScreen(){
     ]).start();
   },[fade,lift]);
 
-  const choose=(next:'signin'|'signup')=>{setMode(next);setMsg('');};
+  const beginAuth=()=>{
+    if (busyRef.current) return false;
+    busyRef.current=true;
+    setBusy(true);
+    setMsg('');
+    return true;
+  };
+
+  const endAuth=()=>{
+    busyRef.current=false;
+    setBusy(false);
+  };
+
+  const choose=(next:'signin'|'signup')=>{
+    if (busyRef.current) return;
+    setMode(next);
+    setMsg('');
+  };
 
   const submit=async()=>{
     const cleanEmail=email.trim().toLowerCase();
@@ -36,7 +54,7 @@ export default function LoginScreen(){
       if (password !== confirm) { setMsg('كلمتا المرور غير متطابقتين.'); return; }
     }
 
-    setBusy(true); setMsg('');
+    if (!beginAuth()) return;
     try{
       if(mode==='signin') {
         const data=await signIn(cleanEmail,password);
@@ -58,12 +76,11 @@ export default function LoginScreen(){
       if(lower.includes('already registered')) setMsg('هذا البريد مسجل بالفعل. اختر تسجيل الدخول.');
       else if(lower.includes('invalid login')) setMsg('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
       else setMsg(raw||'تعذر إكمال العملية الآن.');
-    }finally{setBusy(false)}
+    }finally{endAuth()}
   };
 
   const googleSubmit=async()=>{
-    if (busy) return;
-    setBusy(true); setMsg('');
+    if (!beginAuth()) return;
     try {
       const data=await signInWithGoogle();
       if (!data.session) throw new Error('تعذر إنشاء جلسة Google صالحة.');
@@ -80,7 +97,7 @@ export default function LoginScreen(){
       } else {
         setMsg(raw || 'تعذر تسجيل الدخول بواسطة Google.');
       }
-    } finally { setBusy(false); }
+    } finally { endAuth(); }
   };
 
   return <LinearGradient colors={['#040609','#0A0F19','#101628']} style={s.fill}>
@@ -91,10 +108,10 @@ export default function LoginScreen(){
             <View style={s.hero}>
               <LinearGradient colors={['#7C3AED','#4F46E5']} style={s.logo}><Text style={s.logoText}>R</Text></LinearGradient>
               <Text style={s.brand}>مرحبًا بك في RAID</Text>
-              <Text style={s.desc}>دخول سريع وآمن. جلسة واحدة لتفعيل خدمات الحساب والذكاء الاصطناعي وVPN.</Text>
+              <Text style={s.desc}>دخول آمن إلى حساب RAID. إعداد VPN والاتصال به يتمان بشكل مستقل.</Text>
             </View>
 
-            <Pressable onPress={googleSubmit} disabled={busy} style={[s.google,busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="تسجيل الدخول بواسطة Google">
+            <Pressable onPress={googleSubmit} disabled={busy} style={[s.google,busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="تسجيل الدخول بواسطة Google" accessibilityState={{disabled:busy,busy}}>
               <View style={s.googleMark}><Text style={s.googleMarkText}>G</Text></View>
               <Text style={s.googleText}>المتابعة باستخدام Google</Text>
             </Pressable>
@@ -102,22 +119,22 @@ export default function LoginScreen(){
             <View style={s.divider}><View style={s.line}/><Text style={s.or}>أو</Text><View style={s.line}/></View>
 
             <View style={s.tabs}>
-              <Pressable onPress={()=>choose('signin')} style={[s.tab,mode==='signin'&&s.tabOn]}><Text style={[s.tabText,mode==='signin'&&s.tabTextOn]}>دخول</Text></Pressable>
-              <Pressable onPress={()=>choose('signup')} style={[s.tab,mode==='signup'&&s.tabOn]}><Text style={[s.tabText,mode==='signup'&&s.tabTextOn]}>حساب جديد</Text></Pressable>
+              <Pressable onPress={()=>choose('signin')} disabled={busy} style={[s.tab,mode==='signin'&&s.tabOn]} accessibilityRole="tab" accessibilityState={{selected:mode==='signin',disabled:busy}}><Text style={[s.tabText,mode==='signin'&&s.tabTextOn]}>دخول</Text></Pressable>
+              <Pressable onPress={()=>choose('signup')} disabled={busy} style={[s.tab,mode==='signup'&&s.tabOn]} accessibilityRole="tab" accessibilityState={{selected:mode==='signup',disabled:busy}}><Text style={[s.tabText,mode==='signup'&&s.tabTextOn]}>حساب جديد</Text></Pressable>
             </View>
 
             <View style={s.form}>
-              {mode==='signup'&&<TextInput value={name} onChangeText={setName} placeholder="الاسم" placeholderTextColor="#64748B" style={s.input} textContentType="name"/>}
-              <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#64748B" style={s.input} textContentType="emailAddress"/>
-              <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="كلمة المرور" placeholderTextColor="#64748B" style={s.input} textContentType={mode==='signup'?'newPassword':'password'}/>
-              {mode==='signup'&&<TextInput value={confirm} onChangeText={setConfirm} secureTextEntry placeholder="تأكيد كلمة المرور" placeholderTextColor="#64748B" style={s.input} textContentType="newPassword"/>}
+              {mode==='signup'&&<TextInput value={name} onChangeText={setName} editable={!busy} placeholder="الاسم" placeholderTextColor="#64748B" style={s.input} textContentType="name"/>}
+              <TextInput value={email} onChangeText={setEmail} editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#64748B" style={s.input} textContentType="emailAddress"/>
+              <TextInput value={password} onChangeText={setPassword} editable={!busy} secureTextEntry placeholder="كلمة المرور" placeholderTextColor="#64748B" style={s.input} textContentType={mode==='signup'?'newPassword':'password'}/>
+              {mode==='signup'&&<TextInput value={confirm} onChangeText={setConfirm} editable={!busy} secureTextEntry placeholder="تأكيد كلمة المرور" placeholderTextColor="#64748B" style={s.input} textContentType="newPassword"/>}
             </View>
 
-            <Pressable onPress={submit} disabled={busy} style={[s.primary,busy&&s.disabled]}>
+            <Pressable onPress={submit} disabled={busy} style={[s.primary,busy&&s.disabled]} accessibilityRole="button" accessibilityState={{disabled:busy,busy}}>
               <Text style={s.primaryText}>{busy?'جارٍ التحقق...':mode==='signin'?'دخول إلى RAID':'إنشاء الحساب'}</Text>
             </Pressable>
-            {!!msg&&<View style={s.messageBox}><Text style={s.msg}>{msg}</Text></View>}
-            <Pressable onPress={()=>router.back()} style={s.backButton}><Text style={s.back}>رجوع</Text></Pressable>
+            {!!msg&&<View style={s.messageBox} accessibilityLiveRegion="polite"><Text style={s.msg}>{msg}</Text></View>}
+            <Pressable onPress={()=>router.back()} disabled={busy} style={[s.backButton,busy&&s.disabled]} accessibilityRole="button" accessibilityState={{disabled:busy}}><Text style={s.back}>رجوع</Text></Pressable>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>

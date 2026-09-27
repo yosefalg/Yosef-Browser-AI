@@ -619,7 +619,7 @@ export default function BrowserScreen() {
   };
 
   const openInlineMedia = (candidate: string) => {
-    if (!/^https?:\/\//i.test(candidate)) return;
+    if (!safeExternalUrl(candidate)) return;
     setMediaUrl(candidate);
     setMediaUrls((current) => current.includes(candidate) ? current : [candidate, ...current].slice(0, 12));
     setMediaOpen(true);
@@ -674,7 +674,10 @@ export default function BrowserScreen() {
 
   const onMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
+    const sourceUrl = event.nativeEvent.url;
+    const fromCurrentDocument = urlsReferToSameDocument(sourceUrl, mainDocumentUrl.current);
     if (raw.startsWith('RAID_PROTECTION:')) {
+      if (!fromCurrentDocument) return;
       try {
         const value = JSON.parse(raw.slice('RAID_PROTECTION:'.length));
         const boundedCount = (candidate:unknown) => {
@@ -704,20 +707,23 @@ export default function BrowserScreen() {
       return;
     }
     if (raw.startsWith('RAID_MEDIA:')) {
+      if (!fromCurrentDocument) return;
       try {
         const parsed = JSON.parse(raw.slice('RAID_MEDIA:'.length));
         if (Array.isArray(parsed)) {
-          const safe = parsed.filter((item): item is string => typeof item === 'string' && /^https?:\/\//i.test(item));
+          const safe = parsed.filter((item): item is string => typeof item === 'string' && safeExternalUrl(item));
           setMediaUrls(Array.from(new Set(safe)).slice(0, 12));
         }
       } catch {}
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:PLAYING') {
+      if (!fromCurrentDocument) return;
       manualMediaRequest.current = false;
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:NO_VIDEO') {
+      if (!fromCurrentDocument) return;
       if (manualMediaRequest.current) {
         Alert.alert('RAID Media Player', 'لم يعثر RAID على فيديو في هذه الصفحة. افتح صفحة مشاهدة تحتوي على فيديو ثم جرّب مرة أخرى.');
       }
@@ -725,6 +731,7 @@ export default function BrowserScreen() {
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:FAILED') {
+      if (!fromCurrentDocument) return;
       if (manualMediaRequest.current) {
         Alert.alert('RAID Media Player', 'تعذر تشغيل فيديو الصفحة مباشرة داخل RAID.');
       }
@@ -732,19 +739,19 @@ export default function BrowserScreen() {
       return;
     }
     const page = parsePageContext(raw);
-    if (page && !privateMode) {
+    if (page && !privateMode && fromCurrentDocument && urlsReferToSameDocument(page.url, sourceUrl)) {
       setPageContext(page.url, page.title, page.text).catch(() => {});
       return;
     }
     const payload = parseReaderMessage(raw);
-    if (payload) setReader(payload);
+    if (payload && fromCurrentDocument && urlsReferToSameDocument(payload.url, sourceUrl)) setReader(payload);
   };
 
   const onMediaMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
     if (raw.startsWith('RAID_MEDIA_DOWNLOAD:')) {
       const candidate = raw.slice('RAID_MEDIA_DOWNLOAD:'.length).trim();
-      if (/^https:\/\//i.test(candidate)) handleFileDownload(candidate);
+      if (safeExternalUrl(candidate)) handleFileDownload(candidate);
       return;
     }
     if (raw === 'RAID_MEDIA_CLOSE') {

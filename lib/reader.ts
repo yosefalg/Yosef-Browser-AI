@@ -4,6 +4,8 @@ export type ReaderPayload = {
   title: string;
   text: string;
   url: string;
+  direction: 'rtl' | 'ltr';
+  language: string;
 };
 
 export const READER_EXTRACT_JS = `
@@ -89,10 +91,21 @@ export const READER_EXTRACT_JS = `
 
     const h1 = document.querySelector('article h1, main h1, [role="main"] h1, h1');
     const title = normalize((h1 && (h1.innerText || h1.textContent)) || document.title || location.hostname).slice(0, 300);
+    const sample = text.slice(0, 4000);
+    const rtlCharacters = (sample.match(/[\u0590-\u08FF]/g) || []).length;
+    const latinCharacters = (sample.match(/[A-Za-z]/g) || []).length;
+    const declaredDirection = String(document.documentElement.dir || document.body.dir || '').trim().toLowerCase();
+    const direction = declaredDirection === 'rtl' || declaredDirection === 'ltr'
+      ? declaredDirection
+      : rtlCharacters > latinCharacters ? 'rtl' : 'ltr';
+    const declaredLanguage = String(document.documentElement.lang || '').trim().replace(/_/g, '-').slice(0, 35);
+    const language = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(declaredLanguage)
+      ? declaredLanguage
+      : direction === 'rtl' ? (/^[^\u0590-\u05FF]*[\u0590-\u05FF]/.test(sample) ? 'he' : 'ar') : 'en';
 
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'RAID_READER',
-      payload: { title: title || location.hostname, text: text.slice(0, MAX_CONTENT), url: location.href }
+      payload: { title: title || location.hostname, text: text.slice(0, MAX_CONTENT), url: location.href, direction, language }
     }));
   } catch (e) {
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'RAID_READER_ERROR', message: String(e) }));
@@ -118,11 +131,24 @@ export function parseReaderMessage(raw: string): ReaderPayload | null {
       .trim();
     const url = payload.url.trim();
     if (text.length < 40 || !safeExternalUrl(url)) return null;
+    const rtlCharacters = (text.slice(0, 4000).match(/[\u0590-\u08FF]/g) || []).length;
+    const latinCharacters = (text.slice(0, 4000).match(/[A-Za-z]/g) || []).length;
+    const direction = payload.direction === 'rtl' || payload.direction === 'ltr'
+      ? payload.direction
+      : rtlCharacters > latinCharacters ? 'rtl' : 'ltr';
+    const declaredLanguage = typeof payload.language === 'string'
+      ? payload.language.trim().replace(/_/g, '-').slice(0, 35)
+      : '';
+    const language = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(declaredLanguage)
+      ? declaredLanguage
+      : direction === 'rtl' ? 'ar' : 'en';
 
     return {
       title: payload.title.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) || 'وضع القراءة',
       text: text.slice(0, 120000),
       url: url.slice(0, 4096),
+      direction,
+      language,
     };
   } catch {
     return null;

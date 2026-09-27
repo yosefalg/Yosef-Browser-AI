@@ -5,8 +5,12 @@ const DEFAULT_SUPABASE_URL = 'https://aoftmiajhujveahjqlct.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_WRrrrMpgaFmM3ikNJxYHtA_l9-RO0cP';
 const AUTH_CHUNK_SIZE = 1800;
 const AUTH_CHUNK_MARKER = 'raid-auth-chunks:';
+const AUTH_CHUNK_MARKER_V2 = 'raid-auth-chunks-v2:';
+const AUTH_MAX_CHUNKS = 64;
 
 let client: SupabaseClient | null = null;
+let authChunkGeneration = 0;
+let authStorageWriteQueue = Promise.resolve();
 
 export type RaidUserProfile = {
   user_id: string;
@@ -16,64 +20,98 @@ export type RaidUserProfile = {
   updated_at: string;
 };
 
-function authChunkKey(key: string, index: number) {
-  return `${key}.raid.${index}`;
+type AuthChunkDescriptor = { count: number; generation: string | null };
+
+function authChunkKey(key: string, index: number, generation: string | null) {
+  return generation ? `${key}.raid.${generation}.${index}` : `${key}.raid.${index}`;
 }
 
-function chunkCount(value: string | null) {
-  if (!value?.startsWith(AUTH_CHUNK_MARKER)) return 0;
+function chunkDescriptor(value: string | null): AuthChunkDescriptor | null {
+  if (!value) return null;
+  if (value.startsWith(AUTH_CHUNK_MARKER_V2)) {
+    const [generation, rawCount] = value.slice(AUTH_CHUNK_MARKER_V2.length).split(':');
+    const count = Number(rawCount);
+    if (/^[a-z0-9-]{1,48}$/i.test(generation || '') && Number.isInteger(count) && count > 0 && count <= AUTH_MAX_CHUNKS) {
+      return { generation, count };
+    }
+    return null;
+  }
+  if (!value.startsWith(AUTH_CHUNK_MARKER)) return null;
   const count = Number(value.slice(AUTH_CHUNK_MARKER.length));
-  return Number.isInteger(count) && count > 0 && count <= 64 ? count : 0;
+  return Number.isInteger(count) && count > 0 && count <= AUTH_MAX_CHUNKS
+    ? { generation: null, count }
+    : null;
 }
 
 async function clearAuthChunks(key: string, marker?: string | null) {
-  const count = chunkCount(marker ?? await SecureStore.getItemAsync(key));
-  if (!count) return;
-  await Promise.all(Array.from({ length: count }, (_, index) =>
-    SecureStore.deleteItemAsync(authChunkKey(key, index)).catch(() => {})
+  const storedMarker = marker === undefined ? await SecureStore.getItemAsync(key) : marker;
+  const descriptor = chunkDescriptor(storedMarker);
+  if (!descriptor) return;
+  await Promise.all(Array.from({ length: descriptor.count }, (_, index) =>
+    SecureStore.deleteItemAsync(authChunkKey(key, index, descriptor.generation)).catch(() => {})
   ));
+}
+
+function queueAuthStorageWrite<T>(operation: () => Promise<T>) {
+  const result = authStorageWriteQueue.catch(() => {}).then(operation);
+  authStorageWriteQueue = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 const secureAuthStorage = {
   async getItem(key: string) {
     const stored = await SecureStore.getItemAsync(key);
-    const count = chunkCount(stored);
-    if (!count) return stored;
+    const descriptor = chunkDescriptor(stored);
+    if (!descriptor) return stored;
 
-    const chunks = await Promise.all(Array.from({ length: count }, (_, index) =>
-      SecureStore.getItemAsync(authChunkKey(key, index))
+    const chunks = await Promise.all(Array.from({ length: descriptor.count }, (_, index) =>
+      SecureStore.getItemAsync(authChunkKey(key, index, descriptor.generation))
     ));
     if (chunks.some((part) => part == null)) {
-      await clearAuthChunks(key, stored);
       await SecureStore.deleteItemAsync(key).catch(() => {});
+      await clearAuthChunks(key, stored);
       return null;
     }
     return chunks.join('');
   },
 
   async setItem(key: string, value: string) {
-    const previous = await SecureStore.getItemAsync(key);
-    await clearAuthChunks(key, previous);
+    return queueAuthStorageWrite(async () => {
+      const previous = await SecureStore.getItemAsync(key);
+      if (value.length <= AUTH_CHUNK_SIZE) {
+        await SecureStore.setItemAsync(key, value);
+        await clearAuthChunks(key, previous);
+        return;
+      }
 
-    if (value.length <= AUTH_CHUNK_SIZE) {
-      await SecureStore.setItemAsync(key, value);
-      return;
-    }
+      const chunks: string[] = [];
+      for (let offset = 0; offset < value.length; offset += AUTH_CHUNK_SIZE) {
+        chunks.push(value.slice(offset, offset + AUTH_CHUNK_SIZE));
+      }
+      if (chunks.length > AUTH_MAX_CHUNKS) throw new Error('جلسة الحساب أكبر من حد التخزين الآمن.');
 
-    const chunks: string[] = [];
-    for (let offset = 0; offset < value.length; offset += AUTH_CHUNK_SIZE) {
-      chunks.push(value.slice(offset, offset + AUTH_CHUNK_SIZE));
-    }
-    await Promise.all(chunks.map((part, index) =>
-      SecureStore.setItemAsync(authChunkKey(key, index), part)
-    ));
-    await SecureStore.setItemAsync(key, `${AUTH_CHUNK_MARKER}${chunks.length}`);
+      authChunkGeneration = (authChunkGeneration + 1) % 1_000_000;
+      const generation = `${Date.now().toString(36)}-${authChunkGeneration.toString(36)}`;
+      const marker = `${AUTH_CHUNK_MARKER_V2}${generation}:${chunks.length}`;
+      try {
+        await Promise.all(chunks.map((part, index) =>
+          SecureStore.setItemAsync(authChunkKey(key, index, generation), part)
+        ));
+        await SecureStore.setItemAsync(key, marker);
+      } catch (error) {
+        await clearAuthChunks(key, marker);
+        throw error;
+      }
+      await clearAuthChunks(key, previous);
+    });
   },
 
   async removeItem(key: string) {
-    const stored = await SecureStore.getItemAsync(key);
-    await clearAuthChunks(key, stored);
-    await SecureStore.deleteItemAsync(key).catch(() => {});
+    return queueAuthStorageWrite(async () => {
+      const stored = await SecureStore.getItemAsync(key);
+      await SecureStore.deleteItemAsync(key);
+      await clearAuthChunks(key, stored);
+    });
   },
 };
 

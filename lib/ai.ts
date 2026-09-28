@@ -2,10 +2,18 @@ import { getSupabase } from './auth';
 
 export type AgentMessage = { role: 'user' | 'assistant'; content: string };
 
-type FunctionErrorLike = Error & { context?: Response };
+type FunctionErrorContext = {
+  status?: number;
+  clone?: () => Response;
+  name?: string;
+  message?: string;
+  code?: string;
+};
+type FunctionErrorLike = Error & { context?: FunctionErrorContext };
 type FunctionFailurePayload = { error?: string; message?: string; detail?: string; status?: number };
 
 const MAX_AI_PAGE_CONTEXT_LENGTH = 9000;
+const AI_REQUEST_TIMEOUT_MS = 45_000;
 const SECRET_REDACTIONS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/gi, 'Bearer [محجوب]'],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[JWT محجوب]'],
@@ -48,8 +56,15 @@ async function getFunctionErrorMessage(error: FunctionErrorLike) {
   const fallback = error.message || 'تعذر الاتصال بخدمة الذكاء الاصطناعي.';
   const response = error.context;
   if (!response) return fallback;
+  if (
+    response.name === 'AbortError' ||
+    response.code === 'ABORT_ERR' ||
+    /abort|timeout/i.test(response.message || '')
+  ) return 'استغرق رد RAID AI وقتًا أطول من المتوقع. تحقق من الشبكة ثم أعد المحاولة.';
+  const clone = response.clone?.();
+  if (!clone) return fallback;
   try {
-    const payload = await response.clone().json() as FunctionFailurePayload | null;
+    const payload = await clone.json() as FunctionFailurePayload | null;
     return friendlyFunctionError(payload, response.status);
   } catch {
     return friendlyFunctionError(null, response.status) || fallback;
@@ -84,6 +99,7 @@ export async function askAgent(messages: AgentMessage[], pageText?: string) {
   const invoke = (accessToken: string) => supabase.functions.invoke('raid-ai', {
     body,
     headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: AI_REQUEST_TIMEOUT_MS,
   });
 
   let { data, error } = await invoke(session.access_token);

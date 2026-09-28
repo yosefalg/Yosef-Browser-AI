@@ -32,12 +32,18 @@ export default function AccountScreen(){
         getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
       ]);
       if(!session?.user){router.replace('/login');return;}
+      const sessionName=String(session.user.user_metadata?.display_name||session.user.user_metadata?.full_name||'').trim();
       setEmail(session.user.email||'');
       setUserId(session.user.id);
+      setName(sessionName);
       setVpnConnected(vpn);
       setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
-      const profile=await getCurrentProfile();
-      setName(profile?.display_name||String(session.user.user_metadata?.display_name||''));
+      try{
+        const profile=await getCurrentProfile();
+        setName(profile?.display_name||sessionName);
+      }catch{
+        setMsg('تم تحميل الحساب من الجلسة المحفوظة، لكن تعذر تحديث الاسم من السحابة الآن.');
+      }
     }catch(e){setMsg(e instanceof Error?e.message:'تعذر تحميل الحساب.');}
     finally{setBusy(false);}
   },[]);

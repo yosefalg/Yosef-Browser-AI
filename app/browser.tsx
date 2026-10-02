@@ -20,7 +20,9 @@ const RENDERER_RECOVERY_WINDOW_MS = 30_000;
 const MAX_RENDERER_RECOVERIES = 2;
 const DIRECT_MEDIA_RE = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
 const STREAM_PAGE_RE = /\/s\/[A-Za-z0-9_-]{6,}(?:$|[/?#])/i;
-const DOWNLOAD_URL_HINT_RE = /(?:^|[\/?&#=_-])(?:download|downloads|attachment|attachments|export|file|files|getfile|get-file|dl|save)(?:$|[\/?&#=_-])/i;
+const DOWNLOAD_FILE_RE = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|csv|txt|exe|msi|dmg|deb|rpm|iso|tar|gz|tgz|bz2|xz|mp3|wav|flac|ogg)(?:$|[?#])/i;
+const DOWNLOAD_PATH_ACTION_RE = /(?:^|\/)(?:download|attachment|export|getfile|get-file|dl|save)(?:\/|$)/i;
+const DOWNLOAD_FALSE_VALUES = new Set(['0', 'false', 'no', 'view', 'preview']);
 const SPEECH_CHUNK_LIMIT = 3500;
 
 function splitSpeechText(text: string, platformLimit: number) {
@@ -118,7 +120,7 @@ const DOWNLOAD_CAPTURE_JS = `(() => {
     window.__raidDownloadCaptureInstalled = true;
     const fileRe = /\.(?:apk|aab|zip|rar|7z|pdf|epub|mobi|azw3?|fb2|docx?|xlsx?|pptx?|csv|txt|exe|msi|dmg|deb|rpm|iso|tar|gz|tgz|bz2|xz|mp3|wav|flac|ogg)(?:$|[?#])/i;
     const mediaRe = /\.(?:mp4|m4v|webm|m3u8)(?:$|[?#])/i;
-    const intentRe = /(?:^|[\\/?&#=_-])(?:download|downloads|attachment|attachments|export|file|files|getfile|get-file|dl|save)(?:$|[\\/?&#=_-])/i;
+    const pathActionRe = /(?:^|\\/)(?:download|attachment|export|getfile|get-file|dl|save)(?:\\/|$)/i;
     const textRe = /(?:تنزيل|تحميل|احفظ|حفظ|download|save|export|get file)/i;
     const report = (value) => {
       try {
@@ -130,9 +132,25 @@ const DOWNLOAD_CAPTURE_JS = `(() => {
         return false;
       }
     };
+    const explicitDownloadUrl = (absolute) => {
+      try {
+        const parsed = new URL(absolute);
+        if (fileRe.test(parsed.pathname) || pathActionRe.test(parsed.pathname)) return true;
+        let querySignalsDownload = false;
+        parsed.searchParams.forEach((rawValue, rawKey) => {
+          const key = rawKey.toLowerCase();
+          const value = rawValue.trim().toLowerCase();
+          if ((key === 'download' || key === 'attachment' || key === 'dl') && !['0','false','no','view','preview'].includes(value)) querySignalsDownload = true;
+          if (key === 'export' && (value === 'download' || value === 'save')) querySignalsDownload = true;
+          if ((key === 'filename' || key === 'file_name') && fileRe.test(value)) querySignalsDownload = true;
+        });
+        if (querySignalsDownload) return true;
+      } catch {}
+      return false;
+    };
     const likelyDownload = (absolute, element) => {
       if (!absolute || !/^https:\/\//i.test(absolute) || mediaRe.test(absolute)) return false;
-      if (fileRe.test(absolute) || intentRe.test(absolute)) return true;
+      if (explicitDownloadUrl(absolute)) return true;
       if (!element) return false;
       const label = [element.textContent, element.getAttribute?.('aria-label'), element.getAttribute?.('title'), element.getAttribute?.('class'), element.getAttribute?.('id')].filter(Boolean).join(' ');
       if (textRe.test(label)) return true;
@@ -232,7 +250,16 @@ function isLikelyDownloadRequest(value: string) {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== 'https:' || isDirectMediaUrl(value)) return false;
-    return DOWNLOAD_URL_HINT_RE.test(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+    if (DOWNLOAD_FILE_RE.test(parsed.pathname) || DOWNLOAD_PATH_ACTION_RE.test(parsed.pathname)) return true;
+    let querySignalsDownload = false;
+    parsed.searchParams.forEach((rawValue, rawKey) => {
+      const key = rawKey.toLowerCase();
+      const queryValue = rawValue.trim().toLowerCase();
+      if ((key === 'download' || key === 'attachment' || key === 'dl') && !DOWNLOAD_FALSE_VALUES.has(queryValue)) querySignalsDownload = true;
+      if (key === 'export' && (queryValue === 'download' || queryValue === 'save')) querySignalsDownload = true;
+      if ((key === 'filename' || key === 'file_name') && DOWNLOAD_FILE_RE.test(queryValue)) querySignalsDownload = true;
+    });
+    return querySignalsDownload;
   } catch {
     return false;
   }

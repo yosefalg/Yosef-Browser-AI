@@ -318,6 +318,7 @@ export default function BrowserScreen() {
   const pendingExternalRequest = useRef('');
   const bookmarkBusyRef = useRef(false);
   const readerSettingsBusyRef = useRef(false);
+  const speechGeneration = useRef(0);
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
   const canBackRef = useRef(false);
@@ -343,6 +344,7 @@ export default function BrowserScreen() {
   const [fontSize, setFontSize] = useState(19);
   const [readerDark, setReaderDark] = useState(true);
   const [readerSettingsBusy, setReaderSettingsBusy] = useState(false);
+  const [readerSpeaking, setReaderSpeaking] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [siteInfoOpen, setSiteInfoOpen] = useState(false);
   const [sitePrefs, setSitePrefs] = useState<SitePreferences>({ ...DEFAULT_SITE_PREFERENCES });
@@ -388,10 +390,16 @@ export default function BrowserScreen() {
       .catch(() => setTabCount(0));
   }, []);
 
-  const closeReader = useCallback(() => {
+  const cancelSpeech = useCallback(() => {
+    speechGeneration.current += 1;
     void Speech.stop();
-    setReader(null);
+    setReaderSpeaking(false);
   }, []);
+
+  const closeReader = useCallback(() => {
+    cancelSpeech();
+    setReader(null);
+  }, [cancelSpeech]);
 
   useFocusEffect(useCallback(() => {
     refreshVpnStatus();
@@ -435,7 +443,8 @@ export default function BrowserScreen() {
       subscription.remove();
       if (rendererNoticeTimer.current) clearTimeout(rendererNoticeTimer.current);
       if (postLoadWorkTimer.current) clearTimeout(postLoadWorkTimer.current);
-      Speech.stop();
+      speechGeneration.current += 1;
+      void Speech.stop();
     };
   }, [refreshVpnStatus]);
 
@@ -469,7 +478,7 @@ export default function BrowserScreen() {
     setCanForward(false);
     setReader(null);
     setMediaOpen(false);
-    Speech.stop();
+    cancelSpeech();
     showRendererNotice(didCrash
       ? 'تعطّل محرك عرض الصفحة وتمت استعادته تلقائيًا.'
       : 'أوقف Android محرك عرض الصفحة وتمت استعادته تلقائيًا.');
@@ -837,7 +846,10 @@ export default function BrowserScreen() {
       return;
     }
     const payload = parseReaderMessage(raw);
-    if (payload && fromCurrentDocument && urlsReferToSameDocument(payload.url, sourceUrl)) setReader(payload);
+    if (payload && fromCurrentDocument && urlsReferToSameDocument(payload.url, sourceUrl)) {
+      cancelSpeech();
+      setReader(payload);
+    }
   };
 
   const onMediaMessage = (event: WebViewMessageEvent) => {
@@ -862,15 +874,40 @@ export default function BrowserScreen() {
   };
 
   const speakReader = () => {
-    if (!reader?.text) return;
+    if (!reader?.text || readerSpeaking) return;
     const chunks = splitSpeechText(reader.text.slice(0, 12000), Speech.maxSpeechInputLength);
-    void Speech.stop().then(() => {
-      chunks.forEach((chunk) => {
-        Speech.speak(chunk, { language: reader.language, rate: 0.92, pitch: 1 });
+    if (!chunks.length) return;
+    const generation = speechGeneration.current + 1;
+    speechGeneration.current = generation;
+    setReaderSpeaking(true);
+
+    const finish = () => {
+      if (speechGeneration.current === generation) setReaderSpeaking(false);
+    };
+    const fail = () => {
+      if (speechGeneration.current !== generation) return;
+      speechGeneration.current += 1;
+      setReaderSpeaking(false);
+      Alert.alert('وضع القراءة', 'تعذر تشغيل القراءة الصوتية. حاول مرة أخرى.');
+    };
+    const speakChunk = (index: number) => {
+      if (speechGeneration.current !== generation) return;
+      if (index >= chunks.length) { finish(); return; }
+      Speech.speak(chunks[index], {
+        language: reader.language,
+        rate: 0.92,
+        pitch: 1,
+        onDone: () => speakChunk(index + 1),
+        onStopped: finish,
+        onError: fail,
       });
-    });
+    };
+
+    void Speech.stop().then(() => {
+      speakChunk(0);
+    }).catch(fail);
   };
-  const stopSpeech = () => Speech.stop();
+  const stopSpeech = cancelSpeech;
   const beginReaderSetting = () => {
     if (readerSettingsBusyRef.current) return false;
     readerSettingsBusyRef.current = true;
@@ -1233,8 +1270,8 @@ export default function BrowserScreen() {
           <View style={styles.readerTools}>
             <Pressable disabled={readerSettingsBusy||fontSize<=15} onPress={() => void changeReaderFont(-2)} style={[styles.readerTool,(readerSettingsBusy||fontSize<=15)&&styles.disabled]} accessibilityRole="button" accessibilityLabel="تصغير خط القراءة" accessibilityState={{disabled:readerSettingsBusy||fontSize<=15,busy:readerSettingsBusy}}><Text style={styles.readerToolText}>A−</Text></Pressable>
             <Pressable disabled={readerSettingsBusy||fontSize>=30} onPress={() => void changeReaderFont(2)} style={[styles.readerTool,(readerSettingsBusy||fontSize>=30)&&styles.disabled]} accessibilityRole="button" accessibilityLabel="تكبير خط القراءة" accessibilityState={{disabled:readerSettingsBusy||fontSize>=30,busy:readerSettingsBusy}}><Text style={styles.readerToolText}>A+</Text></Pressable>
-            <Pressable onPress={speakReader} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="الاستماع إلى النص"><Text style={styles.readerToolText}>استماع</Text></Pressable>
-            <Pressable onPress={stopSpeech} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="إيقاف الاستماع"><Text style={styles.readerToolText}>إيقاف</Text></Pressable>
+            <Pressable disabled={readerSpeaking} onPress={speakReader} style={[styles.readerTool,readerSpeaking&&styles.disabled]} accessibilityRole="button" accessibilityLabel={readerSpeaking ? 'القراءة الصوتية قيد التشغيل' : 'الاستماع إلى النص'} accessibilityState={{disabled:readerSpeaking,busy:readerSpeaking}}><Text style={styles.readerToolText}>{readerSpeaking ? 'جارٍ...' : 'استماع'}</Text></Pressable>
+            <Pressable disabled={!readerSpeaking} onPress={stopSpeech} style={[styles.readerTool,!readerSpeaking&&styles.disabled]} accessibilityRole="button" accessibilityLabel="إيقاف الاستماع" accessibilityState={{disabled:!readerSpeaking}}><Text style={styles.readerToolText}>إيقاف</Text></Pressable>
           </View>
         </SafeAreaView>
       </Modal>

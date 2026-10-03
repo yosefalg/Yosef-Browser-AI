@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import type { ThemePalette } from '@/lib/theme';
 
 function hostOf(value: string) {
   try { return new URL(value).hostname.replace(/^www\./, ''); } catch { return value; }
@@ -29,7 +30,7 @@ function faviconSources(url: string, host: string) {
   return Array.from(new Set(sources));
 }
 
-export function SiteIcon({ url, size = 44, radius = 14 }: { url: string; size?: number; radius?: number }) {
+export function SiteIcon({ url, size = 44, radius = 14, theme }: { url: string; size?: number; radius?: number; theme?: ThemePalette }) {
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
   const host = useMemo(() => hostOf(url), [url]);
@@ -40,10 +41,12 @@ export function SiteIcon({ url, size = 44, radius = 14 }: { url: string; size?: 
   useEffect(() => setSourceIndex(0), [url]);
   const source = sources[sourceIndex];
   const imageSize = Math.round(size * 0.64);
-  const shell = dark
+  const shell = theme
+    ? { backgroundColor: theme.surface2, borderColor: theme.border }
+    : dark
     ? { backgroundColor: '#182028', borderColor: 'rgba(255,255,255,.10)' }
     : { backgroundColor: '#F8F4EF', borderColor: 'rgba(74,66,59,.16)' };
-  const letterColor = dark ? '#D9B493' : '#8C684F';
+  const letterColor = theme?.accent ?? (dark ? '#D9B493' : '#8C684F');
 
   return (
     <View style={[s.wrap, shell, { width: size, height: size, borderRadius: radius }]}>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -43,6 +43,8 @@ export default function FileViewerScreen(){
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
   const [fontSize,setFontSize]=useState(DEFAULT_FONT_SIZE);
+  const [fontSizeSaving,setFontSizeSaving]=useState(false);
+  const fontSizeSavingRef=useRef(false);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const textLayout=useMemo(()=>readerTextStyle(name,content),[name,content]);
@@ -96,17 +98,29 @@ export default function FileViewerScreen(){
     catch(e){setError(e instanceof Error?`تعذر الفتح الخارجي: ${e.message}`:'تعذر فتح الملف خارجيًا.');}
   };
 
-  const changeFontSize=(delta:number)=>setFontSize(current=>{
-    const next=Math.min(MAX_FONT_SIZE,Math.max(MIN_FONT_SIZE,current+delta));
-    void setSetting('file_reader_font_size',next);
-    return next;
-  });
+  const changeFontSize=async(delta:number)=>{
+    if(fontSizeSavingRef.current)return;
+    const previous=fontSize;
+    const next=Math.min(MAX_FONT_SIZE,Math.max(MIN_FONT_SIZE,previous+delta));
+    if(next===previous)return;
+    fontSizeSavingRef.current=true;
+    setFontSizeSaving(true);
+    setFontSize(next);
+    try{await setSetting('file_reader_font_size',next);}
+    catch{
+      setFontSize(previous);
+      Alert.alert('قارئ RAID','تعذر حفظ حجم الخط. أُعيد الحجم السابق ويمكنك المحاولة مرة أخرى.');
+    }finally{
+      fontSizeSavingRef.current=false;
+      setFontSizeSaving(false);
+    }
+  };
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={()=>router.back()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="chevron-back" size={22} color={theme.text}/></Pressable>
       <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text style={[s.sub,{color:theme.muted}]}>{imageUri?'RAID Image Viewer • محلي':`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'}`}</Text></View>
-      {imageUri?<Pressable accessibilityRole="button" accessibilityLabel="فتح الصورة بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="open-outline" size={20} color={theme.accent}/></Pressable>:<View style={s.controls}><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" onPress={()=>changeFontSize(-2)} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" onPress={()=>changeFontSize(2)} style={[s.small,{borderColor:theme.border}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></View>}
+      {imageUri?<Pressable accessibilityRole="button" accessibilityLabel="فتح الصورة بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="open-outline" size={20} color={theme.accent}/></Pressable>:<View style={s.controls}><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving,busy:fontSizeSaving}} disabled={fontSizeSaving} onPress={()=>void changeFontSize(-2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving,busy:fontSizeSaving}} disabled={fontSizeSaving} onPress={()=>void changeFontSize(2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></View>}
     </View>
     {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent}]}><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.externalText}>فتح خارجي</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
   </SafeAreaView>;

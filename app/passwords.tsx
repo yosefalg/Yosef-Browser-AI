@@ -10,6 +10,7 @@ import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 export default function PasswordsScreen() {
   const focused = useRef(false);
   const unlocking = useRef(false);
+  const actionBusy = useRef(false);
   const viewGeneration = useRef(0);
   const [items, setItems] = useState<VaultEntry[]>([]);
   const [origin, setOrigin] = useState('');
@@ -27,6 +28,7 @@ export default function PasswordsScreen() {
   const clearSensitiveView = useCallback(() => {
     viewGeneration.current += 1;
     unlocking.current = false;
+    actionBusy.current = false;
     setBusy(false);
     setItems([]);
     setOrigin('');
@@ -109,8 +111,23 @@ export default function PasswordsScreen() {
     return true;
   };
 
+  const beginAction = () => {
+    if (actionBusy.current) return false;
+    actionBusy.current = true;
+    setBusy(true);
+    return true;
+  };
+
+  const endAction = (generation: number) => {
+    if (generation !== viewGeneration.current) return;
+    actionBusy.current = false;
+    setBusy(false);
+  };
+
   const generate = async () => {
     const generation = viewGeneration.current;
+    if (!beginAction()) return;
+    setMessage('');
     try {
       const generated = await generateStrongPassword(20);
       if (!focused.current || generation !== viewGeneration.current) return;
@@ -120,17 +137,19 @@ export default function PasswordsScreen() {
     } catch {
       if (!focused.current || generation !== viewGeneration.current) return;
       setMessage('تعذر توليد كلمة مرور الآن.');
+    } finally {
+      endAction(generation);
     }
   };
 
   const save = async () => {
-    if (busy) return;
+    if (actionBusy.current) return;
     if (!origin.trim() || !username.trim() || !password) {
       Alert.alert('أكمل البيانات', 'أدخل الموقع واسم المستخدم وكلمة المرور.');
       return;
     }
     const generation = viewGeneration.current;
-    setBusy(true);
+    if (!beginAction()) return;
     setMessage('');
     try {
       await saveVaultEntry({ origin, username, password });
@@ -144,20 +163,23 @@ export default function PasswordsScreen() {
       if (!focused.current || generation !== viewGeneration.current) return;
       setMessage(error instanceof Error ? error.message : 'تعذر حفظ بيانات الدخول.');
     } finally {
-      if (generation === viewGeneration.current) setBusy(false);
+      endAction(generation);
     }
   };
 
   const remove = async (item: VaultEntry) => {
+    const generation = viewGeneration.current;
+    if (!beginAction()) return;
     Alert.alert('حذف بيانات الدخول؟', `سيتم حذف بيانات ${item.origin} من هذا الجهاز.`, [
-      { text: 'إلغاء', style: 'cancel' },
+      { text: 'إلغاء', style: 'cancel', onPress: () => endAction(generation) },
       {
         text: 'حذف',
         style: 'destructive',
         onPress: async () => {
-          if (busy || !focused.current) return;
-          const generation = viewGeneration.current;
-          setBusy(true);
+          if (!focused.current || generation !== viewGeneration.current) {
+            endAction(generation);
+            return;
+          }
           try {
             await deleteVaultEntry(item.id);
             if (!focused.current || generation !== viewGeneration.current) return;
@@ -166,11 +188,11 @@ export default function PasswordsScreen() {
             if (!focused.current || generation !== viewGeneration.current) return;
             setMessage(error instanceof Error ? error.message : 'تعذر حذف بيانات الدخول.');
           } finally {
-            if (generation === viewGeneration.current) setBusy(false);
+            endAction(generation);
           }
         },
       },
-    ]);
+    ], { cancelable: false });
   };
 
   const toggleReveal = (id: string) => {

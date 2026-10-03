@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,13 +83,16 @@ export default function DownloadsScreen() {
   const [operationBusy,setOperationBusy] = useState(false);
   const refreshInFlight = useRef(false);
   const operationInFlight = useRef(false);
+  const hasRunningDownloads = useRef(false);
   const theme = useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh = useCallback(async () => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     try {
-      setItems(await listDownloads());
+      const nextItems = await listDownloads();
+      hasRunningDownloads.current = nextItems.some(item => item.state === 'downloading' || item.state === 'queued');
+      setItems(nextItems);
       setRefreshError(false);
     } catch {
       setRefreshError(true);
@@ -101,18 +104,44 @@ export default function DownloadsScreen() {
 
   useFocusEffect(useCallback(() => {
     let focused = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearPoll = () => {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+    };
+
+    const schedulePoll = () => {
+      clearPoll();
+      if (!focused || AppState.currentState !== 'active') return;
+      pollTimer = setTimeout(() => {
+        pollTimer = null;
+        void refresh().finally(schedulePoll);
+      }, hasRunningDownloads.current ? 900 : 5000);
+    };
+
+    const refreshAndSchedule = () => {
+      void refresh().finally(schedulePoll);
+    };
+
     void Promise.all([
       reconcileInterruptedDownloads().catch(()=>0),
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
     ]).then(([,saved])=>{
       if (!focused) return;
       setThemeName(isThemeName(saved)?saved:'cinematic');
-      void refresh();
+      refreshAndSchedule();
     });
-    const id = setInterval(() => void refresh(), 900);
+
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      clearPoll();
+      if (focused && state === 'active') refreshAndSchedule();
+    });
+
     return () => {
       focused = false;
-      clearInterval(id);
+      clearPoll();
+      appStateSubscription.remove();
     };
   }, [refresh]));
 

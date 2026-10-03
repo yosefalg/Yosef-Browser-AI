@@ -841,7 +841,7 @@ export default function BrowserScreen() {
     const raw = event.nativeEvent.data;
     if (raw.startsWith('RAID_MEDIA_DOWNLOAD:')) {
       const candidate = raw.slice('RAID_MEDIA_DOWNLOAD:'.length).trim();
-      if (safeExternalUrl(candidate)) handleFileDownload(candidate);
+      confirmPageDownload(candidate, mainDocumentUrl.current);
       return;
     }
     if (raw === 'RAID_MEDIA_CLOSE') {

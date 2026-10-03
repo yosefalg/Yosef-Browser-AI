@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -10,21 +10,36 @@ import { getSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 type QuickItem={title:string;sub:string;icon:string;route:'/ai'|'/vpn'|'/library'|'/tabs'};
+type AccountOperation='load'|'save'|'sync'|'logout'|null;
 
 export default function AccountScreen(){
   const [email,setEmail]=useState('');
   const [name,setName]=useState('');
   const [userId,setUserId]=useState('');
-  const [busy,setBusy]=useState(true);
-  const [syncing,setSyncing]=useState(false);
+  const operationRef=useRef<AccountOperation>(null);
+  const [operation,setOperation]=useState<AccountOperation>('load');
   const [lastSync,setLastSync]=useState('');
   const [msg,setMsg]=useState('');
   const [vpnConnected,setVpnConnected]=useState(false);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
+  const actionBusy=operation!==null;
+
+  const beginOperation=useCallback((next:Exclude<AccountOperation,null>)=>{
+    if(operationRef.current)return false;
+    operationRef.current=next;
+    setOperation(next);
+    return true;
+  },[]);
+  const endOperation=useCallback((current:Exclude<AccountOperation,null>)=>{
+    if(operationRef.current!==current)return;
+    operationRef.current=null;
+    setOperation(null);
+  },[]);
 
   const load=useCallback(async()=>{
-    setBusy(true);setMsg('');
+    if(!beginOperation('load'))return;
+    setMsg('');
     try{
       const [session,vpn,savedTheme]=await Promise.all([
         getCurrentSession(),
@@ -45,22 +60,24 @@ export default function AccountScreen(){
         setMsg('تم تحميل الحساب من الجلسة المحفوظة، لكن تعذر تحديث الاسم من السحابة الآن.');
       }
     }catch(e){setMsg(e instanceof Error?e.message:'تعذر تحميل الحساب.');}
-    finally{setBusy(false);}
-  },[]);
+    finally{endOperation('load');}
+  },[beginOperation,endOperation]);
 
   useFocusEffect(useCallback(()=>{void load();return()=>{};},[load]));
 
   const save=async()=>{
     if(name.trim().length<2){setMsg('اكتب اسمًا صحيحًا.');return;}
-    setBusy(true);setMsg('');
-    try{await updateCurrentProfile(name.trim());setMsg('تم حفظ بيانات حسابك.');}
+    if(!beginOperation('save'))return;
+    const cleanName=name.trim();
+    setMsg('');
+    try{await updateCurrentProfile(cleanName);setName(cleanName);setMsg('تم حفظ بيانات حسابك.');}
     catch(e){setMsg(e instanceof Error?e.message:'تعذر حفظ الحساب.');}
-    finally{setBusy(false);}
+    finally{endOperation('save');}
   };
 
   const syncNow=async()=>{
-    if(syncing)return;
-    setSyncing(true);setMsg('');
+    if(!beginOperation('sync'))return;
+    setMsg('');
     try{
       const result=await syncAccountData();
       const syncedTheme=await getSetting<ThemeName>('theme','cinematic');
@@ -68,18 +85,19 @@ export default function AccountScreen(){
       setLastSync(new Date().toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'}));
       setMsg(`اكتملت المزامنة: رفع ${result.uploaded} واستعادة ${result.downloaded}.`);
     }catch(e){setMsg(e instanceof Error?e.message:'تعذر إكمال المزامنة الآن.');}
-    finally{setSyncing(false);}
+    finally{endOperation('sync');}
   };
 
   const logout=async()=>{
-    setBusy(true);setMsg('');
+    if(!beginOperation('logout'))return;
+    setMsg('');
     try{
       await disconnectVpn().catch(()=>false);
       // لا نمسح WireGuard المحلي هنا: يجب أن يبقى إعداد الجهاز متاحًا بعد تسجيل الخروج.
       await signOut();
       router.replace('/login');
     }catch(e){setMsg(e instanceof Error?e.message:'تعذر تسجيل الخروج الآن.');}
-    finally{setBusy(false);}
+    finally{endOperation('logout');}
   };
 
   const initial=(name||email||'R').slice(0,1).toUpperCase();
@@ -108,29 +126,29 @@ export default function AccountScreen(){
       <Text style={[s.section,{color:theme.accent}]}>بيانات الحساب</Text>
       <View style={[s.card,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <Text style={[s.label,{color:theme.text}]}>الاسم</Text>
-        <TextInput value={name} onChangeText={setName} placeholder="اسمك" placeholderTextColor={theme.muted} style={[s.input,{backgroundColor:theme.surface2,borderColor:theme.border,color:theme.text}]}/>
+        <TextInput value={name} onChangeText={setName} editable={!actionBusy} accessibilityLabel="اسم الحساب" placeholder="اسمك" placeholderTextColor={theme.muted} style={[s.input,{backgroundColor:theme.surface2,borderColor:theme.border,color:theme.text},actionBusy&&s.disabled]}/>
         <Text style={[s.label,{color:theme.text}]}>البريد الإلكتروني</Text>
         <View style={[s.readonly,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Text style={[s.readonlyText,{color:theme.muted}]} numberOfLines={1}>{email||'—'}</Text></View>
         <Text style={[s.meta,{color:theme.muted}]}>معرّف الحساب: {userId?`${userId.slice(0,8)}…`:'—'}</Text>
-        <Pressable onPress={save} disabled={busy} style={({pressed})=>[s.primary,{backgroundColor:theme.accent},(busy||pressed)&&s.pressed]}><Text style={s.primaryText}>{busy?'جارٍ الحفظ...':'حفظ بياناتي'}</Text></Pressable>
+        <Pressable onPress={()=>void save()} disabled={actionBusy} accessibilityRole="button" accessibilityState={{disabled:actionBusy,busy:operation==='save'}} style={({pressed})=>[s.primary,{backgroundColor:theme.accent},(actionBusy||pressed)&&s.pressed]}><Text style={s.primaryText}>{operation==='save'?'جارٍ الحفظ...':'حفظ بياناتي'}</Text></Pressable>
       </View>
 
       <Text style={[s.section,{color:theme.accent}]}>المزامنة</Text>
       <View style={[s.syncCard,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={s.syncHead}><View style={[s.syncIcon,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="cloud-sync-outline" size={24} color={theme.accent}/></View><View style={{flex:1}}><Text style={[s.syncTitle,{color:theme.text}]}>مزامنة آمنة</Text><Text style={[s.syncText,{color:theme.muted}]}>المفضلة وذاكرة RAID AI والمظهر مرتبطة بالحساب ويمكن استعادتها على جهاز آخر.</Text></View></View>
-        <Pressable onPress={syncNow} disabled={syncing} style={({pressed})=>[s.syncButton,{backgroundColor:theme.surface2,borderColor:theme.border},(syncing||pressed)&&s.pressed]}><MaterialCommunityIcons name="sync" size={19} color={theme.accent}/><Text style={[s.syncButtonText,{color:theme.text}]}>{syncing?'جارٍ المزامنة...':'مزامنة الآن'}</Text></Pressable>
+        <Pressable onPress={()=>void syncNow()} disabled={actionBusy} accessibilityRole="button" accessibilityState={{disabled:actionBusy,busy:operation==='sync'}} style={({pressed})=>[s.syncButton,{backgroundColor:theme.surface2,borderColor:theme.border},(actionBusy||pressed)&&s.pressed]}><MaterialCommunityIcons name="sync" size={19} color={theme.accent}/><Text style={[s.syncButtonText,{color:theme.text}]}>{operation==='sync'?'جارٍ المزامنة...':'مزامنة الآن'}</Text></Pressable>
         {!!lastSync&&<Text style={[s.lastSync,{color:theme.muted}]}>آخر مزامنة: {lastSync}</Text>}
       </View>
 
       <View style={[s.localNote,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name="shield-lock-outline" size={21} color={theme.accent}/><Text style={[s.localNoteText,{color:theme.muted}]}>إعداد WireGuard المحلي خاص بهذا الجهاز ولا يُحذف عند تسجيل الخروج من حساب RAID.</Text></View>
-      {!!msg&&<Text style={[s.msg,{color:theme.text}]}>{msg}</Text>}
-      <Pressable onPress={logout} disabled={busy} style={({pressed})=>[s.logout,{borderColor:'#8C5F56'},(busy||pressed)&&s.pressed]}><MaterialCommunityIcons name="logout" size={20} color="#C98D80"/><Text style={s.logoutText}>{busy?'جارٍ التنفيذ...':'تسجيل الخروج'}</Text></Pressable>
+      {!!msg&&<Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[s.msg,{color:theme.text}]}>{msg}</Text>}
+      <Pressable onPress={()=>void logout()} disabled={actionBusy} accessibilityRole="button" accessibilityState={{disabled:actionBusy,busy:operation==='logout'}} style={({pressed})=>[s.logout,{borderColor:'#8C5F56'},(actionBusy||pressed)&&s.pressed]}><MaterialCommunityIcons name="logout" size={20} color="#C98D80"/><Text style={s.logoutText}>{operation==='logout'?'جارٍ تسجيل الخروج...':'تسجيل الخروج'}</Text></Pressable>
     </ScrollView>
   </SafeAreaView>;
 }
 
 const s=StyleSheet.create({
-  root:{flex:1},header:{minHeight:66,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:7,borderBottomWidth:1},iconButton:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},headerCopy:{alignItems:'center'},title:{fontSize:18,fontWeight:'900'},headerSub:{fontSize:9,marginTop:2,letterSpacing:.6},content:{padding:16,paddingBottom:38,gap:12},
+  root:{flex:1},header:{minHeight:66,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:7,borderBottomWidth:1},iconButton:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},headerCopy:{alignItems:'center'},title:{fontSize:18,fontWeight:'900'},headerSub:{fontSize:9,marginTop:2,letterSpacing:.6},content:{padding:16,paddingBottom:38,gap:12},disabled:{opacity:.55},
   hero:{flexDirection:'row-reverse',alignItems:'center',gap:14,padding:16,borderRadius:24,borderWidth:1},avatar:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},avatarText:{color:'#fff',fontSize:27,fontWeight:'900'},heroCopy:{flex:1,alignItems:'flex-end'},name:{fontSize:21,fontWeight:'900',maxWidth:'100%'},email:{marginTop:4,maxWidth:'100%',fontSize:12},badge:{marginTop:9,flexDirection:'row-reverse',alignItems:'center',gap:6,paddingHorizontal:9,height:27,borderRadius:13,borderWidth:1},badgeDot:{width:7,height:7,borderRadius:4,backgroundColor:'#4CB884'},badgeText:{fontSize:11,fontWeight:'800'},
   quickGrid:{flexDirection:'row-reverse',flexWrap:'wrap',justifyContent:'space-between',rowGap:10},quick:{width:'48.5%',minHeight:88,borderRadius:20,borderWidth:1,padding:12,flexDirection:'row-reverse',alignItems:'center',gap:10},quickIcon:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},quickCopy:{flex:1,alignItems:'flex-end'},quickTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},quickSub:{marginTop:3,fontSize:10,textAlign:'right'},
   section:{marginTop:3,fontWeight:'900',textAlign:'right'},card:{padding:15,borderRadius:22,borderWidth:1,gap:9},label:{fontWeight:'800',textAlign:'right'},input:{height:48,borderRadius:15,borderWidth:1,paddingHorizontal:14,textAlign:'right'},readonly:{height:48,borderRadius:15,borderWidth:1,justifyContent:'center',paddingHorizontal:14},readonlyText:{textAlign:'right'},meta:{fontSize:10,textAlign:'right'},primary:{height:49,borderRadius:15,alignItems:'center',justifyContent:'center',marginTop:4},primaryText:{color:'#fff',fontWeight:'900'},

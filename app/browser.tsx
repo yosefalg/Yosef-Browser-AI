@@ -316,6 +316,7 @@ export default function BrowserScreen() {
   const manualMediaRequest = useRef(false);
   const pendingPageDownload = useRef('');
   const pendingExternalRequest = useRef('');
+  const bookmarkBusyRef = useRef(false);
   const readerSettingsBusyRef = useRef(false);
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
@@ -538,9 +539,10 @@ export default function BrowserScreen() {
   };
 
   const toggleBookmark = async () => {
-    if (bookmarkBusy || !safeExternalUrl(loadedUrl)) return;
+    if (bookmarkBusyRef.current || !safeExternalUrl(loadedUrl)) return;
     const targetUrl = loadedUrl;
     const wasBookmarked = bookmarked;
+    bookmarkBusyRef.current = true;
     setBookmarkBusy(true);
     try {
       if (wasBookmarked) {
@@ -554,6 +556,7 @@ export default function BrowserScreen() {
         ? 'تعذرت إزالة الصفحة من المفضلة. بقيت محفوظة.'
         : 'تعذر حفظ الصفحة في المفضلة. حاول مرة أخرى.');
     } finally {
+      bookmarkBusyRef.current = false;
       setBookmarkBusy(false);
     }
   };

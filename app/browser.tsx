@@ -316,6 +316,7 @@ export default function BrowserScreen() {
   const manualMediaRequest = useRef(false);
   const pendingPageDownload = useRef('');
   const pendingExternalRequest = useRef('');
+  const readerSettingsBusyRef = useRef(false);
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
   const canBackRef = useRef(false);
@@ -340,6 +341,7 @@ export default function BrowserScreen() {
   const [reader, setReader] = useState<ReaderPayload | null>(null);
   const [fontSize, setFontSize] = useState(19);
   const [readerDark, setReaderDark] = useState(true);
+  const [readerSettingsBusy, setReaderSettingsBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [siteInfoOpen, setSiteInfoOpen] = useState(false);
   const [sitePrefs, setSitePrefs] = useState<SitePreferences>({ ...DEFAULT_SITE_PREFERENCES });
@@ -866,16 +868,45 @@ export default function BrowserScreen() {
     });
   };
   const stopSpeech = () => Speech.stop();
-  const changeReaderFont = (delta: number) => setFontSize((current) => {
-    const next = Math.min(30, Math.max(15, current + delta));
-    void setSetting('reader_font_size', next);
-    return next;
-  });
-  const toggleReaderTheme = () => setReaderDark((current) => {
-    const next = !current;
-    void setSetting('reader_dark', next);
-    return next;
-  });
+  const beginReaderSetting = () => {
+    if (readerSettingsBusyRef.current) return false;
+    readerSettingsBusyRef.current = true;
+    setReaderSettingsBusy(true);
+    return true;
+  };
+  const endReaderSetting = () => {
+    readerSettingsBusyRef.current = false;
+    setReaderSettingsBusy(false);
+  };
+  const changeReaderFont = async (delta: number) => {
+    if (!beginReaderSetting()) return;
+    const previous = fontSize;
+    const next = Math.min(30, Math.max(15, previous + delta));
+    if (next === previous) { endReaderSetting(); return; }
+    setFontSize(next);
+    try {
+      await setSetting('reader_font_size', next);
+    } catch {
+      setFontSize(previous);
+      Alert.alert('وضع القراءة', 'تعذر حفظ حجم الخط. تمت استعادة الحجم السابق.');
+    } finally {
+      endReaderSetting();
+    }
+  };
+  const toggleReaderTheme = async () => {
+    if (!beginReaderSetting()) return;
+    const previous = readerDark;
+    const next = !previous;
+    setReaderDark(next);
+    try {
+      await setSetting('reader_dark', next);
+    } catch {
+      setReaderDark(previous);
+      Alert.alert('وضع القراءة', 'تعذر حفظ نمط القراءة. تمت استعادة النمط السابق.');
+    } finally {
+      endReaderSetting();
+    }
+  };
 
   const shareCurrent = () => {
     setMenuOpen(false);
@@ -1190,15 +1221,15 @@ export default function BrowserScreen() {
           <View style={styles.readerTop}>
             <Pressable onPress={closeReader} style={styles.readerBtn} accessibilityRole="button" accessibilityLabel="إغلاق وضع القراءة وإيقاف الاستماع"><Text style={styles.readerBtnText}>×</Text></Pressable>
             <Text style={[styles.readerTitle, reader?.direction === 'ltr' ? styles.readerLtr : styles.readerRtl, !readerDark && styles.readerInk]} numberOfLines={1}>{reader?.title || 'وضع القراءة'}</Text>
-            <Pressable onPress={toggleReaderTheme} style={styles.readerBtn} accessibilityRole="button" accessibilityLabel={readerDark ? 'استخدام خلفية فاتحة للقراءة' : 'استخدام خلفية داكنة للقراءة'}><Ionicons name={readerDark ? 'sunny-outline' : 'moon-outline'} size={20} color="#fff" /></Pressable>
+            <Pressable disabled={readerSettingsBusy} onPress={() => void toggleReaderTheme()} style={[styles.readerBtn, readerSettingsBusy && styles.disabled]} accessibilityRole="button" accessibilityLabel={readerDark ? 'استخدام خلفية فاتحة للقراءة' : 'استخدام خلفية داكنة للقراءة'} accessibilityState={{disabled:readerSettingsBusy,busy:readerSettingsBusy}}><Ionicons name={readerDark ? 'sunny-outline' : 'moon-outline'} size={20} color="#fff" /></Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.readerContent}>
             <Text style={[styles.readerHeadline, reader?.direction === 'ltr' ? styles.readerLtr : styles.readerRtl, !readerDark && styles.readerInk]}>{reader?.title}</Text>
             <Text selectable style={[styles.readerBody, reader?.direction === 'ltr' ? styles.readerLtr : styles.readerRtl, {fontSize, lineHeight: fontSize * 1.75}, !readerDark && styles.readerInk]}>{reader?.text}</Text>
           </ScrollView>
           <View style={styles.readerTools}>
-            <Pressable onPress={() => changeReaderFont(-2)} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="تصغير خط القراءة"><Text style={styles.readerToolText}>A−</Text></Pressable>
-            <Pressable onPress={() => changeReaderFont(2)} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="تكبير خط القراءة"><Text style={styles.readerToolText}>A+</Text></Pressable>
+            <Pressable disabled={readerSettingsBusy||fontSize<=15} onPress={() => void changeReaderFont(-2)} style={[styles.readerTool,(readerSettingsBusy||fontSize<=15)&&styles.disabled]} accessibilityRole="button" accessibilityLabel="تصغير خط القراءة" accessibilityState={{disabled:readerSettingsBusy||fontSize<=15,busy:readerSettingsBusy}}><Text style={styles.readerToolText}>A−</Text></Pressable>
+            <Pressable disabled={readerSettingsBusy||fontSize>=30} onPress={() => void changeReaderFont(2)} style={[styles.readerTool,(readerSettingsBusy||fontSize>=30)&&styles.disabled]} accessibilityRole="button" accessibilityLabel="تكبير خط القراءة" accessibilityState={{disabled:readerSettingsBusy||fontSize>=30,busy:readerSettingsBusy}}><Text style={styles.readerToolText}>A+</Text></Pressable>
             <Pressable onPress={speakReader} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="الاستماع إلى النص"><Text style={styles.readerToolText}>استماع</Text></Pressable>
             <Pressable onPress={stopSpeech} style={styles.readerTool} accessibilityRole="button" accessibilityLabel="إيقاف الاستماع"><Text style={styles.readerToolText}>إيقاف</Text></Pressable>
           </View>

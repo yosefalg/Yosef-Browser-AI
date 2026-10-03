@@ -6,6 +6,7 @@ import type { DownloadItem } from './types';
 
 const active = new Map<number, FileSystem.DownloadResumable>();
 const paused = new Map<number, FileSystem.DownloadPauseState>();
+const cancelledTasks = new WeakSet<FileSystem.DownloadResumable>();
 const progressStats = new Map<number, { at: number; written: number; speed: number; persistedAt: number }>();
 const progressWrites = new Map<number, Promise<void>>();
 const recentStarts = new Map<string, { id: number; at: number }>();
@@ -223,7 +224,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
   await updateDownload(id, { state: 'downloading', error: null });
   try {
     const result = await task.downloadAsync();
-    if (paused.has(id)) return;
+    if (paused.has(id) || cancelledTasks.has(task)) return;
     await drainProgressWrites(id);
     active.delete(id);
     paused.delete(id);
@@ -268,7 +269,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
     active.delete(id);
     progressStats.delete(id);
     clearRecentStart(id);
-    if (paused.has(id)) return;
+    if (paused.has(id) || cancelledTasks.has(task)) return;
     await drainProgressWrites(id);
     await updateDownload(id, {
       state: 'failed',
@@ -407,7 +408,10 @@ export async function reconcileInterruptedDownloads() {
 
 export async function cancelDownload(id: number) {
   const task = active.get(id);
-  if (task) await task.pauseAsync().catch(() => {});
+  if (task) {
+    cancelledTasks.add(task);
+    await task.pauseAsync().catch(() => {});
+  }
   active.delete(id);
   paused.delete(id);
   progressStats.delete(id);

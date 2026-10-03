@@ -215,6 +215,8 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
       onPress={() => router.push('/downloads')}
       accessibilityRole="button"
       accessibilityLabel={`${activeCount > 1 ? `${activeCount} تنزيلات نشطة` : `تنزيل ${item.file_name}`}. ${status}`}
+      accessibilityHint="يفتح مدير التنزيلات"
+      accessibilityLiveRegion={terminalOnly ? 'polite' : 'none'}
       style={({ pressed }) => [styles.shell, terminalOnly && styles.terminalShell, compact && styles.shellCompact, { bottom: insets.bottom + 72 }, pressed && styles.pressed]}
     >
       {!compact && (
@@ -240,6 +242,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={controlLabel}
+          accessibilityState={{ disabled: busy, busy }}
           onPress={(event) => { event.stopPropagation(); void controlDownload(); }}
           style={({ pressed }) => [styles.control, item.state === 'failed' && styles.controlRetry, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
         >
@@ -252,6 +255,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="إلغاء التنزيل"
+          accessibilityState={{ disabled: busy, busy }}
           onPress={(event) => { event.stopPropagation(); void cancelCurrent(); }}
           style={({ pressed }) => [styles.cancel, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
         >

@@ -27,10 +27,12 @@ export default function NotificationsScreen(){
   const [lastChecked,setLastChecked]=useState<Date|null>(null);
   const [refreshError,setRefreshError]=useState('');
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
+  const focused=useRef(false);
   const refreshGeneration=useRef(0);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh=useCallback(async()=>{
+    if(!focused.current)return;
     const generation=++refreshGeneration.current;
     setBusy(true);
     setRefreshError('');
@@ -52,17 +54,23 @@ export default function NotificationsScreen(){
   },[]);
 
   useFocusEffect(useCallback(()=>{
+    focused.current=true;
     let active=true;
     void getSetting<ThemeName>('theme','cinematic')
       .then(savedTheme=>{if(active)setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');})
       .catch(()=>{if(active)setThemeName('cinematic');});
     void refresh();
-    return()=>{active=false;};
+    return()=>{
+      active=false;
+      focused.current=false;
+      refreshGeneration.current+=1;
+    };
   },[refresh]));
 
   useEffect(()=>{
-    const appSub=AppState.addEventListener('change',value=>{if(value==='active')void refresh()});
+    const appSub=AppState.addEventListener('change',value=>{if(value==='active'&&focused.current)void refresh()});
     const {data}=getSupabase().auth.onAuthStateChange((_event,session)=>{
+      if(!focused.current)return;
       setState(prev=>({...prev,signedIn:Boolean(session)}));
       void refresh();
     });

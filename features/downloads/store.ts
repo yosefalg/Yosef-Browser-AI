@@ -28,7 +28,14 @@ async function migrate(d: SQLite.SQLiteDatabase) {
 }
 
 async function db() {
-  if (!promise) promise = SQLite.openDatabaseAsync('raid-downloads.db');
+  if (!promise) {
+    promise = SQLite.openDatabaseAsync('raid-downloads.db').catch((error) => {
+      // Let the next operation recover after a transient storage/open failure.
+      promise = null;
+      migrated = false;
+      throw error;
+    });
+  }
   const value = await promise;
   await value.execAsync(`
     PRAGMA journal_mode = WAL;

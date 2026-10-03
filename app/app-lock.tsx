@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -22,8 +22,12 @@ export default function AppLockScreen(){
   const [enrolled,setEnrolled]=useState(false);
   const [securityLevel,setSecurityLevel]=useState<LocalAuthentication.SecurityLevel>(LocalAuthentication.SecurityLevel.NONE);
   const [busy,setBusy]=useState(false);
+  const busyRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const deviceLockReady=securityLevel>=LocalAuthentication.SecurityLevel.SECRET;
+
+  const beginBusy=()=>{if(busyRef.current)return false;busyRef.current=true;setBusy(true);return true;};
+  const endBusy=()=>{busyRef.current=false;setBusy(false);};
 
   const refresh=useCallback(async()=>{
     const [savedTheme,current,hardware,hasEnrollment,level]=await Promise.all([
@@ -54,13 +58,13 @@ export default function AppLockScreen(){
   };
 
   const toggleEnabled=async(value:boolean)=>{
-    if(busy)return;
+    if(busyRef.current)return;
     if(value&&!deviceLockReady){
       Alert.alert('قفل RAID','فعّل قفل شاشة آمن في Android أولًا (رمز PIN أو نمط أو كلمة مرور أو بصمة/وجه)، ثم ارجع وفعّل القفل.');
       return;
     }
+    if(!beginBusy())return;
     const previous=settings;
-    setBusy(true);
     try{
       const ok=await verify();
       if(!ok)return;
@@ -72,14 +76,13 @@ export default function AppLockScreen(){
     }catch{
       setSettings(previous);
       Alert.alert('قفل RAID','تعذر حفظ إعداد القفل. بقي الإعداد السابق فعالًا.');
-    }finally{setBusy(false)}
+    }finally{endBusy()}
   };
 
   const patch=async(value:Partial<AppLockSettings>)=>{
-    if(busy)return;
+    if(!beginBusy())return;
     const previous=settings;
     const next={...settings,...value};
-    setBusy(true);
     setSettings(next);
     try{
       const saved=await saveAppLockSettings(next);
@@ -87,11 +90,11 @@ export default function AppLockScreen(){
     }catch{
       setSettings(previous);
       Alert.alert('قفل RAID','تعذر حفظ إعداد القفل. بقي الإعداد السابق فعالًا.');
-    }finally{setBusy(false)}
+    }finally{endBusy()}
   };
 
   const lockNow=()=>{
-    if(!settings.enabled||busy)return;
+    if(!settings.enabled||busyRef.current)return;
     requestAppLockNow();
   };
 
@@ -119,7 +122,7 @@ export default function AppLockScreen(){
         <View style={[s.row,{borderTopWidth:1,borderTopColor:theme.border}]}><View style={s.rowCopy}><Text style={[s.rowTitle,{color:theme.text}]}>القفل بعد مغادرة التطبيق</Text><Text style={[s.rowHint,{color:theme.muted}]}>يعيد القفل عند الرجوع بعد المدة المحددة.</Text></View><Switch value={settings.lockOnBackground} disabled={!settings.enabled||busy} onValueChange={value=>void patch({lockOnBackground:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>
       </View>
 
-      <Pressable disabled={!settings.enabled||busy} onPress={lockNow} style={({pressed})=>[s.lockNow,{backgroundColor:theme.surface2,borderColor:theme.border},(!settings.enabled||busy)&&s.disabled,pressed&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!settings.enabled||busy}} accessibilityLabel="اقفل RAID الآن">
+      <Pressable disabled={!settings.enabled||busy} onPress={lockNow} style={({pressed})=>[s.lockNow,{backgroundColor:theme.surface2,borderColor:theme.border},(!settings.enabled||busy)&&s.disabled,pressed&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!settings.enabled||busy,busy}} accessibilityLabel="اقفل RAID الآن">
         <View style={[s.lockNowIcon,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name="lock-check-outline" size={22} color={theme.accent}/></View>
         <View style={s.lockNowCopy}><Text style={[s.lockNowTitle,{color:theme.text}]}>اقفل RAID الآن</Text><Text style={[s.lockNowHint,{color:theme.muted}]}>يخفي المحتوى فورًا، والفتح التالي يستخدم تحقق Android الحقيقي.</Text></View>
       </Pressable>

@@ -17,6 +17,7 @@ export const DEFAULT_SITE_PREFERENCES: SitePreferences = {
 
 const STORE_KEY = 'browser_site_preferences_v1';
 const MAX_SITES = 250;
+let mutationQueue: Promise<void> = Promise.resolve();
 
 // Authentication, checkout and payment flows are unusually sensitive to blocked
 // third-party resources. RAID keeps protection enabled everywhere else, while
@@ -81,7 +82,18 @@ function applyProfileDefaults(base: SitePreferences, profile: BrowsingProfile, e
 }
 
 async function readStore() {
+  await mutationQueue;
   return getSetting<SitePreferenceStore>(STORE_KEY, {});
+}
+
+function mutateStore(operation: (store: SitePreferenceStore) => SitePreferenceStore | null) {
+  const pending = mutationQueue.then(async () => {
+    const store = await getSetting<SitePreferenceStore>(STORE_KEY, {});
+    const next = operation(store);
+    if (next) await setSetting(STORE_KEY, next);
+  });
+  mutationQueue = pending.catch(() => {});
+  return pending;
 }
 
 export async function getSitePreferences(url: string): Promise<SitePreferences> {
@@ -112,17 +124,19 @@ export async function getSitePreferences(url: string): Promise<SitePreferences> 
 export async function saveSitePreferences(url: string, value: SitePreferences) {
   const host = sitePreferenceHost(url);
   if (!host) return;
-  const store = await readStore();
-  store[host] = { ...sanitize(value), updatedAt: Date.now() };
-  const entries = Object.entries(store).sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, MAX_SITES);
-  await setSetting(STORE_KEY, Object.fromEntries(entries));
+  await mutateStore((store) => {
+    store[host] = { ...sanitize(value), updatedAt: Date.now() };
+    const entries = Object.entries(store).sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, MAX_SITES);
+    return Object.fromEntries(entries);
+  });
 }
 
 export async function resetSitePreferences(url: string) {
   const host = sitePreferenceHost(url);
   if (!host) return;
-  const store = await readStore();
-  if (!(host in store)) return;
-  delete store[host];
-  await setSetting(STORE_KEY, store);
+  await mutateStore((store) => {
+    if (!(host in store)) return null;
+    delete store[host];
+    return store;
+  });
 }

@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Constants from 'expo-constants';
+import { getSetting } from '@/lib/db';
+import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
 const whatsapp='https://wa.me/9647887830501';
 const instagram='https://www.instagram.com/_.k5w?stkn=MWtndWxkbnJhcGI5dg==';
@@ -13,6 +15,16 @@ export default function ContactScreen(){
   const openingRef=useRef(false);
   const [opening,setOpening]=useState(false);
   const [openError,setOpenError]=useState('');
+  const [themeName,setThemeName]=useState<ThemeName>('cinematic');
+  const theme=useMemo(()=>getTheme(themeName),[themeName]);
+
+  useFocusEffect(useCallback(()=>{
+    let active=true;
+    void getSetting<ThemeName>('theme','cinematic')
+      .then(value=>{if(active)setThemeName(isThemeName(value)?value:'cinematic');})
+      .catch(()=>{if(active)setThemeName('cinematic');});
+    return()=>{active=false;};
+  },[]));
 
   const open=async(label:string,url:string)=>{
     if(openingRef.current)return;
@@ -31,14 +43,14 @@ export default function ContactScreen(){
     }
   };
 
-  return <SafeAreaView style={s.root}>
-    <View style={s.head}><Pressable onPress={()=>router.back()} style={s.back}><Text style={s.backText}>‹</Text></Pressable><View style={{flex:1}}><Text style={s.title}>تواصل مع RAID</Text><Text style={s.sub}>قنوات التواصل الرسمية</Text></View></View>
+  return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]}>
+    <View style={[s.head,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}><Pressable onPress={()=>router.back()} style={[s.back,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Text style={[s.backText,{color:theme.text}]}>‹</Text></Pressable><View style={{flex:1}}><Text style={[s.title,{color:theme.text}]}>تواصل مع RAID</Text><Text style={[s.sub,{color:theme.muted}]}>قنوات التواصل الرسمية</Text></View></View>
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-      <View style={s.hero}><Text style={s.heroTitle}>نحن قريبون منك</Text><Text style={s.heroText}>للملاحظات، اقتراحات المتصفح، ومشاكل الاستخدام يمكنك التواصل مباشرة عبر القنوات التالية.</Text></View>
-      <Pressable disabled={opening} accessibilityRole="link" accessibilityLabel="فتح WhatsApp للتواصل مع RAID" accessibilityHint="يفتح رابط التواصل في تطبيق مناسب" accessibilityState={{disabled:opening,busy:opening}} onPress={()=>void open('WhatsApp',whatsapp)} style={({pressed})=>[s.card,(pressed||opening)&&s.pressed]}><View style={s.icon}><Text style={s.iconText}>WA</Text></View><View style={s.info}><Text style={s.name}>WhatsApp</Text><Text style={s.value}>07887830501</Text></View><Text style={s.chev}>‹</Text></Pressable>
-      <Pressable disabled={opening} accessibilityRole="link" accessibilityLabel="فتح Instagram للتواصل مع RAID" accessibilityHint="يفتح رابط التواصل في تطبيق مناسب" accessibilityState={{disabled:opening,busy:opening}} onPress={()=>void open('Instagram',instagram)} style={({pressed})=>[s.card,(pressed||opening)&&s.pressed]}><View style={[s.icon,s.instagramWrap]}><InstagramIcon/></View><View style={s.info}><Text style={s.name}>Instagram</Text><Text style={s.value}>تواصل معي على Instagram</Text></View><Text style={s.chev}>‹</Text></Pressable>
+      <View style={[s.hero,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Text style={[s.heroTitle,{color:theme.text}]}>نحن قريبون منك</Text><Text style={[s.heroText,{color:theme.muted}]}>للملاحظات، اقتراحات المتصفح، ومشاكل الاستخدام يمكنك التواصل مباشرة عبر القنوات التالية.</Text></View>
+      <Pressable disabled={opening} accessibilityRole="link" accessibilityLabel="فتح WhatsApp للتواصل مع RAID" accessibilityHint="يفتح رابط التواصل في تطبيق مناسب" accessibilityState={{disabled:opening,busy:opening}} onPress={()=>void open('WhatsApp',whatsapp)} style={({pressed})=>[s.card,{backgroundColor:theme.surface,borderColor:theme.border},(pressed||opening)&&s.pressed]}><View style={[s.icon,{backgroundColor:theme.accent}]}><Text style={s.iconText}>WA</Text></View><View style={s.info}><Text style={[s.name,{color:theme.text}]}>WhatsApp</Text><Text style={[s.value,{color:theme.muted}]}>07887830501</Text></View><Text style={[s.chev,{color:theme.muted}]}>‹</Text></Pressable>
+      <Pressable disabled={opening} accessibilityRole="link" accessibilityLabel="فتح Instagram للتواصل مع RAID" accessibilityHint="يفتح رابط التواصل في تطبيق مناسب" accessibilityState={{disabled:opening,busy:opening}} onPress={()=>void open('Instagram',instagram)} style={({pressed})=>[s.card,{backgroundColor:theme.surface,borderColor:theme.border},(pressed||opening)&&s.pressed]}><View style={[s.icon,s.instagramWrap]}><InstagramIcon/></View><View style={s.info}><Text style={[s.name,{color:theme.text}]}>Instagram</Text><Text style={[s.value,{color:theme.muted}]}>تواصل معي على Instagram</Text></View><Text style={[s.chev,{color:theme.muted}]}>‹</Text></Pressable>
       {!!openError&&<Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={s.error}>{openError}</Text>}
-      <View style={s.note}><Text style={s.noteTitle}>RAID Browser {version}</Text><Text style={s.noteText}>هذه الصفحة لا تطلب كلمة مرور أو رمز تسجيل دخول ولا تصل إلى بيانات حسابك.</Text></View>
+      <View style={[s.note,{backgroundColor:theme.surface2}]}><Text style={[s.noteTitle,{color:theme.text}]}>RAID Browser {version}</Text><Text style={[s.noteText,{color:theme.muted}]}>هذه الصفحة لا تطلب كلمة مرور أو رمز تسجيل دخول ولا تصل إلى بيانات حسابك.</Text></View>
     </ScrollView>
   </SafeAreaView>;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,6 +27,8 @@ export default function HomeScreen(){
   const [menuOpen,setMenuOpen]=useState(false);
   const [vpnConnected,setVpnConnected]=useState(false);
   const [welcomeOpen,setWelcomeOpen]=useState(false);
+  const [welcomeSaving,setWelcomeSaving]=useState(false);
+  const welcomeSavingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   useFocusEffect(useCallback(()=>{let alive=true;Promise.all([
@@ -52,7 +54,20 @@ export default function HomeScreen(){
   const submit=()=>looksLikeAIQuery(query)?askAI():openUrl(query);
   const applySearchShortcut=(prefix:string)=>{const clean=query.trim();if(clean&&!clean.startsWith('!')){openUrl(`${prefix} ${clean}`);return;}setQuery(`${prefix} `)};
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
-  const dismissWelcome=()=>{setWelcomeOpen(false);void setSetting('raid_2_11_welcome_seen',true)};
+  const dismissWelcome=async()=>{
+    if(welcomeSavingRef.current)return;
+    welcomeSavingRef.current=true;
+    setWelcomeSaving(true);
+    try{
+      await setSetting('raid_2_11_welcome_seen',true);
+      setWelcomeOpen(false);
+    }catch{
+      Alert.alert('RAID Browser','تعذر حفظ بدء الاستخدام. بقيت شاشة الترحيب مفتوحة ويمكنك المحاولة مرة أخرى.');
+    }finally{
+      welcomeSavingRef.current=false;
+      setWelcomeSaving(false);
+    }
+  };
   const activeDownloads=useMemo(()=>downloads.filter(item=>item.state==='downloading'||item.state==='paused'||item.state==='queued').length,[downloads]);
   const lightSurface=themeName==='cinematic'||themeName==='light'||themeName==='ivory';
   const glass=lightSurface?'rgba(255,255,255,.78)':'rgba(255,255,255,.07)';
@@ -121,8 +136,8 @@ export default function HomeScreen(){
 
     <HomeMenu visible={menuOpen} onClose={()=>setMenuOpen(false)} theme={theme} items={menuItems}/>
 
-    <Modal visible={welcomeOpen} transparent animationType="fade" onRequestClose={dismissWelcome}>
-      <View style={s.welcomeBackdrop}><LinearGradient colors={['rgba(8,12,20,.98)','rgba(16,25,35,.98)','rgba(24,20,42,.98)']} style={[s.welcomeCard,{borderColor:theme.border}]}><View style={s.logoGlow}><RaidLogo size={100}/></View><Text style={s.welcomeEyebrow}>RAID BROWSER</Text><Text style={s.welcomeTitle}>هلا بيك 👋</Text><Text style={s.welcomeText}>كلشي مرتب إلك: تصفح أوضح، واجهة أهدأ، وRAID AI أقرب لأوامرك داخل التطبيق.</Text><View style={s.welcomePoints}><View style={s.point}><Ionicons name="sparkles-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>تجربة أنظف وأخف</Text></View><View style={s.point}><Ionicons name="shield-checkmark-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>أدوات خصوصية واضحة</Text></View><View style={s.point}><Ionicons name="navigate-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>كله وين تريد وروح</Text></View></View><Pressable onPress={dismissWelcome} style={({pressed})=>[s.startButton,pressed&&s.press]}><Text style={s.startText}>يلا نبدأ</Text><Ionicons name="arrow-back" size={19} color="#071412"/></Pressable></LinearGradient></View>
+    <Modal visible={welcomeOpen} transparent animationType="fade" onRequestClose={()=>void dismissWelcome()}>
+      <View style={s.welcomeBackdrop}><LinearGradient colors={['rgba(8,12,20,.98)','rgba(16,25,35,.98)','rgba(24,20,42,.98)']} style={[s.welcomeCard,{borderColor:theme.border}]}><View style={s.logoGlow}><RaidLogo size={100}/></View><Text style={s.welcomeEyebrow}>RAID BROWSER</Text><Text style={s.welcomeTitle}>هلا بيك 👋</Text><Text style={s.welcomeText}>كلشي مرتب إلك: تصفح أوضح، واجهة أهدأ، وRAID AI أقرب لأوامرك داخل التطبيق.</Text><View style={s.welcomePoints}><View style={s.point}><Ionicons name="sparkles-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>تجربة أنظف وأخف</Text></View><View style={s.point}><Ionicons name="shield-checkmark-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>أدوات خصوصية واضحة</Text></View><View style={s.point}><Ionicons name="navigate-outline" size={17} color="#8BE0CC"/><Text style={s.pointText}>كله وين تريد وروح</Text></View></View><Pressable accessibilityRole="button" accessibilityLabel={welcomeSaving?'جارٍ حفظ بدء الاستخدام':'ابدأ استخدام RAID'} accessibilityState={{disabled:welcomeSaving,busy:welcomeSaving}} disabled={welcomeSaving} onPress={()=>void dismissWelcome()} style={({pressed})=>[s.startButton,(pressed||welcomeSaving)&&s.press]}><Text style={s.startText}>{welcomeSaving?'جارٍ الحفظ…':'يلا نبدأ'}</Text><Ionicons name={welcomeSaving?'hourglass-outline':'arrow-back'} size={19} color="#071412"/></Pressable></LinearGradient></View>
     </Modal>
   </SafeAreaView></LinearGradient>;
 }

@@ -315,6 +315,7 @@ export default function BrowserScreen() {
   const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualMediaRequest = useRef(false);
   const pendingPageDownload = useRef('');
+  const pendingExternalRequest = useRef('');
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
   const canBackRef = useRef(false);
@@ -729,6 +730,36 @@ export default function BrowserScreen() {
     );
   };
 
+  const confirmExternalAppOpen = (requestUrl: string) => {
+    if (pendingExternalRequest.current) return;
+    const sourceUrl = mainDocumentUrl.current;
+    const target = /^tel:/i.test(requestUrl) ? 'تطبيق الهاتف'
+      : /^sms:/i.test(requestUrl) ? 'تطبيق الرسائل'
+        : 'تطبيق البريد';
+    pendingExternalRequest.current = requestUrl;
+    const clearPending = () => {
+      if (pendingExternalRequest.current === requestUrl) pendingExternalRequest.current = '';
+    };
+    Alert.alert(
+      'فتح تطبيق خارجي؟',
+      `طلب ${hostOf(sourceUrl)} فتح ${target}. وافق فقط إذا بدأت هذا الإجراء وتثق بالصفحة.`,
+      [
+        { text: 'إلغاء', style: 'cancel', onPress: clearPending },
+        { text: 'فتح', onPress: () => {
+          clearPending();
+          if (!urlsReferToSameDocument(sourceUrl, mainDocumentUrl.current)) {
+            Alert.alert('RAID Browser', 'انتهى الطلب لأن الصفحة تغيّرت.');
+            return;
+          }
+          void Linking.openURL(requestUrl).catch(() => {
+            Alert.alert('RAID Browser', 'لا يوجد تطبيق مناسب لفتح هذا الرابط.');
+          });
+        } },
+      ],
+      { cancelable: true, onDismiss: clearPending },
+    );
+  };
+
   const onMessage = (event: WebViewMessageEvent) => {
     const raw = event.nativeEvent.data;
     const sourceUrl = event.nativeEvent.url;
@@ -881,9 +912,7 @@ export default function BrowserScreen() {
     }
     if (safeExternalUrl(requestUrl)) return true;
     if (/^(mailto:|tel:|sms:)/i.test(requestUrl)) {
-      void Linking.openURL(requestUrl).catch(() => {
-        Alert.alert('RAID Browser', 'لا يوجد تطبيق مناسب لفتح هذا الرابط.');
-      });
+      confirmExternalAppOpen(requestUrl);
     }
     return false;
   };

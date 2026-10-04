@@ -89,6 +89,8 @@ export default function TabsScreen(){
     const value=query.trim().toLowerCase();
     return value?orderedTabs.filter(tab=>`${tab.title||''} ${hostOf(tab.url)} ${tab.url}`.toLowerCase().includes(value)):orderedTabs;
   },[query,orderedTabs]);
+  const visibleSelectedCount=useMemo(()=>visibleTabs.filter(tab=>selectedIds.includes(tab.id)).length,[selectedIds,visibleTabs]);
+  const allVisibleSelected=visibleTabs.length>0&&visibleSelectedCount===visibleTabs.length;
 
   const newestId=useMemo(()=>tabs.reduce<number|null>((current,tab)=>{
     if(current===null)return tab.id;
@@ -152,7 +154,18 @@ export default function TabsScreen(){
       return next;
     });
   };
-  const selectAllVisible=()=>{if(visibleTabs.length){setSelectionMode(true);setSelectedIds(visibleTabs.map(tab=>tab.id));}};
+  const toggleAllVisible=()=>{
+    if(!visibleTabs.length)return;
+    const visibleIds=new Set(visibleTabs.map(tab=>tab.id));
+    if(allVisibleSelected){
+      const next=selectedIds.filter(id=>!visibleIds.has(id));
+      setSelectedIds(next);
+      setSelectionMode(next.length>0);
+      return;
+    }
+    setSelectedIds([...new Set([...selectedIds,...visibleIds])]);
+    setSelectionMode(true);
+  };
   const shareSelected=()=>{
     const selected=tabs.filter(tab=>selectedIds.includes(tab.id));
     if(!selected.length)return;
@@ -200,7 +213,7 @@ export default function TabsScreen(){
     <View style={[s.header,{borderBottomColor:theme.border}]}>
       <Pressable onPress={()=>selectionMode?exitSelection():router.back()} style={[s.icon,{backgroundColor:theme.surface,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel={selectionMode?'إلغاء التحديد':'رجوع'}><Ionicons name={selectionMode?'close':'chevron-forward'} size={22} color={theme.text}/></Pressable>
       <View style={s.headText} accessibilityLiveRegion="polite"><Text style={[s.title,{color:theme.text}]}>{selectionMode?`${selectedIds.length} محدد`:'التبويبات'}</Text><Text style={[s.sub,{color:theme.muted}]}>{selectionMode?'اضغط على التبويبات لإضافتها أو إزالتها':`${tabs.length} مفتوحة • RAID ${version}`}</Text></View>
-      {selectionMode?<Pressable onPress={selectAllVisible} style={[s.icon,{backgroundColor:theme.surface,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="تحديد كل التبويبات الظاهرة"><Ionicons name="checkbox-outline" size={21} color={theme.accent}/></Pressable>:<Pressable onPress={()=>void newTab()} disabled={busy} style={[s.add,{backgroundColor:theme.accent},busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="تبويب جديد" accessibilityState={{disabled:busy,busy}}><Ionicons name="add" size={24} color="#fff"/></Pressable>}
+      {selectionMode?<Pressable onPress={toggleAllVisible} style={[s.icon,{backgroundColor:theme.surface,borderColor:theme.border}]} accessibilityRole="checkbox" accessibilityLabel={allVisibleSelected?'إلغاء تحديد كل التبويبات الظاهرة':'تحديد كل التبويبات الظاهرة'} accessibilityState={{checked:allVisibleSelected?true:visibleSelectedCount>0?'mixed':false}}><Ionicons name={allVisibleSelected?'checkbox':'square-outline'} size={21} color={theme.accent}/></Pressable>:<Pressable onPress={()=>void newTab()} disabled={busy} style={[s.add,{backgroundColor:theme.accent},busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="تبويب جديد" accessibilityState={{disabled:busy,busy}}><Ionicons name="add" size={24} color="#fff"/></Pressable>}
     </View>
 
     {selectionMode&&<View style={[s.selectionBar,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
@@ -234,7 +247,7 @@ export default function TabsScreen(){
        <View style={viewMode==='grid'?s.grid:s.list}>{visibleTabs.map(tab=><TabCard key={tab.id} tab={tab} viewMode={viewMode} theme={theme} busy={busy} selected={selectedIds.includes(tab.id)} selectionMode={selectionMode} recent={tab.id===newestId} onOpen={()=>selectionMode?toggleSelection(tab.id):openTab(tab)} onLongPress={()=>startSelection(tab)} onDuplicate={()=>void duplicate(tab)} onClose={()=>void close(tab.id)} onMenu={()=>setMenuTab(tab)}/>)}</View>}
 
       {tabs.length>0&&!selectionMode&&<View style={s.managementRow}>
-        <Pressable onPress={selectAllVisible} disabled={busy} style={[s.manageBtn,{backgroundColor:theme.surface,borderColor:theme.border},busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="بدء التحديد المتعدد" accessibilityState={{disabled:busy,busy}}><Ionicons name="checkmark-circle-outline" size={18} color={theme.accent}/><Text style={[s.manageText,{color:theme.text}]}>تحديد متعدد</Text></Pressable>
+        <Pressable onPress={toggleAllVisible} disabled={busy} style={[s.manageBtn,{backgroundColor:theme.surface,borderColor:theme.border},busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="بدء التحديد المتعدد" accessibilityState={{disabled:busy,busy}}><Ionicons name="checkmark-circle-outline" size={18} color={theme.accent}/><Text style={[s.manageText,{color:theme.text}]}>تحديد متعدد</Text></Pressable>
         <Pressable onPress={closeAll} disabled={busy} style={[s.manageBtn,{backgroundColor:theme.surface,borderColor:theme.border},busy&&s.disabled]} accessibilityRole="button" accessibilityLabel={`إغلاق كل التبويبات، عددها ${tabs.length}`} accessibilityState={{disabled:busy,busy}}><Ionicons name="close-circle-outline" size={18} color="#D98C80"/><Text style={[s.manageText,{color:'#D98C80'}]}>إغلاق الكل</Text></Pressable>
       </View>}
 

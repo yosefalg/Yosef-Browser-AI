@@ -45,6 +45,8 @@ export default function FileViewerScreen(){
   const [fontSize,setFontSize]=useState(DEFAULT_FONT_SIZE);
   const [fontSizeSaving,setFontSizeSaving]=useState(false);
   const fontSizeSavingRef=useRef(false);
+  const [externalOpening,setExternalOpening]=useState(false);
+  const externalOpeningRef=useRef(false);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const textLayout=useMemo(()=>readerTextStyle(name,content),[name,content]);
@@ -94,8 +96,15 @@ export default function FileViewerScreen(){
   },[id]);
 
   const openExternal=async()=>{
+    if(!canOpenExternal||externalOpeningRef.current)return;
+    externalOpeningRef.current=true;
+    setExternalOpening(true);
     try{await openDownload(id);}
     catch(e){setError(e instanceof Error?`تعذر الفتح الخارجي: ${e.message}`:'تعذر فتح الملف خارجيًا.');}
+    finally{
+      externalOpeningRef.current=false;
+      setExternalOpening(false);
+    }
   };
 
   const changeFontSize=async(delta:number)=>{
@@ -116,13 +125,19 @@ export default function FileViewerScreen(){
     }
   };
 
+  const fontAtMinimum=fontSize<=MIN_FONT_SIZE;
+  const fontAtMaximum=fontSize>=MAX_FONT_SIZE;
+
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={()=>router.back()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="chevron-back" size={22} color={theme.text}/></Pressable>
       <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text style={[s.sub,{color:theme.muted}]}>{imageUri?'RAID Image Viewer • محلي':`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'}`}</Text></View>
-      {imageUri?<Pressable accessibilityRole="button" accessibilityLabel="فتح الصورة بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="open-outline" size={20} color={theme.accent}/></Pressable>:<View style={s.controls}><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving,busy:fontSizeSaving}} disabled={fontSizeSaving} onPress={()=>void changeFontSize(-2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving,busy:fontSizeSaving}} disabled={fontSizeSaving} onPress={()=>void changeFontSize(2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></View>}
+      <View style={s.controls}>
+        {!imageUri&&<><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving||fontAtMinimum,busy:fontSizeSaving}} disabled={fontSizeSaving||fontAtMinimum} onPress={()=>void changeFontSize(-2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving||fontAtMinimum?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving||fontAtMaximum,busy:fontSizeSaving}} disabled={fontSizeSaving||fontAtMaximum} onPress={()=>void changeFontSize(2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving||fontAtMaximum?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></>}
+        {canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel={`فتح ${name} بتطبيق خارجي`} accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.small,{borderColor:theme.border,backgroundColor:theme.surface2,opacity:externalOpening?0.45:1}]}><Ionicons name="open-outline" size={19} color={theme.accent}/></Pressable>}
+      </View>
     </View>
-    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent}]}><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.externalText}>فتح خارجي</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
+    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent,opacity:externalOpening?0.6:1}]}>{externalOpening?<ActivityIndicator size="small" color="#fff"/>:<Ionicons name="open-outline" size={18} color="#fff"/>}<Text style={s.externalText}>{externalOpening?'جاري الفتح…':'فتح خارجي'}</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
   </SafeAreaView>;
 }
 

@@ -319,6 +319,8 @@ export default function BrowserScreen() {
   const bookmarkBusyRef = useRef(false);
   const readerSettingsBusyRef = useRef(false);
   const speechGeneration = useRef(0);
+  const navigationGeneration = useRef(0);
+  const tabPersistenceQueue = useRef<Promise<void>>(Promise.resolve());
   const lastPersistedNavigation = useRef('');
   const mainDocumentUrl = useRef(startUrl);
   const canBackRef = useRef(false);
@@ -498,7 +500,9 @@ export default function BrowserScreen() {
     }
   };
 
-  const changed = async (nav: WebViewNavigation) => {
+  const changed = (nav: WebViewNavigation) => {
+    const generation = navigationGeneration.current + 1;
+    navigationGeneration.current = generation;
     mainDocumentUrl.current = nav.url;
     canBackRef.current = nav.canGoBack;
     setCanBack(nav.canGoBack);
@@ -508,42 +512,56 @@ export default function BrowserScreen() {
     if (isDirectMediaUrl(nav.url)) setMediaUrls([nav.url]);
     if (!addressFocused) setInput(nav.url);
     if (!nav.loading) {
-      try { setBookmarked(await isBookmarked(nav.url)); } catch { setBookmarked(false); }
+      void isBookmarked(nav.url)
+        .then((value) => {
+          if (navigationGeneration.current === generation && urlsReferToSameDocument(nav.url, mainDocumentUrl.current)) {
+            setBookmarked(value);
+          }
+        })
+        .catch(() => {
+          if (navigationGeneration.current === generation && urlsReferToSameDocument(nav.url, mainDocumentUrl.current)) {
+            setBookmarked(false);
+          }
+        });
     }
     if (!privateMode && safeExternalUrl(nav.url) && !nav.loading) {
       const persistKey = `${nav.url}\n${nav.title || ''}`;
       if (lastPersistedNavigation.current === persistKey) return;
       lastPersistedNavigation.current = persistKey;
-      try { await addHistory(nav.url, nav.title); } catch {}
-      try {
-        const existingId = activeTabIdRef.current;
-        if (existingId) {
-          await updateBrowserTab(existingId, nav.url, nav.title);
-          return;
-        }
-
-        const routeGeneration = tabRouteGeneration.current;
-        let pendingCreation = pendingTabCreation.current;
-        if (!pendingCreation || pendingCreation.generation !== routeGeneration) {
-          pendingCreation = {
-            generation: routeGeneration,
-            promise: createBrowserTab(nav.url, nav.title || 'علامة تبويب جديدة'),
-          };
-          pendingTabCreation.current = pendingCreation;
-        }
-
-        try {
-          const id = await pendingCreation.promise;
+      const routeGeneration = tabRouteGeneration.current;
+      tabPersistenceQueue.current = tabPersistenceQueue.current
+        .catch(() => {})
+        .then(async () => {
+          try { await addHistory(nav.url, nav.title); } catch {}
           if (tabRouteGeneration.current !== routeGeneration) return;
-          if (!activeTabIdRef.current) {
-            activeTabIdRef.current = id;
-            refreshTabCount();
+          const existingId = activeTabIdRef.current;
+          if (existingId) {
+            await updateBrowserTab(existingId, nav.url, nav.title);
+            return;
           }
-          await updateBrowserTab(activeTabIdRef.current, nav.url, nav.title);
-        } finally {
-          if (pendingTabCreation.current === pendingCreation) pendingTabCreation.current = null;
-        }
-      } catch {}
+
+          let pendingCreation = pendingTabCreation.current;
+          if (!pendingCreation || pendingCreation.generation !== routeGeneration) {
+            pendingCreation = {
+              generation: routeGeneration,
+              promise: createBrowserTab(nav.url, nav.title || 'علامة تبويب جديدة'),
+            };
+            pendingTabCreation.current = pendingCreation;
+          }
+
+          try {
+            const id = await pendingCreation.promise;
+            if (tabRouteGeneration.current !== routeGeneration) return;
+            if (!activeTabIdRef.current) {
+              activeTabIdRef.current = id;
+              refreshTabCount();
+            }
+            await updateBrowserTab(activeTabIdRef.current, nav.url, nav.title);
+          } finally {
+            if (pendingTabCreation.current === pendingCreation) pendingTabCreation.current = null;
+          }
+        })
+        .catch(() => {});
     }
   };
 

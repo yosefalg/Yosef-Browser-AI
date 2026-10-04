@@ -28,6 +28,7 @@ export default function HomeScreen(){
   const [vpnConnected,setVpnConnected]=useState(false);
   const [welcomeOpen,setWelcomeOpen]=useState(false);
   const [welcomeSaving,setWelcomeSaving]=useState(false);
+  const searchInputRef=useRef<TextInput>(null);
   const welcomeSavingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
@@ -52,7 +53,12 @@ export default function HomeScreen(){
   };
   const askAI=()=>{const prompt=query.trim();Keyboard.dismiss();router.push(prompt?{pathname:'/ai',params:{prompt}}:'/ai')};
   const submit=()=>looksLikeAIQuery(query)?askAI():openUrl(query);
-  const applySearchShortcut=(prefix:string)=>{const clean=query.trim();if(clean&&!clean.startsWith('!')){openUrl(`${prefix} ${clean}`);return;}setQuery(`${prefix} `)};
+  const applySearchShortcut=(prefix:string)=>{
+    const clean=query.trim();
+    if(clean&&!clean.startsWith('!')){openUrl(`${prefix} ${clean}`);return;}
+    setQuery(`${prefix} `);
+    requestAnimationFrame(()=>searchInputRef.current?.focus());
+  };
   const go=(path:string)=>{setMenuOpen(false);router.push(path as never)};
   const dismissWelcome=async()=>{
     if(welcomeSavingRef.current)return;
@@ -116,7 +122,7 @@ export default function HomeScreen(){
 
         <View style={[s.search,{backgroundColor:lightSurface?'rgba(255,255,255,.82)':'rgba(4,10,18,.34)',borderColor:lightSurface?'rgba(25,70,75,.13)':'rgba(255,255,255,.13)'}]}>
           <View style={[s.searchIcon,{backgroundColor:lightSurface?'rgba(27,85,86,.08)':'rgba(255,255,255,.07)'}]}><Ionicons name="search-outline" size={20} color={theme.accent}/></View>
-          <TextInput value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="ابحث أو اكتب موقعًا" placeholderTextColor={heroMuted} style={[s.input,{color:heroText}]} autoCapitalize="none" autoCorrect={false}/>
+          <TextInput ref={searchInputRef} value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="ابحث أو اكتب موقعًا" placeholderTextColor={heroMuted} style={[s.input,{color:heroText}]} autoCapitalize="none" autoCorrect={false}/>
           <Pressable accessibilityRole="button" accessibilityLabel="اسأل RAID AI" onPress={askAI} style={({pressed})=>[s.aiQuick,{backgroundColor:lightSurface?'rgba(255,255,255,.68)':'rgba(255,255,255,.07)',borderColor:lightSurface?'rgba(25,70,75,.12)':'rgba(255,255,255,.11)'},pressed&&s.press]}><Ionicons name="sparkles" size={17} color={theme.accent}/></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="روح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={19} color="#fff"/></Pressable>
         </View>

@@ -6,9 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { getSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 import { assessSiteRisk, type SiteRiskAssessment } from '@/lib/site-risk';
-import { normalizeInput, safeExternalUrl } from '@/lib/url';
+import { normalizeUrlForInspection, safeExternalUrl } from '@/lib/url';
 
-type ScanState = { url: string; assessment: SiteRiskAssessment } | null;
+type ScanState = { url: string; assessment: SiteRiskAssessment; openable: boolean } | null;
 
 function levelCopy(level: SiteRiskAssessment['level']) {
   if (level === 'danger') return { title: 'خطر مرتفع', icon: 'warning', tone: '#D97D6C' } as const;
@@ -40,21 +40,16 @@ export default function SecurityScreen() {
   const runScan = () => {
     setMessage('');
     try {
-      const normalized = normalizeInput(input);
-      if (!safeExternalUrl(normalized)) {
-        setScan(null);
-        setMessage('هذا الإدخال لا ينتج رابط ويب صالحًا وآمنًا للفحص.');
-        return;
-      }
-      setScan({ url: normalized, assessment: assessSiteRisk(normalized) });
+      const normalized = normalizeUrlForInspection(input);
+      setScan({ url: normalized, assessment: assessSiteRisk(normalized), openable: safeExternalUrl(normalized) });
     } catch {
       setScan(null);
-      setMessage('تعذر تحليل الرابط. تأكد من كتابته بدون محارف مخفية أو صيغة غير مدعومة.');
+      setMessage('أدخل رابط موقع فعليًا للفحص، مثل example.com أو https://example.com.');
     }
   };
 
   const openScanned = () => {
-    if (!scan) return;
+    if (!scan || !scan.openable) return;
     const open = () => router.push({ pathname: '/browser', params: { url: scan.url } });
     if (scan.assessment.level !== 'danger') {
       open();
@@ -116,7 +111,7 @@ export default function SecurityScreen() {
           {scan.assessment.reasons.length ? scan.assessment.reasons.map((reason,index)=><View key={`${reason}-${index}`} style={s.reason}><Ionicons name="ellipse" size={7} color={level.tone}/><Text style={[s.reasonText,{color:theme.text}]}>{reason}</Text></View>) : <View style={s.reason}><Ionicons name="checkmark-circle" size={16} color={level.tone}/><Text style={[s.reasonText,{color:theme.text}]}>لم يكتشف RAID مؤشرات خطورة واضحة في بنية الرابط.</Text></View>}
         </View>
 
-        <Pressable onPress={openScanned} style={({pressed})=>[s.openBtn,{backgroundColor:scan.assessment.level==='danger'?level.tone:theme.accent},pressed&&s.pressed]} accessibilityRole="button"><Ionicons name="open-outline" size={18} color="#fff"/><Text style={s.openText}>{scan.assessment.level==='danger'?'فتح رغم التحذير':'فتح داخل RAID'}</Text></Pressable>
+        <Pressable disabled={!scan.openable} onPress={openScanned} style={({pressed})=>[s.openBtn,{backgroundColor:scan.openable?(scan.assessment.level==='danger'?level.tone:theme.accent):theme.surface2,borderColor:scan.openable?'transparent':theme.border},pressed&&scan.openable&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!scan.openable}} accessibilityLabel={scan.openable?'فتح الرابط المفحوص داخل RAID':'الرابط محظور من الفتح داخل RAID'}><Ionicons name={scan.openable?'open-outline':'ban-outline'} size={18} color={scan.openable?'#fff':theme.muted}/><Text style={[s.openText,!scan.openable&&{color:theme.muted}]}>{!scan.openable?'محظور من الفتح':scan.assessment.level==='danger'?'فتح رغم التحذير':'فتح داخل RAID'}</Text></Pressable>
       </View>}
 
       <View style={[s.note, { backgroundColor: theme.surface2, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>الفحص محلي ومساعد لاتخاذ قرار أفضل، لكنه لا يضمن أن الموقع آمن 100%. لا تدخل كلمة مرور أو معلومات دفع إذا كان النطاق غير متوقع أو الاتصال غير مشفّر.</Text></View>
@@ -125,5 +120,5 @@ export default function SecurityScreen() {
 }
 
 const s=StyleSheet.create({
-  root:{flex:1},head:{minHeight:68,paddingHorizontal:14,paddingVertical:8,borderBottomWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:12},iconBtn:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},headCopy:{flex:1,alignItems:'flex-end'},title:{fontSize:18,fontWeight:'900'},sub:{fontSize:9.5,marginTop:2},content:{padding:16,paddingBottom:42,gap:16},hero:{borderRadius:24,borderWidth:1,padding:15,flexDirection:'row-reverse',alignItems:'center',gap:12},heroIcon:{width:60,height:60,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center'},heroCopy:{flex:1,alignItems:'flex-end'},kicker:{fontSize:9,fontWeight:'900',letterSpacing:.8},heroTitle:{fontSize:18,fontWeight:'900',marginTop:3,textAlign:'right'},heroText:{fontSize:10.5,lineHeight:17,marginTop:5,textAlign:'right'},inputCard:{borderRadius:22,borderWidth:1,padding:14,gap:10},inputLabel:{fontSize:12,fontWeight:'900',textAlign:'right'},input:{minHeight:48,borderRadius:15,borderWidth:1,paddingHorizontal:13,fontSize:13,textAlign:'left'},scanBtn:{minHeight:46,borderRadius:15,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:8},scanBtnText:{fontSize:12,fontWeight:'900'},error:{color:'#D97D6C',fontSize:10.5,lineHeight:16,textAlign:'right'},result:{borderRadius:24,borderWidth:1.5,padding:15,gap:13},resultHead:{flexDirection:'row-reverse',alignItems:'center',gap:12},resultIcon:{width:52,height:52,borderRadius:18,alignItems:'center',justifyContent:'center'},resultCopy:{flex:1,alignItems:'flex-end'},resultTitle:{fontSize:17,fontWeight:'900'},resultHost:{fontSize:12,fontWeight:'800',marginTop:3},score:{fontSize:9.5,marginTop:3},url:{fontSize:9.5,lineHeight:15,textAlign:'left'},reasons:{gap:8},reason:{flexDirection:'row-reverse',alignItems:'flex-start',gap:8},reasonText:{flex:1,fontSize:10.5,lineHeight:17,textAlign:'right'},openBtn:{minHeight:47,borderRadius:15,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:8},openText:{color:'#fff',fontWeight:'900',fontSize:12},note:{borderRadius:19,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'flex-start',gap:9},noteText:{flex:1,fontSize:9.5,lineHeight:16,textAlign:'right'},pressed:{opacity:.78,transform:[{scale:.985}]}
+  root:{flex:1},head:{minHeight:68,paddingHorizontal:14,paddingVertical:8,borderBottomWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:12},iconBtn:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},headCopy:{flex:1,alignItems:'flex-end'},title:{fontSize:18,fontWeight:'900'},sub:{fontSize:9.5,marginTop:2},content:{padding:16,paddingBottom:42,gap:16},hero:{borderRadius:24,borderWidth:1,padding:15,flexDirection:'row-reverse',alignItems:'center',gap:12},heroIcon:{width:60,height:60,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center'},heroCopy:{flex:1,alignItems:'flex-end'},kicker:{fontSize:9,fontWeight:'900',letterSpacing:.8},heroTitle:{fontSize:18,fontWeight:'900',marginTop:3,textAlign:'right'},heroText:{fontSize:10.5,lineHeight:17,marginTop:5,textAlign:'right'},inputCard:{borderRadius:22,borderWidth:1,padding:14,gap:10},inputLabel:{fontSize:12,fontWeight:'900',textAlign:'right'},input:{minHeight:48,borderRadius:15,borderWidth:1,paddingHorizontal:13,fontSize:13,textAlign:'left'},scanBtn:{minHeight:46,borderRadius:15,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:8},scanBtnText:{fontSize:12,fontWeight:'900'},error:{color:'#D97D6C',fontSize:10.5,lineHeight:16,textAlign:'right'},result:{borderRadius:24,borderWidth:1.5,padding:15,gap:13},resultHead:{flexDirection:'row-reverse',alignItems:'center',gap:12},resultIcon:{width:52,height:52,borderRadius:18,alignItems:'center',justifyContent:'center'},resultCopy:{flex:1,alignItems:'flex-end'},resultTitle:{fontSize:17,fontWeight:'900'},resultHost:{fontSize:12,fontWeight:'800',marginTop:3},score:{fontSize:9.5,marginTop:3},url:{fontSize:9.5,lineHeight:15,textAlign:'left'},reasons:{gap:8},reason:{flexDirection:'row-reverse',alignItems:'flex-start',gap:8},reasonText:{flex:1,fontSize:10.5,lineHeight:17,textAlign:'right'},openBtn:{minHeight:47,borderRadius:15,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:8},openText:{color:'#fff',fontWeight:'900',fontSize:12},note:{borderRadius:19,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'flex-start',gap:9},noteText:{flex:1,fontSize:9.5,lineHeight:16,textAlign:'right'},pressed:{opacity:.78,transform:[{scale:.985}]}
 });

@@ -308,6 +308,30 @@ export function safeExternalUrl(url: string) {
   }
 }
 
+export function normalizeUrlForInspection(input: string) {
+  const rawValue = input.trim();
+  if (!rawValue) throw new Error('Empty URL');
+  if (!isReasonableInputLength(rawValue)) throw new Error('Input too long');
+  if (CONTROL_CHARS.test(rawValue)) throw new Error('Unsafe control characters');
+
+  const value = cleanPastedUrlCandidate(rawValue);
+  if (HTTP_SCHEME.test(value) || EXPLICIT_SCHEME.test(value)) return value;
+
+  if (PROTOCOL_RELATIVE.test(value)) {
+    const authority = value.slice(2);
+    if (!authority || /\s/.test(authority)) throw new Error('Invalid URL');
+    return `https:${value}`;
+  }
+
+  if (looksLikeHost(value) || looksLikeInternationalHost(value)) {
+    const rawHost = hostOnly(value);
+    if (!validIpv4(rawHost)) throw new Error('Invalid IP address');
+    return `${isLocalDevelopmentHost(value) ? 'http' : 'https'}://${value}`;
+  }
+
+  throw new Error('A URL is required');
+}
+
 function unwrapKnownRedirect(value: string) {
   if (!HTTP_SCHEME.test(value)) return value;
   try {

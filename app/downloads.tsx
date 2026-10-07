@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { listDownloads } from '@/features/downloads/store';
-import { cancelDownload, openDownload, pauseDownload, reconcileInterruptedDownloads, removeDownload, resumeDownload, retryDownload, shareDownload } from '@/features/downloads/download-manager';
+import { cancelDownload, openDownload, pauseDownload, reconcileInterruptedDownloads, removeDownload, renameDownload, resumeDownload, retryDownload, shareDownload } from '@/features/downloads/download-manager';
 import type { DownloadItem } from '@/features/downloads/types';
 import { getSetting } from '@/lib/db';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
@@ -64,6 +64,15 @@ function eta(value: number | null) {
 
 function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return 'ملف مباشر';}}
 
+function downloadExtension(fileName: string) {
+  return fileName.match(/(\.[a-z0-9]{1,10})$/i)?.[1] || '';
+}
+
+function editableDownloadName(fileName: string) {
+  const extension = downloadExtension(fileName);
+  return extension ? fileName.slice(0, -extension.length) : fileName;
+}
+
 function searchableDownloadText(item: DownloadItem) {
   const rawUrl = String(item.url || '');
   let decodedUrl = rawUrl;
@@ -95,6 +104,8 @@ export default function DownloadsScreen() {
   const [filter,setFilter] = useState<Filter>('all');
   const [kindFilter,setKindFilter] = useState<KindFilter>('all');
   const [query,setQuery] = useState('');
+  const [renameTarget,setRenameTarget] = useState<DownloadItem|null>(null);
+  const [renameValue,setRenameValue] = useState('');
   const [themeName,setThemeName] = useState<ThemeName>('cinematic');
   const [operationBusy,setOperationBusy] = useState(false);
   const refreshInFlight = useRef(false);
@@ -205,6 +216,27 @@ export default function DownloadsScreen() {
     try { await fn(); await refresh(); }
     catch (error) { Alert.alert('التنزيلات', error instanceof Error ? error.message : 'تعذر تنفيذ العملية.'); }
     finally { endOperation(); }
+  };
+
+  const openRename = (item: DownloadItem) => {
+    if (operationInFlight.current) return;
+    setRenameValue(editableDownloadName(item.file_name));
+    setRenameTarget(item);
+  };
+
+  const submitRename = async () => {
+    const item = renameTarget;
+    if (!item || !beginOperation()) return;
+    try {
+      await renameDownload(item.id, renameValue);
+      setRenameTarget(null);
+      setRenameValue('');
+      await refresh();
+    } catch (error) {
+      Alert.alert('إعادة تسمية الملف', error instanceof Error ? error.message : 'تعذرت إعادة تسمية الملف.');
+    } finally {
+      endOperation();
+    }
   };
 
   const pauseAll = async () => {
@@ -389,6 +421,7 @@ export default function DownloadsScreen() {
               <View style={s.actions}>
                 {item.state === 'completed' && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityLabel={`${viewerKind==='image'?'عرض':viewerKind==='text'?'قراءة':'فتح'} ${item.file_name}`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => viewerKind ? router.push({ pathname: '/file-viewer', params: { id: String(item.id) } }) : void perform(() => openDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name={viewerKind==='image'?'image-outline':viewerKind==='text'?'reader-outline':'open-outline'} size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>{viewerKind==='image'?'عرض':viewerKind==='text'?'قراءة':'فتح'}</Text></Pressable>}
                 {item.state === 'completed' && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityLabel={`مشاركة ${item.file_name}`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => shareDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="share-social-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>مشاركة</Text></Pressable>}
+                {item.state === 'completed' && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityLabel={`إعادة تسمية ${item.file_name}`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => openRename(item)} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="pencil-outline" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>تسمية</Text></Pressable>}
                 {item.state === 'downloading' && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityLabel={`إيقاف تنزيل ${item.file_name} مؤقتًا`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => pauseDownload(item.id))} style={[s.action,{backgroundColor:theme.surface2,borderColor:theme.border},operationBusy&&s.disabled]}><Ionicons name="pause" size={16} color={theme.text} /><Text style={[s.actionText,{color:theme.text}]}>إيقاف</Text></Pressable>}
                 {item.state === 'paused' && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityLabel={`استكمال تنزيل ${item.file_name}`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => resumeDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent},operationBusy&&s.disabled]}><Ionicons name="play" size={16} color="#fff" /><Text style={s.primaryText}>استكمال</Text></Pressable>}
                 {(item.state === 'failed' || item.state === 'cancelled') && <Pressable disabled={operationBusy} accessibilityRole="button" accessibilityLabel={`إعادة تنزيل ${item.file_name}`} accessibilityState={{disabled:operationBusy,busy:operationBusy}} onPress={() => void perform(() => retryDownload(item.id))} style={[s.action,{backgroundColor:theme.accent,borderColor:theme.accent},operationBusy&&s.disabled]}><Ionicons name="refresh" size={16} color="#fff" /><Text style={s.primaryText}>إعادة</Text></Pressable>}
@@ -399,6 +432,31 @@ export default function DownloadsScreen() {
           })}
         </ScrollView>
       )}
+      <Modal visible={Boolean(renameTarget)} transparent animationType="fade" onRequestClose={()=>{if(!operationBusy)setRenameTarget(null);}}>
+        <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':'height'} style={s.renameOverlay}>
+          <Pressable accessibilityRole="button" accessibilityLabel="إغلاق نافذة إعادة التسمية" disabled={operationBusy} onPress={()=>setRenameTarget(null)} style={s.renameBackdrop}/>
+          <View style={[s.renameCard,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+            <View style={[s.renameIcon,{backgroundColor:theme.surface2}]}><Ionicons name="pencil-outline" size={24} color={theme.accent}/></View>
+            <Text style={[s.renameTitle,{color:theme.text}]}>إعادة تسمية الملف</Text>
+            <Text style={[s.renameHint,{color:theme.muted}]}>غيّر الاسم فقط؛ سيحافظ RAID على الامتداد {renameTarget?downloadExtension(renameTarget.file_name)||'الأصلي':''} حتى يبقى نوع الملف صحيحًا.</Text>
+            <TextInput
+              autoFocus
+              value={renameValue}
+              onChangeText={setRenameValue}
+              onSubmitEditing={()=>void submitRename()}
+              returnKeyType="done"
+              selectTextOnFocus
+              maxLength={110}
+              accessibilityLabel="الاسم الجديد للملف"
+              style={[s.renameInput,{backgroundColor:theme.surface2,borderColor:theme.border,color:theme.text}]}
+            />
+            <View style={s.renameActions}>
+              <Pressable disabled={operationBusy} onPress={()=>setRenameTarget(null)} accessibilityRole="button" style={[s.renameButton,{borderColor:theme.border},operationBusy&&s.disabled]}><Text style={[s.renameButtonText,{color:theme.text}]}>إلغاء</Text></Pressable>
+              <Pressable disabled={operationBusy||!renameValue.trim()} onPress={()=>void submitRename()} accessibilityRole="button" accessibilityState={{disabled:operationBusy||!renameValue.trim(),busy:operationBusy}} style={[s.renameButton,{backgroundColor:theme.accent,borderColor:theme.accent},(operationBusy||!renameValue.trim())&&s.disabled]}>{operationBusy?<ActivityIndicator size="small" color="#fff"/>:<Text style={s.renamePrimaryText}>حفظ الاسم</Text>}</Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -409,5 +467,6 @@ const s = StyleSheet.create({
   livePanel:{padding:16,borderRadius:24,borderWidth:1,gap:10},liveTop:{flexDirection:'row-reverse',alignItems:'center',gap:11},liveIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},liveCopy:{flex:1,alignItems:'flex-end'},liveTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},liveSpeed:{marginTop:3,fontSize:18,fontWeight:'900',textAlign:'right'},liveNumbers:{alignItems:'center',minWidth:44},liveCount:{fontSize:18,fontWeight:'900'},liveLabel:{fontSize:9,marginTop:1},liveDetail:{fontSize:11,textAlign:'right',fontWeight:'700'},liveHint:{fontSize:10,lineHeight:17,textAlign:'right'},liveTrack:{height:7,borderRadius:99,overflow:'hidden'},liveProgress:{height:'100%',borderRadius:99},bulkActions:{flexDirection:'row-reverse',gap:8,flexWrap:'wrap'},bulkButton:{height:38,paddingHorizontal:13,borderRadius:13,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:6},bulkText:{fontSize:11,fontWeight:'800'},bulkPrimary:{fontSize:11,fontWeight:'900',color:'#fff'},
   summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},kindFilters:{gap:7,paddingVertical:1},kindFilter:{height:34,borderRadius:12,borderWidth:1,paddingHorizontal:10,flexDirection:'row-reverse',alignItems:'center',gap:5},kindFilterText:{fontSize:9.5,fontWeight:'800'},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},disabled:{opacity:.45},press:{transform:[{scale:.985}],opacity:.86},
   search:{minHeight:48,borderRadius:16,borderWidth:1,paddingHorizontal:13,flexDirection:'row-reverse',alignItems:'center',gap:9},searchInput:{flex:1,minHeight:46,textAlign:'right',fontSize:12},clearSearch:{width:30,height:30,borderRadius:10,alignItems:'center',justifyContent:'center'},searchResult:{fontSize:10,fontWeight:'700',textAlign:'right',paddingHorizontal:4,marginTop:-4},emptyClear:{marginTop:16,minHeight:40,paddingHorizontal:18,borderRadius:13,alignItems:'center',justifyContent:'center'},emptyClearText:{color:'#fff',fontSize:11,fontWeight:'900'},
+  renameOverlay:{flex:1,alignItems:'center',justifyContent:'center',padding:20},renameBackdrop:{...StyleSheet.absoluteFillObject,backgroundColor:'rgba(2,8,13,.76)'},renameCard:{width:'100%',maxWidth:420,borderRadius:26,borderWidth:1,padding:20,alignItems:'center'},renameIcon:{width:52,height:52,borderRadius:17,alignItems:'center',justifyContent:'center'},renameTitle:{fontSize:19,fontWeight:'900',marginTop:12},renameHint:{fontSize:10.5,lineHeight:17,textAlign:'center',marginTop:7},renameInput:{width:'100%',minHeight:50,borderRadius:15,borderWidth:1,paddingHorizontal:14,textAlign:'right',fontSize:14,fontWeight:'800',marginTop:16},renameActions:{width:'100%',flexDirection:'row-reverse',gap:9,marginTop:14},renameButton:{flex:1,minHeight:44,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},renameButtonText:{fontSize:12,fontWeight:'800'},renamePrimaryText:{color:'#fff',fontSize:12,fontWeight:'900'},
   retryAll:{minHeight:64,borderRadius:18,borderWidth:1,padding:11,flexDirection:'row-reverse',alignItems:'center',gap:10},retryAllIcon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},retryAllCopy:{flex:1,alignItems:'flex-end'},retryAllTitle:{fontSize:12,fontWeight:'900',textAlign:'right'},retryAllText:{fontSize:9.5,lineHeight:15,textAlign:'right',marginTop:2},
 });

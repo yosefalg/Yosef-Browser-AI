@@ -504,6 +504,41 @@ export async function shareDownload(id: number) {
   });
 }
 
+export async function renameDownload(id: number, requestedName: string) {
+  const item = await getDownload(id);
+  if (!item?.local_uri || item.state !== 'completed') throw new Error('يمكن إعادة تسمية الملفات المكتملة فقط.');
+
+  const info = await FileSystem.getInfoAsync(item.local_uri);
+  if (!info.exists) {
+    await updateDownload(id, { state: 'failed', progress: 0, error: 'ملف التنزيل غير موجود على الجهاز. يمكنك إعادة تنزيله.' });
+    throw new Error('ملف التنزيل لم يعد موجودًا على الجهاز.');
+  }
+
+  const extension = item.file_name.match(/(\.[a-z0-9]{1,10})$/i)?.[1] || '';
+  let baseName = sanitizeFileName(requestedName, '');
+  if (extension && baseName.toLowerCase().endsWith(extension.toLowerCase())) {
+    baseName = baseName.slice(0, -extension.length).trim();
+  }
+  baseName = baseName.slice(0, Math.max(1, 120 - extension.length)).trim();
+  if (!baseName) throw new Error('اكتب اسمًا صالحًا للملف.');
+
+  const nextName = `${baseName}${extension}`;
+  if (nextName === item.file_name) return;
+
+  const root = await ensureDirectory();
+  const nextUri = `${root}${nextName}`;
+  const existing = await FileSystem.getInfoAsync(nextUri);
+  if (existing.exists && nextUri !== item.local_uri) throw new Error('يوجد ملف آخر بهذا الاسم. اختر اسمًا مختلفًا.');
+
+  await FileSystem.moveAsync({ from: item.local_uri, to: nextUri });
+  try {
+    await updateDownload(id, { file_name: nextName, local_uri: nextUri });
+  } catch (error) {
+    await FileSystem.moveAsync({ from: nextUri, to: item.local_uri }).catch(() => {});
+    throw error;
+  }
+}
+
 export async function removeDownload(id: number, deleteFile = false) {
   const item = await getDownload(id);
   if (active.has(id)) await cancelDownload(id);

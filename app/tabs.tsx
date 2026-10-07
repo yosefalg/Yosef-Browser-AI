@@ -90,14 +90,13 @@ export default function TabsScreen(){
     const value=query.trim().toLowerCase();
     return value?orderedTabs.filter(tab=>`${tab.title||''} ${hostOf(tab.url)} ${tab.url}`.toLowerCase().includes(value)):orderedTabs;
   },[query,orderedTabs]);
-  const visibleSelectedCount=useMemo(()=>visibleTabs.filter(tab=>selectedIds.includes(tab.id)).length,[selectedIds,visibleTabs]);
+  const selectedIdSet=useMemo(()=>new Set(selectedIds),[selectedIds]);
+  const visibleSelectedCount=useMemo(()=>visibleTabs.reduce((count,tab)=>count+(selectedIdSet.has(tab.id)?1:0),0),[selectedIdSet,visibleTabs]);
   const allVisibleSelected=visibleTabs.length>0&&visibleSelectedCount===visibleTabs.length;
 
-  const newestId=useMemo(()=>tabs.reduce<number|null>((current,tab)=>{
-    if(current===null)return tab.id;
-    const currentTab=tabs.find(item=>item.id===current);
-    return !currentTab||tab.updated_at>currentTab.updated_at?tab.id:current;
-  },null),[tabs]);
+  const newestId=useMemo(()=>tabs.reduce<BrowserTab|null>((current,tab)=>
+    !current||tab.updated_at>current.updated_at?tab:current
+  ,null)?.id??null,[tabs]);
 
   const duplicateCount=useMemo(()=>{
     const seen=new Set<string>();
@@ -179,7 +178,7 @@ export default function TabsScreen(){
     setSelectionMode(true);
   };
   const shareSelected=()=>{
-    const selected=tabs.filter(tab=>selectedIds.includes(tab.id));
+    const selected=tabs.filter(tab=>selectedIdSet.has(tab.id));
     if(!selected.length)return;
     void Share.share({message:selected.map(tab=>`${tab.title||hostOf(tab.url)}\n${tab.url}`).join('\n\n')}).catch(()=>showActionError('تعذرت مشاركة التبويبات المحددة. بقي التحديد كما هو ويمكنك المحاولة مجددًا.'));
   };
@@ -256,7 +255,7 @@ export default function TabsScreen(){
 
       {tabs.length===0?<View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="albums-outline" size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد تبويبات مفتوحة</Text><Text style={[s.emptyText,{color:theme.muted}]}>ابدأ بتبويب جديد أو استعد صفحة أغلقتها قبل قليل.</Text></View>:
        visibleTabs.length===0?<View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="search-outline" size={28} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد نتائج</Text><Text style={[s.emptyText,{color:theme.muted}]}>لم نجد تبويبًا يطابق «{query.trim()}».</Text><Pressable onPress={()=>setQuery('')} accessibilityRole="button" accessibilityLabel="مسح البحث وعرض كل التبويبات"><Text style={[s.link,{color:theme.accent}]}>عرض الكل</Text></Pressable></View>:
-       <View style={viewMode==='grid'?s.grid:s.list}>{visibleTabs.map(tab=><TabCard key={tab.id} tab={tab} viewMode={viewMode} theme={theme} busy={busy} selected={selectedIds.includes(tab.id)} selectionMode={selectionMode} recent={tab.id===newestId} onOpen={()=>selectionMode?toggleSelection(tab.id):openTab(tab)} onLongPress={()=>startSelection(tab)} onDuplicate={()=>void duplicate(tab)} onClose={()=>void close(tab.id)} onMenu={()=>setMenuTab(tab)}/>)}</View>}
+       <View style={viewMode==='grid'?s.grid:s.list}>{visibleTabs.map(tab=><TabCard key={tab.id} tab={tab} viewMode={viewMode} theme={theme} busy={busy} selected={selectedIdSet.has(tab.id)} selectionMode={selectionMode} recent={tab.id===newestId} onOpen={()=>selectionMode?toggleSelection(tab.id):openTab(tab)} onLongPress={()=>startSelection(tab)} onDuplicate={()=>void duplicate(tab)} onClose={()=>void close(tab.id)} onMenu={()=>setMenuTab(tab)}/>)}</View>}
 
       {tabs.length>0&&!selectionMode&&<View style={s.managementRow}>
         <Pressable onPress={toggleAllVisible} disabled={busy} style={[s.manageBtn,{backgroundColor:theme.surface,borderColor:theme.border},busy&&s.disabled]} accessibilityRole="button" accessibilityLabel="بدء التحديد المتعدد" accessibilityState={{disabled:busy,busy}}><Ionicons name="checkmark-circle-outline" size={18} color={theme.accent}/><Text style={[s.manageText,{color:theme.text}]}>تحديد متعدد</Text></Pressable>

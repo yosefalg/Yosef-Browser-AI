@@ -11,7 +11,7 @@ import { getCurrentSession } from '@/lib/auth';
 import { getVpnProvisioningState, isVpnConnected } from '@/lib/vpn';
 import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 
-type LiveState={signedIn:boolean;vpnConnected:boolean;vpnReady:boolean;vpnSource:string;history:number;bookmarks:number;biometric:boolean;adsRemoved:number;popupsBlocked:number};
+type LiveState={signedIn:boolean;vpnConnected:boolean;vpnReady:boolean;vpnSource:string;history:number;bookmarks:number;biometricHardware:boolean;biometricEnrolled:boolean;adsRemoved:number;popupsBlocked:number};
 
 export default function PrivacyScreen(){
   const version=Constants.expoConfig?.version||'—';
@@ -20,24 +20,25 @@ export default function PrivacyScreen(){
   const [privacyAction,setPrivacyAction]=useState<'history'|'protection'|null>(null);
   const [msg,setMsg]=useState('');
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
-  const [live,setLive]=useState<LiveState>({signedIn:false,vpnConnected:false,vpnReady:false,vpnSource:'none',history:0,bookmarks:0,biometric:false,adsRemoved:0,popupsBlocked:0});
+  const [live,setLive]=useState<LiveState>({signedIn:false,vpnConnected:false,vpnReady:false,vpnSource:'none',history:0,bookmarks:0,biometricHardware:false,biometricEnrolled:false,adsRemoved:0,popupsBlocked:0});
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh=useCallback(async()=>{
     if(busy.current)return;
     busy.current=true;setChecking(true);
     try{
-      const [session,connected,history,bookmarks,profile,biometric,savedTheme,protection]=await Promise.all([
+      const [session,connected,history,bookmarks,profile,biometricHardware,biometricEnrolled,savedTheme,protection]=await Promise.all([
         getCurrentSession().catch(()=>null),
         isVpnConnected().catch(()=>false),
         getHistory(2000).catch(()=>[]),
         getBookmarks().catch(()=>[]),
         getVpnProvisioningState().catch(()=>({configured:false,source:'none' as const})),
         LocalAuthentication.hasHardwareAsync().catch(()=>false),
+        LocalAuthentication.isEnrolledAsync().catch(()=>false),
         getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
         getProtectionStats().catch(()=>({ads_removed:0,popups_blocked:0,updated_at:0})),
       ]);
-      setLive({signedIn:Boolean(session),vpnConnected:Boolean(connected),vpnReady:Boolean(profile.configured),vpnSource:profile.source,history:history.length,bookmarks:bookmarks.length,biometric:Boolean(biometric),adsRemoved:protection.ads_removed,popupsBlocked:protection.popups_blocked});
+      setLive({signedIn:Boolean(session),vpnConnected:Boolean(connected),vpnReady:Boolean(profile.configured),vpnSource:profile.source,history:history.length,bookmarks:bookmarks.length,biometricHardware:Boolean(biometricHardware),biometricEnrolled:Boolean(biometricHardware&&biometricEnrolled),adsRemoved:protection.ads_removed,popupsBlocked:protection.popups_blocked});
       setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
     } finally {busy.current=false;setChecking(false);}
   },[]);
@@ -45,7 +46,8 @@ export default function PrivacyScreen(){
   useFocusEffect(useCallback(()=>{void refresh();return()=>{}},[refresh]));
 
   const auth=async()=>{
-    if(!live.biometric){setMsg('لا توجد مصادقة حيوية مدعومة على هذا الجهاز.');return;}
+    if(!live.biometricHardware){setMsg('لا توجد مصادقة حيوية مدعومة على هذا الجهاز.');return;}
+    if(!live.biometricEnrolled){setMsg('المصادقة الحيوية غير مهيأة. أضف بصمة أو وجهًا من إعدادات قفل الشاشة أولًا.');return;}
     const r=await LocalAuthentication.authenticateAsync({promptMessage:'تحقق من هوية مستخدم RAID',cancelLabel:'إلغاء'});
     setMsg(r.success?'تم التحقق بنجاح.':'فشل التحقق أو أُلغي.');
   };
@@ -96,7 +98,7 @@ export default function PrivacyScreen(){
         {status('الحساب',live.signedIn?'مسجل الدخول':'غير مسجل',live.signedIn,'person-outline')}
         {status('RAID VPN',live.vpnConnected?'متصل فعليًا':'غير متصل',live.vpnConnected,'shield-outline')}
         {status('ملف VPN',live.vpnReady?source:'غير جاهز',live.vpnReady,'key-outline')}
-        {status('القفل الحيوي',live.biometric?'مدعوم':'غير متاح',live.biometric,'finger-print-outline')}
+        {status('القفل الحيوي',live.biometricEnrolled?'جاهز':live.biometricHardware?'غير مُعدّ':'غير متاح',live.biometricEnrolled,'finger-print-outline')}
       </View>
 
       <View style={[s.summary,{backgroundColor:theme.surface,borderColor:theme.border}]}>
@@ -117,7 +119,7 @@ export default function PrivacyScreen(){
       <View style={s.sectionHead}><Text style={[s.sectionTitle,{color:theme.text}]}>إجراءات مباشرة</Text><Text style={[s.sectionHint,{color:theme.muted}]}>بدون حالات تجريبية</Text></View>
       <View style={s.actions}>
         {action('فتح RAID VPN',live.vpnConnected?'عرض حالة النفق الحالي':live.vpnReady?'الاتصال بملف WireGuard الجاهز':'إضافة أو استيراد إعداد WireGuard','shield-outline',()=>router.push('/vpn'))}
-        {action('التحقق بالبصمة أو الوجه',live.biometric?'اختبار القفل الحيوي على هذا الجهاز':'الجهاز لا يعلن دعمًا حيويًا','finger-print-outline',()=>void auth())}
+        {action('التحقق بالبصمة أو الوجه',live.biometricEnrolled?'اختبار القفل الحيوي المسجّل':live.biometricHardware?'أضف بصمة أو وجهًا من إعدادات قفل الشاشة':'الجهاز لا يعلن دعمًا حيويًا','finger-print-outline',()=>void auth())}
         {action('الإعدادات','إدارة المظهر والخصوصية وإعدادات المتصفح','settings-outline',()=>router.push('/settings'))}
         {action('تصفير إحصاءات الحماية',privacyAction==='protection'?'جارٍ تصفير العدادات…':live.adsRemoved||live.popupsBlocked?`حذف ${live.adsRemoved+live.popupsBlocked} حدث حماية محفوظ`:'العدادات المحلية صفر','stats-chart-outline',confirmProtectionReset,false,(!live.adsRemoved&&!live.popupsBlocked)||Boolean(privacyAction))}
         {action('مسح سجل التصفح',privacyAction==='history'?'جارٍ مسح السجل…':live.history?`حذف ${live.history} سجلًا محليًا`:'السجل المحلي فارغ','trash-outline',confirmClear,true,!live.history||Boolean(privacyAction))}

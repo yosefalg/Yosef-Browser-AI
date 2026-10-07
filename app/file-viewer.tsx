@@ -127,13 +127,15 @@ export default function FileViewerScreen(){
 
   const fontAtMinimum=fontSize<=MIN_FONT_SIZE;
   const fontAtMaximum=fontSize>=MAX_FONT_SIZE;
+  const textReady=!loading&&!error&&!imageUri;
+  const viewerStatus=loading?'جاري تجهيز الملف…':imageUri?'RAID Image Viewer • محلي':error?(canOpenExternal?'فتح خارجي متاح':'تعذر تجهيز الملف'):`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'}`;
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
       <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={()=>router.back()} style={[s.icon,{borderColor:theme.border,backgroundColor:theme.surface2}]}><Ionicons name="chevron-back" size={22} color={theme.text}/></Pressable>
-      <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text style={[s.sub,{color:theme.muted}]}>{imageUri?'RAID Image Viewer • محلي':`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'}`}</Text></View>
+      <View style={s.heading}><Text numberOfLines={1} style={[s.title,{color:theme.text}]}>{name}</Text><Text accessibilityLiveRegion="polite" style={[s.sub,{color:theme.muted}]}>{viewerStatus}</Text></View>
       <View style={s.controls}>
-        {!imageUri&&<><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving||fontAtMinimum,busy:fontSizeSaving}} disabled={fontSizeSaving||fontAtMinimum} onPress={()=>void changeFontSize(-2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving||fontAtMinimum?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving||fontAtMaximum,busy:fontSizeSaving}} disabled={fontSizeSaving||fontAtMaximum} onPress={()=>void changeFontSize(2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving||fontAtMaximum?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></>}
+        {textReady&&<><Pressable accessibilityRole="button" accessibilityLabel="تصغير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving||fontAtMinimum,busy:fontSizeSaving}} disabled={fontSizeSaving||fontAtMinimum} onPress={()=>void changeFontSize(-2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving||fontAtMinimum?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A−</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="تكبير خط قارئ الملفات" accessibilityState={{disabled:fontSizeSaving||fontAtMaximum,busy:fontSizeSaving}} disabled={fontSizeSaving||fontAtMaximum} onPress={()=>void changeFontSize(2)} style={[s.small,{borderColor:theme.border,opacity:fontSizeSaving||fontAtMaximum?0.45:1}]}><Text style={{color:theme.text,fontWeight:'900'}}>A+</Text></Pressable></>}
         {canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel={`فتح ${name} بتطبيق خارجي`} accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.small,{borderColor:theme.border,backgroundColor:theme.surface2,opacity:externalOpening?0.45:1}]}><Ionicons name="open-outline" size={19} color={theme.accent}/></Pressable>}
       </View>
     </View>

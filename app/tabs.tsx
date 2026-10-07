@@ -9,6 +9,7 @@ import { TabCard } from '@/components/TabCard';
 import { SiteIcon } from '@/components/SiteIcon';
 import { TabSortMode, TabViewControls, TabViewMode } from '@/components/TabViewControls';
 import { getTheme, isThemeName, ThemeName } from '@/lib/theme';
+import { safeExternalUrl } from '@/lib/url';
 import {
   BrowserTab, ClosedBrowserTab, clearRecentlyClosedTabs, closeAllBrowserTabs, closeBrowserTab, closeBrowserTabs,
   createBrowserTab, getBrowserTabs, getRecentlyClosedTabs, getSetting, restoreClosedBrowserTab, setSetting,
@@ -141,7 +142,10 @@ export default function TabsScreen(){
   const duplicate=async(tab:BrowserTab)=>{if(!beginBusy())return;try{await createBrowserTab(tab.url,tab.title||hostOf(tab.url));await refresh();}catch{showActionError('تعذر تكرار التبويب. لم تتم إضافة نسخة جديدة.');}finally{endBusy();}};
   const shareTab=(tab:BrowserTab)=>{void Share.share({title:tab.title||hostOf(tab.url),message:`${tab.title||hostOf(tab.url)}\n${tab.url}`,url:tab.url}).catch(()=>showActionError('تعذرت مشاركة رابط التبويب. حاول مرة أخرى.'));};
   const openExternal=(tab:BrowserTab)=>{
-    if(!/^https?:\/\//i.test(tab.url))return;
+    if(!safeExternalUrl(tab.url)){
+      Alert.alert('RAID Browser','حُظر فتح الرابط خارجيًا لأنه غير صالح أو يحتوي بيانات اعتماد أو محارف مخادعة.');
+      return;
+    }
     void WebBrowser.openBrowserAsync(tab.url).catch(()=>Alert.alert('RAID Browser','تعذر فتح الرابط في متصفح خارجي.'));
   };
 

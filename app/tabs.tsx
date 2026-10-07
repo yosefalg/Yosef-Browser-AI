@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, BackHandler, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -146,6 +146,14 @@ export default function TabsScreen(){
   };
 
   const exitSelection=()=>{setSelectionMode(false);setSelectedIds([]);};
+  useEffect(()=>{
+    if(!selectionMode)return;
+    const subscription=BackHandler.addEventListener('hardwareBackPress',()=>{
+      exitSelection();
+      return true;
+    });
+    return()=>subscription.remove();
+  },[selectionMode]);
   const startSelection=(tab:BrowserTab)=>{if(busyRef.current)return;setMenuTab(null);setSelectionMode(true);setSelectedIds([tab.id]);};
   const toggleSelection=(id:number)=>{
     setSelectedIds(current=>{

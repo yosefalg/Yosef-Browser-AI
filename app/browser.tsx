@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Keyboard, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Keyboard, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
@@ -357,6 +357,9 @@ export default function BrowserScreen() {
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaWebKey, setMediaWebKey] = useState(0);
+  const [mediaPlayerLoading, setMediaPlayerLoading] = useState(false);
+  const [mediaPlayerError, setMediaPlayerError] = useState('');
   const [tabCount, setTabCount] = useState(0);
 
   useEffect(() => {
@@ -404,6 +407,12 @@ export default function BrowserScreen() {
     setReader(null);
   }, [cancelSpeech]);
 
+  const closeMediaPlayer = useCallback(() => {
+    setMediaOpen(false);
+    setMediaPlayerLoading(false);
+    setMediaPlayerError('');
+  }, []);
+
   useFocusEffect(useCallback(() => {
     refreshVpnStatus();
     refreshPerformance();
@@ -414,7 +423,7 @@ export default function BrowserScreen() {
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (reader) { closeReader(); return true; }
-      if (mediaOpen) { setMediaOpen(false); return true; }
+      if (mediaOpen) { closeMediaPlayer(); return true; }
       if (siteInfoOpen) { setSiteInfoOpen(false); return true; }
       if (menuOpen) { setMenuOpen(false); return true; }
       if (addressFocused) {
@@ -431,7 +440,7 @@ export default function BrowserScreen() {
       return false;
     });
     return () => subscription.remove();
-  }, [addressFocused, closeReader, loadedUrl, mediaOpen, menuOpen, reader, siteInfoOpen]));
+  }, [addressFocused, closeMediaPlayer, closeReader, loadedUrl, mediaOpen, menuOpen, reader, siteInfoOpen]));
 
   useEffect(() => {
     let alive = true;
@@ -724,7 +733,24 @@ export default function BrowserScreen() {
     if (!safeExternalUrl(candidate)) return;
     setMediaUrl(candidate);
     setMediaUrls((current) => current.includes(candidate) ? current : [candidate, ...current].slice(0, 12));
+    setMediaPlayerError('');
+    setMediaPlayerLoading(true);
+    setMediaWebKey((value) => value + 1);
     setMediaOpen(true);
+  };
+
+  const selectMediaSource = (candidate: string) => {
+    if (candidate === mediaUrl && !mediaPlayerError) return;
+    setMediaUrl(candidate);
+    setMediaPlayerError('');
+    setMediaPlayerLoading(true);
+    setMediaWebKey((value) => value + 1);
+  };
+
+  const retryMediaPlayer = () => {
+    setMediaPlayerError('');
+    setMediaPlayerLoading(true);
+    setMediaWebKey((value) => value + 1);
   };
 
   const handleFileDownload = (downloadUrl: string) => {
@@ -890,7 +916,7 @@ export default function BrowserScreen() {
       return;
     }
     if (raw === 'RAID_MEDIA_CLOSE') {
-      setMediaOpen(false);
+      closeMediaPlayer();
       return;
     }
     if (raw === 'RAID_MEDIA_STATUS:SOURCE_ERROR') return;
@@ -1277,32 +1303,57 @@ export default function BrowserScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={mediaOpen} animationType="slide" onRequestClose={() => setMediaOpen(false)}>
+      <Modal visible={mediaOpen} animationType="slide" onRequestClose={closeMediaPlayer}>
         <SafeAreaView style={styles.mediaRoot} edges={['top','bottom','left','right']}>
           <View style={styles.mediaTop}>
-            <Pressable onPress={() => setMediaOpen(false)} style={styles.mediaClose} accessibilityRole="button" accessibilityLabel="إغلاق مشغل الفيديو"><Text style={styles.mediaCloseText}>×</Text></Pressable>
+            <Pressable onPress={closeMediaPlayer} style={styles.mediaClose} accessibilityRole="button" accessibilityLabel="إغلاق مشغل الفيديو"><Text style={styles.mediaCloseText}>×</Text></Pressable>
             <View style={styles.mediaHeading}><Text style={styles.mediaTitle}>RAID Media Player</Text><Text numberOfLines={1} style={styles.mediaHost}>{hostOf(mediaUrl)}</Text></View>
             <Pressable onPress={shareMedia} style={styles.mediaAction} accessibilityRole="button" accessibilityLabel="مشاركة رابط الفيديو"><Ionicons name="share-social-outline" size={19} color="#E2E8F0" /></Pressable>
           </View>
-          {!!mediaUrl && <WebView
-            key={mediaUrl}
-            source={{ html: playerHtml, baseUrl: loadedUrl }}
-            style={styles.mediaWeb}
-            javaScriptEnabled
-            domStorageEnabled={false}
-            cacheEnabled
-            sharedCookiesEnabled={!privateMode}
-            thirdPartyCookiesEnabled={!privateMode && sitePrefs.thirdPartyCookies}
-            allowsFullscreenVideo
-            mediaPlaybackRequiresUserAction={false}
-            setSupportMultipleWindows={false}
-            originWhitelist={['http://*','https://*','about:blank']}
-            allowFileAccess={false}
-            allowUniversalAccessFromFileURLs={false}
-            onMessage={onMediaMessage}
-          />}
+          <View style={styles.mediaStage}>
+            {!!mediaUrl && <WebView
+              key={`${mediaUrl}-${mediaWebKey}`}
+              source={{ html: playerHtml, baseUrl: loadedUrl }}
+              style={styles.mediaWeb}
+              javaScriptEnabled
+              domStorageEnabled={false}
+              cacheEnabled
+              sharedCookiesEnabled={!privateMode}
+              thirdPartyCookiesEnabled={!privateMode && sitePrefs.thirdPartyCookies}
+              allowsFullscreenVideo
+              mediaPlaybackRequiresUserAction={false}
+              setSupportMultipleWindows={false}
+              originWhitelist={['http://*','https://*','about:blank']}
+              allowFileAccess={false}
+              allowUniversalAccessFromFileURLs={false}
+              onLoadStart={() => {
+                setMediaPlayerLoading(true);
+                setMediaPlayerError('');
+              }}
+              onLoadEnd={() => setMediaPlayerLoading(false)}
+              onError={(event) => {
+                setMediaPlayerLoading(false);
+                setMediaPlayerError(event.nativeEvent.description || 'تعذر فتح مشغل الوسائط.');
+              }}
+              onRenderProcessGone={() => {
+                setMediaPlayerLoading(false);
+                setMediaPlayerError('توقف محرك مشغل الوسائط. يمكنك استعادته دون مغادرة الصفحة.');
+              }}
+              onMessage={onMediaMessage}
+            />}
+            {mediaPlayerLoading && !mediaPlayerError && <View pointerEvents="none" style={styles.mediaLoading} accessibilityRole="progressbar" accessibilityLabel="جار تجهيز مشغل الوسائط"><ActivityIndicator size="large" color="#D5AA88" /><Text style={styles.mediaLoadingText}>جار تجهيز المشغل…</Text></View>}
+            {!!mediaPlayerError && <View style={styles.mediaError} accessibilityRole="alert">
+              <Ionicons name="warning-outline" size={30} color="#D8A56F" />
+              <Text style={styles.mediaErrorTitle}>توقف مشغل الوسائط</Text>
+              <Text style={styles.mediaErrorText} numberOfLines={3}>{mediaPlayerError}</Text>
+              <View style={styles.mediaErrorActions}>
+                <Pressable onPress={retryMediaPlayer} style={styles.mediaRetry} accessibilityRole="button" accessibilityLabel="إعادة تشغيل مشغل الوسائط"><Text style={styles.mediaRetryText}>إعادة التشغيل</Text></Pressable>
+                <Pressable onPress={closeMediaPlayer} style={styles.mediaErrorClose} accessibilityRole="button"><Text style={styles.mediaErrorCloseText}>العودة للصفحة</Text></Pressable>
+              </View>
+            </View>}
+          </View>
           {mediaUrls.length > 1 && <View style={styles.mediaSourceBar}><Text style={styles.mediaSourceLabel}>المصادر المتاحة</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaSources}>
-            {mediaUrls.map((candidate, index) => <Pressable key={`${candidate}-${index}`} onPress={() => setMediaUrl(candidate)} accessibilityRole="button" accessibilityLabel={`تشغيل المصدر ${index + 1}`} style={[styles.mediaSource, candidate === mediaUrl && styles.mediaSourceOn]}><Text style={styles.mediaSourceText}>مصدر {index + 1}</Text></Pressable>)}
+            {mediaUrls.map((candidate, index) => <Pressable key={`${candidate}-${index}`} onPress={() => selectMediaSource(candidate)} accessibilityRole="button" accessibilityLabel={`تشغيل المصدر ${index + 1}`} accessibilityState={{ selected: candidate === mediaUrl }} style={[styles.mediaSource, candidate === mediaUrl && styles.mediaSourceOn]}><Text style={styles.mediaSourceText}>مصدر {index + 1}</Text></Pressable>)}
           </ScrollView></View>}
         </SafeAreaView>
       </Modal>
@@ -1343,7 +1394,7 @@ const styles = StyleSheet.create({
   bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:7,backgroundColor:'#242725',borderTopWidth:1,borderTopColor:'#3D403D'},nav:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},disabled:{opacity:.25},navPrimary:{width:44,height:44,borderRadius:16,backgroundColor:'#3A3D3A',alignItems:'center',justifyContent:'center'},vpn:{minWidth:52,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:4,backgroundColor:'#343A36',paddingHorizontal:7},vpnOn:{backgroundColor:'#315044'},vpnText:{fontSize:10,fontWeight:'900',color:'#D1FAE5'},ai:{width:42,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#8B654E'},aiDisabled:{opacity:.3},aiText:{fontSize:11,fontWeight:'900',color:'#fff'},
   overlay:{flex:1,backgroundColor:'rgba(0,0,0,.48)',alignItems:'flex-end',paddingHorizontal:12},menuCard:{width:292,maxWidth:'90%',maxHeight:'100%',borderRadius:22,backgroundColor:'#2D302E',borderWidth:1,borderColor:'#4C504C',overflow:'hidden'},menuContent:{paddingBottom:5},menuHeader:{paddingHorizontal:17,paddingVertical:14,borderBottomWidth:1,borderBottomColor:'#4C504C'},menuTitle:{color:'#FFF9F2',fontSize:16,fontWeight:'900'},menuHost:{color:'#B9B1A9',fontSize:11,marginTop:3},menuItem:{minHeight:48,flexDirection:'row',alignItems:'center',paddingHorizontal:15,gap:12},menuText:{flex:1,color:'#EEE8E2',fontSize:14,fontWeight:'700'},menuDivider:{height:1,backgroundColor:'#4C504C',marginVertical:3},
   centerOverlay:{flex:1,backgroundColor:'rgba(0,0,0,.60)',alignItems:'center',justifyContent:'center',padding:22},siteCard:{width:'100%',maxWidth:420,borderRadius:27,padding:22,backgroundColor:'#2D302E',borderWidth:1,borderColor:'#4C504C'},siteHeaderIcon:{width:46,height:46,borderRadius:16,alignSelf:'center',alignItems:'center',justifyContent:'center',backgroundColor:'#3A3D3A',marginBottom:10},siteTitle:{color:'#FFF9F2',fontSize:20,fontWeight:'900',textAlign:'center'},siteState:{color:'#7FB890',fontSize:13,fontWeight:'900',textAlign:'center',marginTop:10},siteWarn:{color:'#D8A56F'},siteHost:{color:'#D5AA88',fontSize:12,textAlign:'center',marginTop:7},siteBody:{color:'#CFC7BF',fontSize:12,lineHeight:19,textAlign:'center',marginTop:12},siteControls:{marginTop:18,borderTopWidth:1,borderBottomWidth:1,borderColor:'#474B47'},siteControlRow:{minHeight:68,flexDirection:'row-reverse',alignItems:'center',gap:12,paddingVertical:8,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:'#474B47'},siteControlCopy:{flex:1},siteControlTitle:{color:'#F7F1EA',fontWeight:'900',fontSize:13,textAlign:'right'},siteControlHint:{color:'#AFA79F',fontSize:10,lineHeight:15,textAlign:'right',marginTop:3},privateSiteNote:{color:'#CDAF9B',fontSize:10,lineHeight:15,textAlign:'center',marginTop:12},siteReset:{height:44,borderRadius:14,borderWidth:1,borderColor:'#5B514A',backgroundColor:'#373A37',alignItems:'center',justifyContent:'center',flexDirection:'row',gap:7,marginTop:14},siteResetText:{color:'#E7DED5',fontSize:11,fontWeight:'800'},siteClose:{height:48,borderRadius:15,backgroundColor:'#B88766',alignItems:'center',justifyContent:'center',marginTop:14},siteCloseText:{color:'#fff',fontWeight:'900'},
-  mediaRoot:{flex:1,backgroundColor:'#03060A'},mediaTop:{height:62,flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:12,backgroundColor:'#0A1020',borderBottomWidth:1,borderBottomColor:'#1E293B'},mediaClose:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},mediaCloseText:{color:'#fff',fontSize:25,fontWeight:'900'},mediaHeading:{flex:1},mediaTitle:{color:'#fff',fontSize:15,fontWeight:'900'},mediaHost:{color:'#94A3B8',fontSize:11,marginTop:2},mediaAction:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},mediaWeb:{flex:1,backgroundColor:'#000'},mediaSourceBar:{backgroundColor:'#0A1020',borderTopWidth:1,borderTopColor:'#1E293B',paddingTop:6,maxHeight:82},mediaSourceLabel:{color:'#94A3B8',fontSize:10,fontWeight:'800',textAlign:'right',paddingHorizontal:12},mediaSources:{paddingHorizontal:10,paddingVertical:8,gap:7},mediaSource:{height:36,paddingHorizontal:13,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#263348'},mediaSourceOn:{backgroundColor:'#8B654E',borderColor:'#B88766'},mediaSourceText:{color:'#fff',fontSize:11,fontWeight:'800'},
+  mediaRoot:{flex:1,backgroundColor:'#03060A'},mediaTop:{height:62,flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:12,backgroundColor:'#0A1020',borderBottomWidth:1,borderBottomColor:'#1E293B'},mediaClose:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},mediaCloseText:{color:'#fff',fontSize:25,fontWeight:'900'},mediaHeading:{flex:1},mediaTitle:{color:'#fff',fontSize:15,fontWeight:'900'},mediaHost:{color:'#94A3B8',fontSize:11,marginTop:2},mediaAction:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},mediaStage:{flex:1,position:'relative',backgroundColor:'#000'},mediaWeb:{flex:1,backgroundColor:'#000'},mediaLoading:{...StyleSheet.absoluteFillObject,alignItems:'center',justifyContent:'center',gap:12,backgroundColor:'#03060A'},mediaLoadingText:{color:'#CBD5E1',fontSize:12,fontWeight:'800'},mediaError:{...StyleSheet.absoluteFillObject,alignItems:'center',justifyContent:'center',padding:24,backgroundColor:'#090E18'},mediaErrorTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'center',marginTop:10},mediaErrorText:{color:'#C8D0DB',fontSize:12,lineHeight:18,textAlign:'center',marginTop:8,maxWidth:360},mediaErrorActions:{width:'100%',maxWidth:360,flexDirection:'row-reverse',gap:9,marginTop:20},mediaRetry:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#8B654E'},mediaRetryText:{color:'#fff',fontSize:12,fontWeight:'900'},mediaErrorClose:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#263348'},mediaErrorCloseText:{color:'#E2E8F0',fontSize:12,fontWeight:'800'},mediaSourceBar:{backgroundColor:'#0A1020',borderTopWidth:1,borderTopColor:'#1E293B',paddingTop:6,maxHeight:82},mediaSourceLabel:{color:'#94A3B8',fontSize:10,fontWeight:'800',textAlign:'right',paddingHorizontal:12},mediaSources:{paddingHorizontal:10,paddingVertical:8,gap:7},mediaSource:{height:36,paddingHorizontal:13,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#263348'},mediaSourceOn:{backgroundColor:'#8B654E',borderColor:'#B88766'},mediaSourceText:{color:'#fff',fontSize:11,fontWeight:'800'},
   readerRoot:{flex:1},readerDark:{backgroundColor:'#0C1018'},readerLight:{backgroundColor:'#F6F1E7'},readerTop:{height:62,flexDirection:'row',alignItems:'center',paddingHorizontal:12,gap:10,borderBottomWidth:1,borderBottomColor:'#334155'},readerBtn:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerBtnText:{color:'#fff',fontSize:22,fontWeight:'800'},readerTitle:{flex:1,color:'#fff',fontSize:15,fontWeight:'800'},readerInk:{color:'#241F1A'},readerContent:{paddingHorizontal:24,paddingTop:26,paddingBottom:80,maxWidth:760,width:'100%',alignSelf:'center'},readerHeadline:{fontSize:28,lineHeight:38,color:'#F8FAFC',fontWeight:'900',marginBottom:22},readerBody:{color:'#E2E8F0'},readerRtl:{textAlign:'right',writingDirection:'rtl'},readerLtr:{textAlign:'left',writingDirection:'ltr'},readerTools:{height:64,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,borderTopWidth:1,borderTopColor:'#334155'},readerTool:{minWidth:58,height:42,borderRadius:13,backgroundColor:'#1E293B',alignItems:'center',justifyContent:'center',paddingHorizontal:9},readerToolText:{color:'#fff',fontWeight:'800',fontSize:12},
   pageShield:{width:'100%',marginTop:14,flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:12,paddingVertical:11,borderRadius:16,backgroundColor:'#233831',borderWidth:1,borderColor:'#365D50'},
   pageShieldOff:{backgroundColor:'#292C2A',borderColor:'#414542'},

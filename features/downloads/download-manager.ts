@@ -70,6 +70,11 @@ function mimeTypeForFile(fileName: string) {
   return extension ? EXTENSION_MIME_TYPES[extension] : undefined;
 }
 
+function normalizedMimeType(value?: string | null) {
+  const mimeType = value?.split(';')[0]?.trim().toLowerCase() || '';
+  return /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/.test(mimeType) ? mimeType : null;
+}
+
 function headerValue(headers: Record<string, string> | undefined, name: string) {
   if (!headers) return null;
   const key = Object.keys(headers).find(item => item.toLowerCase() === name.toLowerCase());
@@ -239,6 +244,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
 
     const current = await getDownload(id);
     const responseHeaders = (result as { headers?: Record<string, string> }).headers;
+    const responseMimeType = normalizedMimeType(headerValue(responseHeaders, 'content-type')) || current?.mime_type || null;
     const resolvedName = preferredFileName(current?.file_name || safeFileName(current?.url || result.uri), responseHeaders);
     let finalUri = result.uri;
     if (current && resolvedName !== current.file_name) {
@@ -257,6 +263,7 @@ async function runTask(id: number, task: FileSystem.DownloadResumable) {
       state: 'completed',
       progress: 1,
       file_name: resolvedName,
+      mime_type: responseMimeType,
       local_uri: finalUri,
       total_bytes: finalSize,
       written_bytes: finalSize || undefined,
@@ -477,7 +484,7 @@ export async function openDownload(id: number) {
   if (!available) throw new Error('لا يوجد تطبيق مناسب لفتح هذا الملف.');
   await Sharing.shareAsync(item.local_uri, {
     dialogTitle: `فتح ${item.file_name} باستخدام`,
-    mimeType: mimeTypeForFile(item.file_name),
+    mimeType: item.mime_type || mimeTypeForFile(item.file_name),
   });
 }
 
@@ -493,7 +500,7 @@ export async function shareDownload(id: number) {
   if (!available) throw new Error('المشاركة غير متاحة على هذا الجهاز.');
   await Sharing.shareAsync(item.local_uri, {
     dialogTitle: `مشاركة ${item.file_name}`,
-    mimeType: mimeTypeForFile(item.file_name),
+    mimeType: item.mime_type || mimeTypeForFile(item.file_name),
   });
 }
 

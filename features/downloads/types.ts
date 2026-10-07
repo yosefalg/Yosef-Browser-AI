@@ -4,6 +4,7 @@ export type DownloadItem = {
   id: number;
   url: string;
   file_name: string;
+  mime_type: string | null;
   local_uri: string | null;
   referer: string | null;
   state: DownloadState;

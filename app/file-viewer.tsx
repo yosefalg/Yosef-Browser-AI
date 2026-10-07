@@ -13,12 +13,16 @@ import { getTheme, isThemeName, type ThemeName } from '@/lib/theme';
 const TEXT_EXTENSIONS = ['txt','md','json','csv','log','xml','html','htm','css','js','ts'];
 const IMAGE_EXTENSIONS = ['jpg','jpeg','png','webp'];
 const STRUCTURED_EXTENSIONS = ['json','csv','log','xml','html','htm','css','js','ts'];
+const IMAGE_MIME_TYPES = ['image/jpeg','image/png','image/webp'];
+const TEXT_MIME_TYPES = ['application/json','application/xml','application/xhtml+xml','application/javascript'];
 const MAX_INTERNAL_TEXT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_FONT_SIZE = 18;
 const MIN_FONT_SIZE = 13;
 const MAX_FONT_SIZE = 34;
 
 function extension(name:string){return name.toLowerCase().split('?')[0].split('#')[0].split('.').pop()||'';}
+function isImage(name:string,mimeType:string){return IMAGE_EXTENSIONS.includes(extension(name))||IMAGE_MIME_TYPES.includes(mimeType);}
+function isText(name:string,mimeType:string){return TEXT_EXTENSIONS.includes(extension(name))||mimeType.startsWith('text/')||TEXT_MIME_TYPES.includes(mimeType);}
 
 function readerTextStyle(name:string,content:string):TextStyle{
   const structured=STRUCTURED_EXTENSIONS.includes(extension(name));
@@ -79,12 +83,12 @@ export default function FileViewerScreen(){
         const info=await FileSystem.getInfoAsync(item.local_uri);
         if(!info.exists)throw new Error('الملف لم يعد موجودًا على الجهاز.');
         if(active){setName(item.file_name);setCanOpenExternal(true);}
-        const fileExtension=extension(item.file_name);
-        if(IMAGE_EXTENSIONS.includes(fileExtension)){
+        const mimeType=item.mime_type?.toLowerCase()||'';
+        if(isImage(item.file_name,mimeType)){
           if(active)setImageUri(item.local_uri);
           return;
         }
-        if(!TEXT_EXTENSIONS.includes(fileExtension))throw new Error('هذا النوع يحتاج عارضًا متخصصًا. يمكنك فتحه بتطبيق مناسب من زر الفتح الخارجي.');
+        if(!isText(item.file_name,mimeType))throw new Error('هذا النوع يحتاج عارضًا متخصصًا. يمكنك فتحه بتطبيق مناسب من زر الفتح الخارجي.');
         const size='size' in info&&typeof info.size==='number'?info.size:0;
         if(size>MAX_INTERNAL_TEXT_BYTES)throw new Error('الملف كبير للعرض الداخلي الآمن. استخدم الفتح الخارجي لهذا الملف.');
         const text=await FileSystem.readAsStringAsync(item.local_uri,{encoding:FileSystem.EncodingType.UTF8});

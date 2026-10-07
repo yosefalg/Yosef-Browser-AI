@@ -24,6 +24,7 @@ async function migrate(d: SQLite.SQLiteDatabase) {
   if (!names.has('eta_seconds')) await d.execAsync('ALTER TABLE downloads ADD COLUMN eta_seconds INTEGER;');
   if (!names.has('resume_data')) await d.execAsync('ALTER TABLE downloads ADD COLUMN resume_data TEXT;');
   if (!names.has('referer')) await d.execAsync('ALTER TABLE downloads ADD COLUMN referer TEXT;');
+  if (!names.has('mime_type')) await d.execAsync('ALTER TABLE downloads ADD COLUMN mime_type TEXT;');
   migrated = true;
 }
 
@@ -43,6 +44,7 @@ async function db() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       url TEXT NOT NULL,
       file_name TEXT NOT NULL,
+      mime_type TEXT,
       local_uri TEXT,
       referer TEXT,
       state TEXT NOT NULL,
@@ -66,19 +68,19 @@ export async function createDownload(url: string, fileName: string, localUri: st
   const d = await db();
   const now = Date.now();
   const result = await d.runAsync(
-    'INSERT INTO downloads (url,file_name,local_uri,referer,state,progress,total_bytes,written_bytes,speed_bps,eta_seconds,resume_data,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    url, fileName, localUri, referer, 'queued', 0, null, 0, 0, null, null, null, now, now,
+    'INSERT INTO downloads (url,file_name,mime_type,local_uri,referer,state,progress,total_bytes,written_bytes,speed_bps,eta_seconds,resume_data,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    url, fileName, null, localUri, referer, 'queued', 0, null, 0, 0, null, null, null, now, now,
   );
   emitDownloadsChanged();
   return Number(result.lastInsertRowId);
 }
 
-export async function updateDownload(id: number, patch: Partial<Pick<DownloadItem, 'state'|'progress'|'total_bytes'|'written_bytes'|'speed_bps'|'eta_seconds'|'resume_data'|'error'|'local_uri'|'file_name'>>) {
+export async function updateDownload(id: number, patch: Partial<Pick<DownloadItem, 'state'|'progress'|'total_bytes'|'written_bytes'|'speed_bps'|'eta_seconds'|'resume_data'|'error'|'local_uri'|'file_name'|'mime_type'>>) {
   const d = await db();
   const current = await d.getFirstAsync<DownloadItem>('SELECT * FROM downloads WHERE id=?', id);
   if (!current) return;
   await d.runAsync(
-    'UPDATE downloads SET state=?,progress=?,total_bytes=?,written_bytes=?,speed_bps=?,eta_seconds=?,resume_data=?,error=?,local_uri=?,file_name=?,updated_at=? WHERE id=?',
+    'UPDATE downloads SET state=?,progress=?,total_bytes=?,written_bytes=?,speed_bps=?,eta_seconds=?,resume_data=?,error=?,local_uri=?,file_name=?,mime_type=?,updated_at=? WHERE id=?',
     patch.state ?? current.state,
     patch.progress ?? current.progress,
     patch.total_bytes === undefined ? current.total_bytes : patch.total_bytes,
@@ -89,6 +91,7 @@ export async function updateDownload(id: number, patch: Partial<Pick<DownloadIte
     patch.error === undefined ? current.error : patch.error,
     patch.local_uri === undefined ? current.local_uri : patch.local_uri,
     patch.file_name === undefined ? current.file_name : patch.file_name,
+    patch.mime_type === undefined ? current.mime_type : patch.mime_type,
     Date.now(), id,
   );
   emitDownloadsChanged();

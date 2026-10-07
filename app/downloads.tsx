@@ -13,6 +13,11 @@ type Filter = 'all' | 'active' | 'completed' | 'failed';
 type KindFilter = 'all' | 'media' | 'documents' | 'apps' | 'archives' | 'other';
 
 function downloadKind(item:DownloadItem):Exclude<KindFilter,'all'>{
+  const mimeType=item.mime_type?.toLowerCase()||'';
+  if(mimeType.startsWith('audio/')||mimeType.startsWith('video/')||mimeType.startsWith('image/'))return 'media';
+  if(mimeType.startsWith('text/')||['application/pdf','application/json','application/xml','application/epub+zip'].includes(mimeType))return 'documents';
+  if(['application/vnd.android.package-archive','application/x-msdownload'].includes(mimeType))return 'apps';
+  if(['application/zip','application/x-rar-compressed','application/x-7z-compressed','application/gzip','application/x-tar'].includes(mimeType))return 'archives';
   const candidates=[item.file_name,item.url].flatMap((value)=>{
     const raw=String(value||'').toLowerCase();
     try {
@@ -34,6 +39,9 @@ function raidViewerKind(item: DownloadItem):'text'|'image'|null {
   const name = String(item.file_name || '').toLowerCase().split(/[?#]/)[0];
   if(['.txt','.md','.json','.csv','.log','.xml','.html','.htm','.css','.js','.ts'].some(extension => name.endsWith(extension)))return 'text';
   if(['.jpg','.jpeg','.png','.webp'].some(extension => name.endsWith(extension)))return 'image';
+  const mimeType=item.mime_type?.toLowerCase()||'';
+  if(['image/jpeg','image/png','image/webp'].includes(mimeType))return 'image';
+  if(mimeType.startsWith('text/')||['application/json','application/xml','application/xhtml+xml','application/javascript'].includes(mimeType))return 'text';
   return null;
 }
 

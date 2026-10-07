@@ -313,6 +313,7 @@ export default function BrowserScreen() {
   const rendererFailures = useRef<number[]>([]);
   const rendererNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const postLoadWorkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualMediaRequest = useRef(false);
   const pendingPageDownload = useRef('');
   const pendingExternalRequest = useRef('');
@@ -445,6 +446,7 @@ export default function BrowserScreen() {
       subscription.remove();
       if (rendererNoticeTimer.current) clearTimeout(rendererNoticeTimer.current);
       if (postLoadWorkTimer.current) clearTimeout(postLoadWorkTimer.current);
+      if (addressBlurTimer.current) clearTimeout(addressBlurTimer.current);
       speechGeneration.current += 1;
       void Speech.stop();
     };
@@ -1011,7 +1013,15 @@ export default function BrowserScreen() {
   const host = hostOf(loadedUrl);
   const addressValue = addressFocused ? input : host;
   const visibleSuggestions = addressFocused && !privateMode ? historySuggestions.filter((item) => { const value=input.trim().toLowerCase(); return !value || `${item.title} ${item.url}`.toLowerCase().includes(value); }).slice(0,5) : [];
-  const openHistorySuggestion = (item:{url:string}) => { Keyboard.dismiss(); setAddressFocused(false); setHistorySuggestions([]); setInput(item.url); setUrl(item.url); };
+  const openHistorySuggestion = (item:{url:string}) => {
+    if (addressBlurTimer.current) clearTimeout(addressBlurTimer.current);
+    addressBlurTimer.current = null;
+    Keyboard.dismiss();
+    setAddressFocused(false);
+    setHistorySuggestions([]);
+    setInput(item.url);
+    setUrl(item.url);
+  };
   const playerHtml = useMemo(() => mediaUrl ? mediaPlayerHtml(mediaUrl) : '', [mediaUrl]);
   const hasCustomSitePrefs = sitePrefs.desktopMode || !sitePrefs.thirdPartyCookies || !sitePrefs.autoplayMedia || !sitePrefs.adBlock;
 
@@ -1025,8 +1035,20 @@ export default function BrowserScreen() {
           </Pressable>
           <TextInput
             value={addressValue}
-            onFocus={() => { setAddressFocused(true); setInput(loadedUrl); if (!privateMode) void getRecentSites(40).then(setHistorySuggestions).catch(() => setHistorySuggestions([])); }}
-            onBlur={() => setAddressFocused(false)}
+            onFocus={() => {
+              if (addressBlurTimer.current) clearTimeout(addressBlurTimer.current);
+              addressBlurTimer.current = null;
+              setAddressFocused(true);
+              setInput(loadedUrl);
+              if (!privateMode) void getRecentSites(40).then(setHistorySuggestions).catch(() => setHistorySuggestions([]));
+            }}
+            onBlur={() => {
+              if (addressBlurTimer.current) clearTimeout(addressBlurTimer.current);
+              addressBlurTimer.current = setTimeout(() => {
+                addressBlurTimer.current = null;
+                setAddressFocused(false);
+              }, 150);
+            }}
             onChangeText={setInput}
             onSubmitEditing={go}
             autoCapitalize="none"
@@ -1061,10 +1083,11 @@ export default function BrowserScreen() {
       {visibleSuggestions.length>0 && <View style={styles.suggestionPanel}>
         {visibleSuggestions.map((item,index)=><Pressable
           key={item.url}
-          onPressIn={()=>openHistorySuggestion(item)}
+          onPress={()=>openHistorySuggestion(item)}
           accessibilityRole="button"
           accessibilityLabel={`فتح ${item.title||hostOf(item.url)} من سجل التصفح`}
-          style={[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider]}>
+          accessibilityHint="يفتح الموقع بعد رفع إصبعك"
+          style={({pressed})=>[styles.suggestionRow,index<visibleSuggestions.length-1&&styles.suggestionDivider,pressed&&styles.suggestionPressed]}>
           <Ionicons name="time-outline" size={17} color="#D5AA88"/>
           <View style={styles.suggestionCopy}><Text numberOfLines={1} style={styles.suggestionTitle}>{item.title||hostOf(item.url)}</Text><Text numberOfLines={1} style={styles.suggestionUrl}>{item.url}</Text></View>
           <Ionicons name="arrow-back-outline" size={16} color="#8E969F"/>
@@ -1303,7 +1326,7 @@ const styles = StyleSheet.create({
   icon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#303330'},
   tabsButton:{position:'relative'},tabCountBadge:{position:'absolute',top:-4,right:-4,minWidth:20,height:20,paddingHorizontal:4,borderRadius:10,alignItems:'center',justifyContent:'center',backgroundColor:'#B88766',borderWidth:2,borderColor:'#242725'},tabCountText:{color:'#fff',fontSize:9,fontWeight:'900',fontVariant:['tabular-nums']},
   omni:{flex:1,height:42,borderRadius:16,backgroundColor:'#303330',flexDirection:'row',alignItems:'center',paddingHorizontal:9,borderWidth:1,borderColor:'#484B47'},securityButton:{width:28,height:38,alignItems:'center',justifyContent:'center'},input:{flex:1,color:'#F8F3EE',fontSize:14,paddingVertical:0,textAlign:'left'},clearAddress:{width:30,height:38,alignItems:'center',justifyContent:'center'},siteBadge:{width:24,height:24,borderRadius:9,alignItems:'center',justifyContent:'center',backgroundColor:'#41443F'},
-  suggestionPanel:{backgroundColor:'#252927',borderBottomWidth:1,borderBottomColor:'#454A46',paddingHorizontal:10},suggestionRow:{minHeight:52,flexDirection:'row',alignItems:'center',gap:9,paddingHorizontal:8},suggestionDivider:{borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:'#454A46'},suggestionCopy:{flex:1},suggestionTitle:{color:'#F2EEE9',fontSize:12,fontWeight:'800',textAlign:'right'},suggestionUrl:{color:'#8E969F',fontSize:9,marginTop:3,textAlign:'right'},
+  suggestionPanel:{backgroundColor:'#252927',borderBottomWidth:1,borderBottomColor:'#454A46',paddingHorizontal:10},suggestionRow:{minHeight:52,flexDirection:'row',alignItems:'center',gap:9,paddingHorizontal:8},suggestionPressed:{backgroundColor:'#303532'},suggestionDivider:{borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:'#454A46'},suggestionCopy:{flex:1},suggestionTitle:{color:'#F2EEE9',fontSize:12,fontWeight:'800',textAlign:'right'},suggestionUrl:{color:'#8E969F',fontSize:9,marginTop:3,textAlign:'right'},
   private:{paddingVertical:6,paddingHorizontal:12,backgroundColor:'#3A302E'},privateText:{color:'#E7C9B6',fontSize:11,textAlign:'center',fontWeight:'700'},rendererNotice:{paddingVertical:7,paddingHorizontal:12,backgroundColor:'#343735',borderBottomWidth:1,borderBottomColor:'#555A55'},rendererNoticeText:{color:'#E7DED5',fontSize:11,textAlign:'center',fontWeight:'800'},
   progressTrack:{height:3,backgroundColor:'#282B29',overflow:'hidden'},progress:{height:3,backgroundColor:'#D5AA88'},webWrap:{flex:1,backgroundColor:'#fff'},web:{flex:1},
   errorCard:{position:'absolute',left:20,right:20,top:26,padding:22,borderRadius:22,backgroundColor:'#2B2E2C',borderWidth:1,borderColor:'#4B4F4B',shadowColor:'#000',shadowOpacity:.22,shadowRadius:14,elevation:8},errorTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'center'},errorHost:{color:'#D5AA88',fontSize:12,fontWeight:'800',textAlign:'center',marginTop:6},errorText:{color:'#D9D2CB',fontSize:13,lineHeight:19,textAlign:'center',marginTop:10},errorActions:{flexDirection:'row-reverse',gap:10,marginTop:18},retryBtn:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#B88766'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#3B3E3B'},errorSecondaryText:{color:'#D9D2CB',fontWeight:'800'},

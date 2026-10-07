@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,6 +64,13 @@ function eta(value: number | null) {
 
 function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return 'ملف مباشر';}}
 
+function searchableDownloadText(item: DownloadItem) {
+  const rawUrl = String(item.url || '');
+  let decodedUrl = rawUrl;
+  try { decodedUrl = decodeURIComponent(rawUrl); } catch {}
+  return `${item.file_name || ''} ${hostOf(rawUrl)} ${decodedUrl}`.toLocaleLowerCase('ar');
+}
+
 function stateText(item: DownloadItem) {
   if (item.state === 'completed') return 'مكتمل';
   if (item.state === 'downloading') return `${Math.round(item.progress * 100)}%`;
@@ -87,6 +94,7 @@ export default function DownloadsScreen() {
   const [refreshError, setRefreshError] = useState(false);
   const [filter,setFilter] = useState<Filter>('all');
   const [kindFilter,setKindFilter] = useState<KindFilter>('all');
+  const [query,setQuery] = useState('');
   const [themeName,setThemeName] = useState<ThemeName>('cinematic');
   const [operationBusy,setOperationBusy] = useState(false);
   const refreshInFlight = useRef(false);
@@ -171,10 +179,14 @@ export default function DownloadsScreen() {
     return { active, running: running.length, paused: paused.length, completed, failed, written, speed, remainingBytes, remainingSeconds, aggregateProgress, unknownSize };
   }, [items]);
 
-  const visible = useMemo(()=>items.filter(item=>{
-    const stateMatches=filter==='active'?item.state==='downloading'||item.state==='paused'||item.state==='queued':filter==='completed'?item.state==='completed':filter==='failed'?item.state==='failed'||item.state==='cancelled':true;
-    return stateMatches&&(kindFilter==='all'||downloadKind(item)===kindFilter);
-  }),[items,filter,kindFilter]);
+  const visible = useMemo(()=>{
+    const searchQuery=query.trim().toLocaleLowerCase('ar');
+    return items.filter(item=>{
+      const stateMatches=filter==='active'?item.state==='downloading'||item.state==='paused'||item.state==='queued':filter==='completed'?item.state==='completed':filter==='failed'?item.state==='failed'||item.state==='cancelled':true;
+      const typeMatches=kindFilter==='all'||downloadKind(item)===kindFilter;
+      return stateMatches&&typeMatches&&(!searchQuery||searchableDownloadText(item).includes(searchQuery));
+    });
+  },[items,filter,kindFilter,query]);
 
   const beginOperation = () => {
     if (operationInFlight.current) return false;
@@ -314,6 +326,23 @@ export default function DownloadsScreen() {
             <View style={[s.summaryItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="server-outline" size={18} color={theme.muted} /><Text numberOfLines={1} style={[s.summaryValueSmall,{color:theme.text}]}>{bytes(summary.written)}</Text><Text style={[s.summaryLabel,{color:theme.muted}]}>بيانات</Text></View>
           </View>
 
+          {items.length > 0 && <View style={[s.search,{backgroundColor:theme.surface,borderColor:theme.border}]}>
+            <Ionicons name="search-outline" size={20} color={query?theme.accent:theme.muted}/>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="ابحث باسم الملف أو الموقع"
+              placeholderTextColor={theme.muted}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              accessibilityLabel="البحث في التنزيلات"
+              style={[s.searchInput,{color:theme.text}]}
+            />
+            {!!query && <Pressable onPress={()=>setQuery('')} accessibilityRole="button" accessibilityLabel="مسح بحث التنزيلات" hitSlop={10} style={[s.clearSearch,{backgroundColor:theme.surface2}]}><Ionicons name="close" size={17} color={theme.muted}/></Pressable>}
+          </View>}
+          {!!query.trim() && <Text accessibilityLiveRegion="polite" style={[s.searchResult,{color:theme.muted}]}>{visible.length ? `${visible.length} نتيجة مطابقة` : 'لا توجد نتيجة مطابقة'}</Text>}
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filters}>
             {filters.map(item=>{const active=filter===item.key;return <Pressable key={item.key} onPress={()=>setFilter(item.key)} accessibilityRole="tab" accessibilityLabel={`${item.label}، ${item.count}`} accessibilityState={{selected:active}} style={({pressed})=>[s.filter,{backgroundColor:active?theme.accent:theme.surface,borderColor:active?theme.accent:theme.border},pressed&&s.press]}><Ionicons name={item.icon} size={16} color={active?'#fff':theme.muted}/><Text style={[s.filterText,{color:active?'#fff':theme.text}]}>{item.label}</Text><View style={[s.badge,{backgroundColor:active?'rgba(255,255,255,.18)':theme.surface2}]}><Text style={[s.badgeText,{color:active?'#fff':theme.muted}]}>{item.count}</Text></View></Pressable>})}
           </ScrollView>
@@ -337,7 +366,7 @@ export default function DownloadsScreen() {
           {items.length === 0 && !refreshError ? (
             <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={[s.emptyIcon,{backgroundColor:theme.surface2}]}><Ionicons name="cloud-download-outline" size={34} color={theme.accent} /></View><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد تنزيلات بعد</Text><Text style={[s.emptyText,{color:theme.muted}]}>عندما يبدأ RAID تنزيل ملف سيظهر هنا مع السرعة والوقت المتبقي والتحكم الكامل.</Text></View>
           ) : items.length > 0 && visible.length===0 ? (
-            <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="filter-outline" size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد عناصر هنا</Text><Text style={[s.emptyText,{color:theme.muted}]}>غيّر الفلتر لعرض بقية التنزيلات.</Text></View>
+            <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name={query.trim()?'search-outline':'filter-outline'} size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>{query.trim()?'لم نجد هذا الملف':'لا توجد عناصر هنا'}</Text><Text style={[s.emptyText,{color:theme.muted}]}>{query.trim()?'جرّب جزءًا من اسم الملف أو اسم الموقع، أو امسح البحث.':'غيّر الفلتر لعرض بقية التنزيلات.'}</Text>{!!query.trim()&&<Pressable onPress={()=>setQuery('')} accessibilityRole="button" accessibilityLabel="مسح بحث التنزيلات" style={[s.emptyClear,{backgroundColor:theme.accent}]}><Text style={s.emptyClearText}>مسح البحث</Text></Pressable>}</View>
           ) : visible.map((item) => {
             const remaining = eta(item.eta_seconds);
             const liveMeta = item.state === 'downloading' && item.speed_bps > 0
@@ -379,5 +408,6 @@ const s = StyleSheet.create({
   refreshError:{minHeight:72,padding:12,borderRadius:18,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:10},refreshErrorCopy:{flex:1},refreshErrorTitle:{fontSize:13,fontWeight:'900',textAlign:'right'},refreshErrorText:{fontSize:10,lineHeight:16,textAlign:'right',marginTop:2},retryRefresh:{width:40,height:40,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},
   livePanel:{padding:16,borderRadius:24,borderWidth:1,gap:10},liveTop:{flexDirection:'row-reverse',alignItems:'center',gap:11},liveIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},liveCopy:{flex:1,alignItems:'flex-end'},liveTitle:{fontSize:14,fontWeight:'900',textAlign:'right'},liveSpeed:{marginTop:3,fontSize:18,fontWeight:'900',textAlign:'right'},liveNumbers:{alignItems:'center',minWidth:44},liveCount:{fontSize:18,fontWeight:'900'},liveLabel:{fontSize:9,marginTop:1},liveDetail:{fontSize:11,textAlign:'right',fontWeight:'700'},liveHint:{fontSize:10,lineHeight:17,textAlign:'right'},liveTrack:{height:7,borderRadius:99,overflow:'hidden'},liveProgress:{height:'100%',borderRadius:99},bulkActions:{flexDirection:'row-reverse',gap:8,flexWrap:'wrap'},bulkButton:{height:38,paddingHorizontal:13,borderRadius:13,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:6},bulkText:{fontSize:11,fontWeight:'800'},bulkPrimary:{fontSize:11,fontWeight:'900',color:'#fff'},
   summary:{flexDirection:'row-reverse',gap:8},summaryItem:{flex:1,minHeight:86,borderRadius:20,borderWidth:1,alignItems:'center',justifyContent:'center',paddingHorizontal:5,gap:2},summaryValue:{fontWeight:'900',fontSize:17,textAlign:'center'},summaryValueSmall:{fontWeight:'900',fontSize:11,textAlign:'center'},summaryLabel:{fontSize:9,textAlign:'center'},filters:{gap:8,paddingVertical:2},kindFilters:{gap:7,paddingVertical:1},kindFilter:{height:34,borderRadius:12,borderWidth:1,paddingHorizontal:10,flexDirection:'row-reverse',alignItems:'center',gap:5},kindFilterText:{fontSize:9.5,fontWeight:'800'},filter:{height:40,borderRadius:14,borderWidth:1,paddingHorizontal:11,flexDirection:'row-reverse',alignItems:'center',gap:6},filterText:{fontWeight:'800',fontSize:11},badge:{minWidth:22,height:22,borderRadius:9,alignItems:'center',justifyContent:'center',paddingHorizontal:5},badgeText:{fontSize:9,fontWeight:'900'},empty:{marginTop:28,padding:30,borderRadius:28,borderWidth:1,alignItems:'center'},emptyIcon:{width:66,height:66,borderRadius:22,alignItems:'center',justifyContent:'center'},emptyTitle:{marginTop:14,fontSize:20,fontWeight:'900'},emptyText:{marginTop:8,textAlign:'center',lineHeight:21},card:{padding:16,borderRadius:24,borderWidth:1},cardTop:{flexDirection:'row-reverse',gap:12,alignItems:'center'},fileIcon:{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center'},fileText:{flex:1},fileName:{fontWeight:'900',fontSize:14,textAlign:'right'},host:{marginTop:2,fontSize:9,textAlign:'right'},meta:{marginTop:4,fontSize:11,fontWeight:'800',textAlign:'right'},sizeMeta:{marginTop:3,fontSize:10,textAlign:'right'},percent:{fontWeight:'900',fontSize:12},track:{height:6,borderRadius:99,marginTop:14,overflow:'hidden'},progress:{height:'100%',borderRadius:99},errorRow:{marginTop:10,flexDirection:'row-reverse',gap:6,alignItems:'center'},error:{flex:1,color:'#E1A091',fontSize:11,textAlign:'right'},actions:{flexDirection:'row-reverse',flexWrap:'wrap',gap:8,marginTop:14},action:{height:39,paddingHorizontal:14,borderRadius:13,alignItems:'center',justifyContent:'center',borderWidth:1,flexDirection:'row-reverse',gap:6},danger:{backgroundColor:'#4A3230',borderColor:'#67423E'},actionText:{fontWeight:'800',fontSize:11},primaryText:{color:'#fff',fontWeight:'900',fontSize:11},dangerText:{color:'#F2D2CB',fontWeight:'800',fontSize:11},disabled:{opacity:.45},press:{transform:[{scale:.985}],opacity:.86},
+  search:{minHeight:48,borderRadius:16,borderWidth:1,paddingHorizontal:13,flexDirection:'row-reverse',alignItems:'center',gap:9},searchInput:{flex:1,minHeight:46,textAlign:'right',fontSize:12},clearSearch:{width:30,height:30,borderRadius:10,alignItems:'center',justifyContent:'center'},searchResult:{fontSize:10,fontWeight:'700',textAlign:'right',paddingHorizontal:4,marginTop:-4},emptyClear:{marginTop:16,minHeight:40,paddingHorizontal:18,borderRadius:13,alignItems:'center',justifyContent:'center'},emptyClearText:{color:'#fff',fontSize:11,fontWeight:'900'},
   retryAll:{minHeight:64,borderRadius:18,borderWidth:1,padding:11,flexDirection:'row-reverse',alignItems:'center',gap:10},retryAllIcon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},retryAllCopy:{flex:1,alignItems:'flex-end'},retryAllTitle:{fontSize:12,fontWeight:'900',textAlign:'right'},retryAllText:{fontSize:9.5,lineHeight:15,textAlign:'right',marginTop:2},
 });

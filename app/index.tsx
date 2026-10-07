@@ -15,6 +15,7 @@ import { HomeHeader } from '@/components/home/HomeHeader';
 import { HomeShortcuts } from '@/components/home/HomeShortcuts';
 import { HomeRecentSites, type RecentSite } from '@/components/home/HomeRecentSites';
 import { RaidLogo } from '@/components/RaidLogo';
+import { assessSiteRisk } from '@/lib/site-risk';
 
 function looksLikeAIQuery(value:string){const q=value.trim();return /[؟?]$/.test(q)||/^(يا\s+raid|اسأل|اشرح|لخص|قارن|شنو |شكو |وين |ما |ماذا |كيف |لماذا |هل )/i.test(q)}
 
@@ -46,7 +47,22 @@ export default function HomeScreen(){
     if(!clean)return;
     Keyboard.dismiss();
     try{
-      router.push({pathname:'/browser',params:{url:normalizeInput(clean)}});
+      const next=normalizeInput(clean);
+      const open=()=>router.push({pathname:'/browser',params:{url:next}});
+      const assessment=assessSiteRisk(next);
+      if(assessment.level!=='danger'){
+        open();
+        return;
+      }
+      const reasons=assessment.reasons.slice(0,3).map(reason=>`• ${reason}`).join('\n');
+      Alert.alert(
+        'تحذير قبل فتح الرابط',
+        `${assessment.host}\n\nاكتشف الفحص المحلي مؤشرات خطورة في بنية الرابط:\n${reasons}`,
+        [
+          {text:'إلغاء',style:'cancel'},
+          {text:'فتح رغم التحذير',style:'destructive',onPress:open},
+        ],
+      );
     }catch{
       Alert.alert('RAID Browser','تعذر فهم العنوان أو عبارة البحث. تحقق من الرابط وحاول مرة أخرى.');
     }

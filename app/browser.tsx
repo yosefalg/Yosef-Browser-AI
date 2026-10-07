@@ -14,6 +14,7 @@ import { DEFAULT_SITE_PREFERENCES, getSitePreferences, resetSitePreferences, sav
 import { DEFAULT_PERFORMANCE_SETTINGS, deriveBrowserPerformancePolicy, getPerformanceSettings, type PerformanceSettings } from '@/lib/performance';
 import { routeBrowserDownload } from '@/features/downloads/browser-download';
 import { RAID_ADBLOCK_OFF_JS, RAID_COSMETIC_ADBLOCK_JS } from '@/lib/adblock';
+import { assessSiteRisk } from '@/lib/site-risk';
 
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 const RENDERER_RECOVERY_WINDOW_MS = 30_000;
@@ -508,14 +509,33 @@ export default function BrowserScreen() {
     setWebKey((value) => value + 1);
   };
 
+  const navigateFromAddressBar = (next: string) => {
+    intentionalStop.current = null;
+    setLoadError('');
+    setMediaUrls([]);
+    setUrl(next);
+    setAddressFocused(false);
+    Keyboard.dismiss();
+  };
+
   const go = () => {
     try {
       const next = normalizeInput(input);
-      intentionalStop.current = null;
-      setLoadError('');
-      setMediaUrls([]);
-      setUrl(next);
-      setAddressFocused(false);
+      const assessment = assessSiteRisk(next);
+      if (assessment.level !== 'danger') {
+        navigateFromAddressBar(next);
+        return;
+      }
+
+      const reasons = assessment.reasons.slice(0, 3).map((reason) => `• ${reason}`).join('\n');
+      Alert.alert(
+        'تحذير قبل فتح الرابط',
+        `${assessment.host}\n\nاكتشف الفحص المحلي مؤشرات خطورة في بنية الرابط:\n${reasons}`,
+        [
+          { text: 'إلغاء', style: 'cancel' },
+          { text: 'فتح رغم التحذير', style: 'destructive', onPress: () => navigateFromAddressBar(next) },
+        ],
+      );
     } catch {
       Alert.alert('RAID', 'تعذر فهم العنوان أو عبارة البحث.');
     }

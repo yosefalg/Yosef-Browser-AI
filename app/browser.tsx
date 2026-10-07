@@ -417,11 +417,21 @@ export default function BrowserScreen() {
       if (mediaOpen) { setMediaOpen(false); return true; }
       if (siteInfoOpen) { setSiteInfoOpen(false); return true; }
       if (menuOpen) { setMenuOpen(false); return true; }
+      if (addressFocused) {
+        if (addressBlurTimer.current) {
+          clearTimeout(addressBlurTimer.current);
+          addressBlurTimer.current = null;
+        }
+        setInput(loadedUrl);
+        setAddressFocused(false);
+        Keyboard.dismiss();
+        return true;
+      }
       if (canBackRef.current) { web.current?.goBack(); return true; }
       return false;
     });
     return () => subscription.remove();
-  }, [closeReader, mediaOpen, menuOpen, reader, siteInfoOpen]));
+  }, [addressFocused, closeReader, loadedUrl, mediaOpen, menuOpen, reader, siteInfoOpen]));
 
   useEffect(() => {
     let alive = true;

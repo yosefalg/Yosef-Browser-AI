@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import WebView, { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import { addBookmark, addHistory, createBrowserTab, getBrowserTabs, getRecentSites, getSetting, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, setSetting, updateBrowserTab } from '@/lib/db';
+import { addBookmark, addHistory, closeBrowserTab, createBrowserTab, getBrowserTabs, getRecentSites, getSetting, incrementProtectionStats, isBookmarked, removeBookmark, setPageContext, setSetting, updateBrowserTab } from '@/lib/db';
 import { normalizeInput, safeExternalUrl } from '@/lib/url';
 import { parseReaderMessage, READER_EXTRACT_JS, ReaderPayload } from '@/lib/reader';
 import { PAGE_CONTEXT_JS, parsePageContext } from '@/lib/context';
@@ -319,6 +319,7 @@ export default function BrowserScreen() {
   const pendingPageDownload = useRef('');
   const pendingExternalRequest = useRef('');
   const bookmarkBusyRef = useRef(false);
+  const closeTabBusyRef = useRef(false);
   const readerSettingsBusyRef = useRef(false);
   const speechGeneration = useRef(0);
   const navigationGeneration = useRef(0);
@@ -652,6 +653,28 @@ export default function BrowserScreen() {
   const openDownloads = () => {
     setMenuOpen(false);
     router.push('/downloads');
+  };
+
+  const closeCurrentTab = async () => {
+    if (closeTabBusyRef.current) return;
+    closeTabBusyRef.current = true;
+    setMenuOpen(false);
+    try {
+      if (!privateMode) {
+        // Wait for a newly opened page to finish creating its tab before closing it.
+        await tabPersistenceQueue.current.catch(() => {});
+        const tabId = activeTabIdRef.current;
+        if (tabId) {
+          await closeBrowserTab(tabId);
+          activeTabIdRef.current = null;
+        }
+      }
+      router.replace('/tabs');
+    } catch {
+      Alert.alert('إدارة التبويبات', 'تعذر إغلاق التبويب. بقي مفتوحًا ويمكنك المحاولة مرة أخرى.');
+    } finally {
+      closeTabBusyRef.current = false;
+    }
   };
 
   const updateSitePreference = async (patch: Partial<SitePreferences>, reload = false) => {
@@ -1289,6 +1312,8 @@ export default function BrowserScreen() {
               <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push({ pathname: '/library', params: { tab: 'history' } }); }}><Ionicons name="time-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>السجل</Text></Pressable>
               <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push({ pathname: '/library', params: { tab: 'bookmarks' } }); }}><Ionicons name="bookmark-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>المفضلة</Text></Pressable>
               <Pressable style={styles.menuItem} onPress={() => { setMenuOpen(false); router.push('/settings'); }}><Ionicons name="settings-outline" size={19} color="#D5AA88" /><Text style={styles.menuText}>الإعدادات</Text></Pressable>
+              <View style={styles.menuDivider} />
+              <Pressable style={styles.menuItem} onPress={() => void closeCurrentTab()} accessibilityRole="button" accessibilityLabel={privateMode ? 'إغلاق جلسة التصفح الخاصة' : 'إغلاق التبويب الحالي'}><Ionicons name="close-circle-outline" size={19} color="#D98C80" /><Text style={[styles.menuText, styles.menuDangerText]}>{privateMode ? 'إغلاق الجلسة الخاصة' : 'إغلاق التبويب الحالي'}</Text></Pressable>
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -1414,7 +1439,7 @@ const styles = StyleSheet.create({
   progressTrack:{height:3,backgroundColor:'#282B29',overflow:'hidden'},progress:{height:3,backgroundColor:'#D5AA88'},webWrap:{flex:1,backgroundColor:'#fff'},web:{flex:1},
   errorCard:{position:'absolute',left:20,right:20,top:26,padding:22,borderRadius:22,backgroundColor:'#2B2E2C',borderWidth:1,borderColor:'#4B4F4B',shadowColor:'#000',shadowOpacity:.22,shadowRadius:14,elevation:8},errorTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'center'},errorHost:{color:'#D5AA88',fontSize:12,fontWeight:'800',textAlign:'center',marginTop:6},errorText:{color:'#D9D2CB',fontSize:13,lineHeight:19,textAlign:'center',marginTop:10},errorActions:{flexDirection:'row-reverse',gap:10,marginTop:18},retryBtn:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#B88766'},retryText:{color:'#fff',fontWeight:'900'},errorSecondary:{flex:1,minHeight:46,borderRadius:15,alignItems:'center',justifyContent:'center',backgroundColor:'#3B3E3B'},errorSecondaryText:{color:'#D9D2CB',fontWeight:'800'},
   bottom:{height:62,flexDirection:'row',alignItems:'center',justifyContent:'space-around',paddingHorizontal:7,backgroundColor:'#242725',borderTopWidth:1,borderTopColor:'#3D403D'},nav:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},disabled:{opacity:.25},navPrimary:{width:44,height:44,borderRadius:16,backgroundColor:'#3A3D3A',alignItems:'center',justifyContent:'center'},vpn:{minWidth:52,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:4,backgroundColor:'#343A36',paddingHorizontal:7},vpnOn:{backgroundColor:'#315044'},vpnText:{fontSize:10,fontWeight:'900',color:'#D1FAE5'},ai:{width:42,height:36,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#8B654E'},aiDisabled:{opacity:.3},aiText:{fontSize:11,fontWeight:'900',color:'#fff'},
-  overlay:{flex:1,backgroundColor:'rgba(0,0,0,.48)',alignItems:'flex-end',paddingHorizontal:12},menuCard:{width:292,maxWidth:'90%',maxHeight:'100%',borderRadius:22,backgroundColor:'#2D302E',borderWidth:1,borderColor:'#4C504C',overflow:'hidden'},menuContent:{paddingBottom:5},menuHeader:{paddingHorizontal:17,paddingVertical:14,borderBottomWidth:1,borderBottomColor:'#4C504C'},menuTitle:{color:'#FFF9F2',fontSize:16,fontWeight:'900'},menuHost:{color:'#B9B1A9',fontSize:11,marginTop:3},menuItem:{minHeight:48,flexDirection:'row',alignItems:'center',paddingHorizontal:15,gap:12},menuText:{flex:1,color:'#EEE8E2',fontSize:14,fontWeight:'700'},menuDivider:{height:1,backgroundColor:'#4C504C',marginVertical:3},
+  overlay:{flex:1,backgroundColor:'rgba(0,0,0,.48)',alignItems:'flex-end',paddingHorizontal:12},menuCard:{width:292,maxWidth:'90%',maxHeight:'100%',borderRadius:22,backgroundColor:'#2D302E',borderWidth:1,borderColor:'#4C504C',overflow:'hidden'},menuContent:{paddingBottom:5},menuHeader:{paddingHorizontal:17,paddingVertical:14,borderBottomWidth:1,borderBottomColor:'#4C504C'},menuTitle:{color:'#FFF9F2',fontSize:16,fontWeight:'900'},menuHost:{color:'#B9B1A9',fontSize:11,marginTop:3},menuItem:{minHeight:48,flexDirection:'row',alignItems:'center',paddingHorizontal:15,gap:12},menuText:{flex:1,color:'#EEE8E2',fontSize:14,fontWeight:'700'},menuDangerText:{color:'#E7A49A'},menuDivider:{height:1,backgroundColor:'#4C504C',marginVertical:3},
   centerOverlay:{flex:1,backgroundColor:'rgba(0,0,0,.60)',alignItems:'center',justifyContent:'center',padding:22},siteCard:{width:'100%',maxWidth:420,borderRadius:27,padding:22,backgroundColor:'#2D302E',borderWidth:1,borderColor:'#4C504C'},siteHeaderIcon:{width:46,height:46,borderRadius:16,alignSelf:'center',alignItems:'center',justifyContent:'center',backgroundColor:'#3A3D3A',marginBottom:10},siteTitle:{color:'#FFF9F2',fontSize:20,fontWeight:'900',textAlign:'center'},siteState:{color:'#7FB890',fontSize:13,fontWeight:'900',textAlign:'center',marginTop:10},siteWarn:{color:'#D8A56F'},siteHost:{color:'#D5AA88',fontSize:12,textAlign:'center',marginTop:7},siteBody:{color:'#CFC7BF',fontSize:12,lineHeight:19,textAlign:'center',marginTop:12},siteControls:{marginTop:18,borderTopWidth:1,borderBottomWidth:1,borderColor:'#474B47'},siteControlRow:{minHeight:68,flexDirection:'row-reverse',alignItems:'center',gap:12,paddingVertical:8,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:'#474B47'},siteControlCopy:{flex:1},siteControlTitle:{color:'#F7F1EA',fontWeight:'900',fontSize:13,textAlign:'right'},siteControlHint:{color:'#AFA79F',fontSize:10,lineHeight:15,textAlign:'right',marginTop:3},privateSiteNote:{color:'#CDAF9B',fontSize:10,lineHeight:15,textAlign:'center',marginTop:12},siteReset:{height:44,borderRadius:14,borderWidth:1,borderColor:'#5B514A',backgroundColor:'#373A37',alignItems:'center',justifyContent:'center',flexDirection:'row',gap:7,marginTop:14},siteResetText:{color:'#E7DED5',fontSize:11,fontWeight:'800'},siteClose:{height:48,borderRadius:15,backgroundColor:'#B88766',alignItems:'center',justifyContent:'center',marginTop:14},siteCloseText:{color:'#fff',fontWeight:'900'},
   mediaRoot:{flex:1,backgroundColor:'#03060A'},mediaTop:{height:62,flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:12,backgroundColor:'#0A1020',borderBottomWidth:1,borderBottomColor:'#1E293B'},mediaClose:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},mediaCloseText:{color:'#fff',fontSize:25,fontWeight:'900'},mediaHeading:{flex:1},mediaTitle:{color:'#fff',fontSize:15,fontWeight:'900'},mediaHost:{color:'#94A3B8',fontSize:11,marginTop:2},mediaAction:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033'},mediaStage:{flex:1,position:'relative',backgroundColor:'#000'},mediaWeb:{flex:1,backgroundColor:'#000'},mediaLoading:{...StyleSheet.absoluteFillObject,alignItems:'center',justifyContent:'center',gap:12,backgroundColor:'#03060A'},mediaLoadingText:{color:'#CBD5E1',fontSize:12,fontWeight:'800'},mediaError:{...StyleSheet.absoluteFillObject,alignItems:'center',justifyContent:'center',padding:24,backgroundColor:'#090E18'},mediaErrorTitle:{color:'#fff',fontSize:20,fontWeight:'900',textAlign:'center',marginTop:10},mediaErrorText:{color:'#C8D0DB',fontSize:12,lineHeight:18,textAlign:'center',marginTop:8,maxWidth:360},mediaErrorActions:{width:'100%',maxWidth:360,flexDirection:'row-reverse',gap:9,marginTop:20},mediaRetry:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#8B654E'},mediaRetryText:{color:'#fff',fontSize:12,fontWeight:'900'},mediaErrorClose:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#263348'},mediaErrorCloseText:{color:'#E2E8F0',fontSize:12,fontWeight:'800'},mediaSourceBar:{backgroundColor:'#0A1020',borderTopWidth:1,borderTopColor:'#1E293B',paddingTop:6,maxHeight:82},mediaSourceLabel:{color:'#94A3B8',fontSize:10,fontWeight:'800',textAlign:'right',paddingHorizontal:12},mediaSources:{paddingHorizontal:10,paddingVertical:8,gap:7},mediaSource:{height:36,paddingHorizontal:13,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:'#172033',borderWidth:1,borderColor:'#263348'},mediaSourceOn:{backgroundColor:'#8B654E',borderColor:'#B88766'},mediaSourceText:{color:'#fff',fontSize:11,fontWeight:'800'},
   readerRoot:{flex:1},readerDark:{backgroundColor:'#0C1018'},readerLight:{backgroundColor:'#F6F1E7'},readerTop:{height:62,flexDirection:'row',alignItems:'center',paddingHorizontal:12,gap:10,borderBottomWidth:1,borderBottomColor:'#334155'},readerBtn:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#1E293B'},readerBtnText:{color:'#fff',fontSize:22,fontWeight:'800'},readerTitle:{flex:1,color:'#fff',fontSize:15,fontWeight:'800'},readerInk:{color:'#241F1A'},readerContent:{paddingHorizontal:24,paddingTop:26,paddingBottom:80,maxWidth:760,width:'100%',alignSelf:'center'},readerHeadline:{fontSize:28,lineHeight:38,color:'#F8FAFC',fontWeight:'900',marginBottom:22},readerBody:{color:'#E2E8F0'},readerRtl:{textAlign:'right',writingDirection:'rtl'},readerLtr:{textAlign:'left',writingDirection:'ltr'},readerTools:{height:64,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,borderTopWidth:1,borderTopColor:'#334155'},readerTool:{minWidth:58,height:42,borderRadius:13,backgroundColor:'#1E293B',alignItems:'center',justifyContent:'center',paddingHorizontal:9},readerToolText:{color:'#fff',fontWeight:'800',fontSize:12},

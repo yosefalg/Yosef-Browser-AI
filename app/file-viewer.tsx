@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +19,7 @@ const MAX_INTERNAL_TEXT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_FONT_SIZE = 18;
 const MIN_FONT_SIZE = 13;
 const MAX_FONT_SIZE = 34;
+const READER_POSITION_SAVE_DELAY_MS = 900;
 
 function extension(name:string){return name.toLowerCase().split('?')[0].split('#')[0].split('.').pop()||'';}
 function isImage(name:string,mimeType:string){return IMAGE_EXTENSIONS.includes(extension(name))||IMAGE_MIME_TYPES.includes(mimeType);}
@@ -51,9 +52,27 @@ export default function FileViewerScreen(){
   const fontSizeSavingRef=useRef(false);
   const [externalOpening,setExternalOpening]=useState(false);
   const externalOpeningRef=useRef(false);
+  const readerScrollRef=useRef<ScrollView>(null);
+  const readerPositionReadyRef=useRef(false);
+  const restoredReaderPositionRef=useRef(false);
+  const readerOffsetRef=useRef(0);
+  const positionSaveTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const [savedReaderPosition,setSavedReaderPosition]=useState(0);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const textLayout=useMemo(()=>readerTextStyle(name,content),[name,content]);
+  const positionSettingKey=useMemo(()=>`file_reader_position_${id}`,[id]);
+
+  const persistReaderPosition=useCallback(()=>{
+    if(!readerPositionReadyRef.current||!Number.isInteger(id)||id<=0)return;
+    const offset=Math.max(0,Math.round(readerOffsetRef.current));
+    void setSetting(positionSettingKey,offset).catch(()=>{});
+  },[id,positionSettingKey]);
+
+  const saveReaderPositionNow=()=>{
+    if(positionSaveTimerRef.current){clearTimeout(positionSaveTimerRef.current);positionSaveTimerRef.current=null;}
+    persistReaderPosition();
+  };
 
   useEffect(()=>{
     let active=true;
@@ -69,6 +88,10 @@ export default function FileViewerScreen(){
   },[]);
   useEffect(()=>{
     let active=true;
+    readerPositionReadyRef.current=false;
+    restoredReaderPositionRef.current=false;
+    readerOffsetRef.current=0;
+    setSavedReaderPosition(0);
     setLoading(true);
     setError('');
     setName('ملف');
@@ -78,7 +101,10 @@ export default function FileViewerScreen(){
     void (async()=>{
       try{
         if(!Number.isInteger(id)||id<=0)throw new Error('معرّف الملف غير صالح.');
-        const item=await getDownload(id);
+        const [item,storedPosition]=await Promise.all([
+          getDownload(id),
+          getSetting<number>(positionSettingKey,0),
+        ]);
         if(!item?.local_uri||item.state!=='completed')throw new Error('الملف غير جاهز للقراءة.');
         const info=await FileSystem.getInfoAsync(item.local_uri);
         if(!info.exists)throw new Error('الملف لم يعد موجودًا على الجهاز.');
@@ -92,12 +118,22 @@ export default function FileViewerScreen(){
         const size='size' in info&&typeof info.size==='number'?info.size:0;
         if(size>MAX_INTERNAL_TEXT_BYTES)throw new Error('الملف كبير للعرض الداخلي الآمن. استخدم الفتح الخارجي لهذا الملف.');
         const text=await FileSystem.readAsStringAsync(item.local_uri,{encoding:FileSystem.EncodingType.UTF8});
-        if(active)setContent(text);
+        if(active){
+          const position=Number.isFinite(storedPosition)?Math.max(0,Math.round(storedPosition)):0;
+          readerOffsetRef.current=position;
+          setSavedReaderPosition(position);
+          readerPositionReadyRef.current=true;
+          setContent(text);
+        }
       }catch(e){if(active)setError(e instanceof Error?e.message:'تعذر قراءة الملف.');}
       finally{if(active)setLoading(false);}
     })();
-    return()=>{active=false;};
-  },[id]);
+    return()=>{
+      active=false;
+      if(positionSaveTimerRef.current){clearTimeout(positionSaveTimerRef.current);positionSaveTimerRef.current=null;}
+      persistReaderPosition();
+    };
+  },[id,persistReaderPosition,positionSettingKey]);
 
   const openExternal=async()=>{
     if(!canOpenExternal||externalOpeningRef.current)return;
@@ -132,7 +168,7 @@ export default function FileViewerScreen(){
   const fontAtMinimum=fontSize<=MIN_FONT_SIZE;
   const fontAtMaximum=fontSize>=MAX_FONT_SIZE;
   const textReady=!loading&&!error&&!imageUri;
-  const viewerStatus=loading?'جاري تجهيز الملف…':imageUri?'RAID Image Viewer • محلي':error?(canOpenExternal?'فتح خارجي متاح':'تعذر تجهيز الملف'):`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'}`;
+  const viewerStatus=loading?'جاري تجهيز الملف…':imageUri?'RAID Image Viewer • محلي':error?(canOpenExternal?'فتح خارجي متاح':'تعذر تجهيز الملف'):`RAID Reader • ${textLayout.writingDirection==='rtl'?'RTL':'LTR'} • يحفظ موضعك`;
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
@@ -143,7 +179,27 @@ export default function FileViewerScreen(){
         {canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel={`فتح ${name} بتطبيق خارجي`} accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.small,{borderColor:theme.border,backgroundColor:theme.surface2,opacity:externalOpening?0.45:1}]}><Ionicons name="open-outline" size={19} color={theme.accent}/></Pressable>}
       </View>
     </View>
-    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent,opacity:externalOpening?0.6:1}]}>{externalOpening?<ActivityIndicator size="small" color="#fff"/>:<Ionicons name="open-outline" size={18} color="#fff"/>}<Text style={s.externalText}>{externalOpening?'جاري الفتح…':'فتح خارجي'}</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView contentContainerStyle={s.reader} showsVerticalScrollIndicator={false}><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
+    {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent,opacity:externalOpening?0.6:1}]}>{externalOpening?<ActivityIndicator size="small" color="#fff"/>:<Ionicons name="open-outline" size={18} color="#fff"/>}<Text style={s.externalText}>{externalOpening?'جاري الفتح…':'فتح خارجي'}</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView
+      ref={readerScrollRef}
+      contentContainerStyle={s.reader}
+      showsVerticalScrollIndicator={false}
+      scrollEventThrottle={250}
+      onContentSizeChange={()=>{
+        if(restoredReaderPositionRef.current||!readerPositionReadyRef.current)return;
+        restoredReaderPositionRef.current=true;
+        if(savedReaderPosition>0)readerScrollRef.current?.scrollTo({y:savedReaderPosition,animated:false});
+      }}
+      onScroll={(event)=>{
+        readerOffsetRef.current=Math.max(0,event.nativeEvent.contentOffset.y);
+        if(positionSaveTimerRef.current)clearTimeout(positionSaveTimerRef.current);
+        positionSaveTimerRef.current=setTimeout(()=>{
+          positionSaveTimerRef.current=null;
+          persistReaderPosition();
+        },READER_POSITION_SAVE_DELAY_MS);
+      }}
+      onMomentumScrollEnd={saveReaderPositionNow}
+      onScrollEndDrag={saveReaderPositionNow}
+    ><Text selectable style={[textLayout,{color:theme.text,fontSize,lineHeight:Math.round(fontSize*1.75)}]}>{content}</Text></ScrollView>}
   </SafeAreaView>;
 }
 

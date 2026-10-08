@@ -321,7 +321,7 @@ export default function DownloadsScreen() {
   return (
     <SafeAreaView edges={['top','bottom','left','right']} style={[s.root,{backgroundColor:theme.bg}]}>
       <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="رجوع" style={[s.headerButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="chevron-back" size={22} color={theme.text} /></Pressable>
+        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="رجوع" style={[s.headerButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="chevron-forward" size={22} color={theme.text} /></Pressable>
         <View style={s.headerCopy}><Text style={[s.title,{color:theme.text}]}>التنزيلات</Text><Text style={[s.sub,{color:theme.muted}]}>استكمال ذكي • سرعة مباشرة • استعادة بعد الإغلاق</Text></View>
         <Pressable onPress={() => void refresh()} accessibilityRole="button" accessibilityLabel="تحديث قائمة التنزيلات" style={[s.headerButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="refresh" size={20} color={theme.accent} /></Pressable>
       </View>

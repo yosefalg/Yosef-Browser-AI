@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,19 +50,9 @@ export default function SecurityScreen() {
 
   const openScanned = () => {
     if (!scan || !scan.openable) return;
-    const open = () => router.push({ pathname: '/browser', params: { url: scan.url } });
-    if (scan.assessment.level !== 'danger') {
-      open();
-      return;
-    }
-    Alert.alert(
-      'RAID Security',
-      'الرابط يحمل مؤشرات خطورة واضحة. افتحه فقط إذا كنت متأكدًا من مصدره.',
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        { text: 'فتح رغم التحذير', style: 'destructive', onPress: open },
-      ],
-    );
+    // BrowserScreen owns the final navigation gate. Keeping the confirmation
+    // there prevents duplicate alerts while ensuring deep links cannot bypass it.
+    router.push({ pathname: '/browser', params: { url: scan.url } });
   };
 
   const level = scan ? levelCopy(scan.assessment.level) : null;
@@ -111,10 +101,10 @@ export default function SecurityScreen() {
           {scan.assessment.reasons.length ? scan.assessment.reasons.map((reason,index)=><View key={`${reason}-${index}`} style={s.reason}><Ionicons name="ellipse" size={7} color={level.tone}/><Text style={[s.reasonText,{color:theme.text}]}>{reason}</Text></View>) : <View style={s.reason}><Ionicons name="checkmark-circle" size={16} color={level.tone}/><Text style={[s.reasonText,{color:theme.text}]}>لم يكتشف RAID مؤشرات خطورة واضحة في بنية الرابط.</Text></View>}
         </View>
 
-        <Pressable disabled={!scan.openable} onPress={openScanned} style={({pressed})=>[s.openBtn,{backgroundColor:scan.openable?(scan.assessment.level==='danger'?level.tone:theme.accent):theme.surface2,borderColor:scan.openable?'transparent':theme.border},pressed&&scan.openable&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!scan.openable}} accessibilityLabel={scan.openable?'فتح الرابط المفحوص داخل RAID':'الرابط محظور من الفتح داخل RAID'}><Ionicons name={scan.openable?'open-outline':'ban-outline'} size={18} color={scan.openable?'#fff':theme.muted}/><Text style={[s.openText,!scan.openable&&{color:theme.muted}]}>{!scan.openable?'محظور من الفتح':scan.assessment.level==='danger'?'فتح رغم التحذير':'فتح داخل RAID'}</Text></Pressable>
+        <Pressable disabled={!scan.openable} onPress={openScanned} style={({pressed})=>[s.openBtn,{backgroundColor:scan.openable?(scan.assessment.level==='danger'?level.tone:theme.accent):theme.surface2,borderColor:scan.openable?'transparent':theme.border},pressed&&scan.openable&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:!scan.openable}} accessibilityLabel={!scan.openable?'الرابط محظور من الفتح داخل RAID':scan.assessment.level==='danger'?'متابعة الرابط إلى تحذير المتصفح':'فتح الرابط المفحوص داخل RAID'}><Ionicons name={scan.openable?'open-outline':'ban-outline'} size={18} color={scan.openable?'#fff':theme.muted}/><Text style={[s.openText,!scan.openable&&{color:theme.muted}]}>{!scan.openable?'محظور من الفتح':scan.assessment.level==='danger'?'متابعة إلى المتصفح':'فتح داخل RAID'}</Text></Pressable>
       </View>}
 
-      <View style={[s.note, { backgroundColor: theme.surface2, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>الفحص محلي ومساعد لاتخاذ قرار أفضل، لكنه لا يضمن أن الموقع آمن 100%. لا تدخل كلمة مرور أو معلومات دفع إذا كان النطاق غير متوقع أو الاتصال غير مشفّر.</Text></View>
+      <View style={[s.note, { backgroundColor: theme.surface2, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>الفحص محلي ومساعد لاتخاذ قرار أفضل، لكنه لا يضمن أن الموقع آمن 100%. عند وجود خطر مرتفع سيطلب المتصفح تأكيدًا واحدًا قبل التحميل. لا تدخل كلمة مرور أو معلومات دفع إذا كان النطاق غير متوقع أو الاتصال غير مشفّر.</Text></View>
     </ScrollView>
   </SafeAreaView>;
 }

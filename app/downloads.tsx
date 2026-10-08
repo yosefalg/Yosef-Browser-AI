@@ -211,6 +211,12 @@ export default function DownloadsScreen() {
     setOperationBusy(false);
   };
 
+  const resetVisibleDownloads = () => {
+    setQuery('');
+    setFilter('all');
+    setKindFilter('all');
+  };
+
   const perform = async (fn: () => Promise<unknown>) => {
     if (!beginOperation()) return;
     try { await fn(); await refresh(); }
@@ -398,7 +404,7 @@ export default function DownloadsScreen() {
           {items.length === 0 && !refreshError ? (
             <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={[s.emptyIcon,{backgroundColor:theme.surface2}]}><Ionicons name="cloud-download-outline" size={34} color={theme.accent} /></View><Text style={[s.emptyTitle,{color:theme.text}]}>لا توجد تنزيلات بعد</Text><Text style={[s.emptyText,{color:theme.muted}]}>عندما يبدأ RAID تنزيل ملف سيظهر هنا مع السرعة والوقت المتبقي والتحكم الكامل.</Text></View>
           ) : items.length > 0 && visible.length===0 ? (
-            <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name={query.trim()?'search-outline':'filter-outline'} size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>{query.trim()?'لم نجد هذا الملف':'لا توجد عناصر هنا'}</Text><Text style={[s.emptyText,{color:theme.muted}]}>{query.trim()?'جرّب جزءًا من اسم الملف أو اسم الموقع، أو امسح البحث.':'غيّر الفلتر لعرض بقية التنزيلات.'}</Text>{!!query.trim()&&<Pressable onPress={()=>setQuery('')} accessibilityRole="button" accessibilityLabel="مسح بحث التنزيلات" style={[s.emptyClear,{backgroundColor:theme.accent}]}><Text style={s.emptyClearText}>مسح البحث</Text></Pressable>}</View>
+            <View style={[s.empty,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name={query.trim()?'search-outline':'filter-outline'} size={30} color={theme.accent}/><Text style={[s.emptyTitle,{color:theme.text}]}>{query.trim()?'لم نجد هذا الملف':'لا توجد عناصر هنا'}</Text><Text style={[s.emptyText,{color:theme.muted}]}>{query.trim()?'جرّب جزءًا من اسم الملف أو اعرض كل التنزيلات.':'لا توجد ملفات تطابق الفلاتر الحالية.'}</Text><Pressable onPress={resetVisibleDownloads} accessibilityRole="button" accessibilityLabel="مسح البحث والفلاتر وعرض كل التنزيلات" style={[s.emptyClear,{backgroundColor:theme.accent}]}><Text style={s.emptyClearText}>عرض كل التنزيلات</Text></Pressable></View>
           ) : visible.map((item) => {
             const remaining = eta(item.eta_seconds);
             const liveMeta = item.state === 'downloading' && item.speed_bps > 0

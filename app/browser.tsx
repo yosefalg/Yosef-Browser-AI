@@ -518,9 +518,9 @@ export default function BrowserScreen() {
     Keyboard.dismiss();
   };
 
-  const go = () => {
+  const openAddressInput = (value: string) => {
     try {
-      const next = normalizeInput(input);
+      const next = normalizeInput(value);
       const assessment = assessSiteRisk(next);
       if (assessment.level !== 'danger') {
         navigateFromAddressBar(next);
@@ -540,6 +540,8 @@ export default function BrowserScreen() {
       Alert.alert('RAID', 'تعذر فهم العنوان أو عبارة البحث.');
     }
   };
+
+  const go = () => openAddressInput(input);
 
   const changed = (nav: WebViewNavigation) => {
     const generation = navigationGeneration.current + 1;
@@ -1076,7 +1078,7 @@ export default function BrowserScreen() {
     setAddressFocused(false);
     setHistorySuggestions([]);
     setInput(item.url);
-    setUrl(item.url);
+    openAddressInput(item.url);
   };
   const playerHtml = useMemo(() => mediaUrl ? mediaPlayerHtml(mediaUrl) : '', [mediaUrl]);
   const hasCustomSitePrefs = sitePrefs.desktopMode || !sitePrefs.thirdPartyCookies || !sitePrefs.autoplayMedia || !sitePrefs.adBlock;

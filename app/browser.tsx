@@ -318,6 +318,8 @@ export default function BrowserScreen() {
   const manualMediaRequest = useRef(false);
   const pendingPageDownload = useRef('');
   const pendingExternalRequest = useRef('');
+  const pendingRiskyNavigation = useRef('');
+  const approvedRiskyNavigation = useRef<{ url: string; expiresAt: number } | null>(null);
   const bookmarkBusyRef = useRef(false);
   const closeTabBusyRef = useRef(false);
   const readerSettingsBusyRef = useRef(false);
@@ -519,24 +521,49 @@ export default function BrowserScreen() {
     Keyboard.dismiss();
   };
 
+  const approveRiskyNavigation = (next: string) => {
+    approvedRiskyNavigation.current = { url: next, expiresAt: Date.now() + 5000 };
+    if (next === url) {
+      setLoadError('');
+      setWebKey((value) => value + 1);
+      return;
+    }
+    navigateFromAddressBar(next);
+  };
+
+  const confirmRiskyNavigation = (next: string, sourceUrl?: string) => {
+    const assessment = assessSiteRisk(next);
+    if (assessment.level !== 'danger') return false;
+    if (pendingRiskyNavigation.current) return true;
+
+    pendingRiskyNavigation.current = next;
+    const clearPending = () => {
+      if (pendingRiskyNavigation.current === next) pendingRiskyNavigation.current = '';
+    };
+    const reasons = assessment.reasons.slice(0, 3).map((reason) => `• ${reason}`).join('\n');
+    Alert.alert(
+      'تحذير قبل فتح الرابط',
+      `${assessment.host}\n\nاكتشف الفحص المحلي مؤشرات خطورة في بنية الرابط:\n${reasons}`,
+      [
+        { text: 'إلغاء', style: 'cancel', onPress: clearPending },
+        { text: 'فتح رغم التحذير', style: 'destructive', onPress: () => {
+          clearPending();
+          if (sourceUrl && !urlsReferToSameDocument(sourceUrl, mainDocumentUrl.current)) {
+            Alert.alert('RAID Browser', 'انتهى الطلب لأن الصفحة تغيّرت.');
+            return;
+          }
+          approveRiskyNavigation(next);
+        } },
+      ],
+      { cancelable: true, onDismiss: clearPending },
+    );
+    return true;
+  };
+
   const openAddressInput = (value: string) => {
     try {
       const next = normalizeInput(value);
-      const assessment = assessSiteRisk(next);
-      if (assessment.level !== 'danger') {
-        navigateFromAddressBar(next);
-        return;
-      }
-
-      const reasons = assessment.reasons.slice(0, 3).map((reason) => `• ${reason}`).join('\n');
-      Alert.alert(
-        'تحذير قبل فتح الرابط',
-        `${assessment.host}\n\nاكتشف الفحص المحلي مؤشرات خطورة في بنية الرابط:\n${reasons}`,
-        [
-          { text: 'إلغاء', style: 'cancel' },
-          { text: 'فتح رغم التحذير', style: 'destructive', onPress: () => navigateFromAddressBar(next) },
-        ],
-      );
+      if (!confirmRiskyNavigation(next)) navigateFromAddressBar(next);
     } catch {
       Alert.alert('RAID', 'تعذر فهم العنوان أو عبارة البحث.');
     }
@@ -1072,7 +1099,7 @@ export default function BrowserScreen() {
 
   const goHome = () => router.replace('/');
 
-  const shouldLoad = (requestUrl: string) => {
+  const shouldLoad = (requestUrl: string, isTopFrame = true) => {
     if (isDirectMediaUrl(requestUrl)) {
       // Let the direct media document load in the main WebView; RAID then places
       // its controls over that page's video instead of opening a separate modal.
@@ -1082,7 +1109,15 @@ export default function BrowserScreen() {
       confirmPageDownload(requestUrl, mainDocumentUrl.current);
       return false;
     }
-    if (safeExternalUrl(requestUrl)) return true;
+    if (safeExternalUrl(requestUrl)) {
+      if (!isTopFrame) return true;
+      if (requestUrl !== mainDocumentUrl.current && urlsReferToSameDocument(requestUrl, mainDocumentUrl.current)) return true;
+
+      const approved = approvedRiskyNavigation.current;
+      if (approved?.url === requestUrl && Date.now() <= approved.expiresAt) return true;
+      if (approved && Date.now() > approved.expiresAt) approvedRiskyNavigation.current = null;
+      return !confirmRiskyNavigation(requestUrl, mainDocumentUrl.current);
+    }
     if (/^(mailto:|tel:|sms:)/i.test(requestUrl)) {
       confirmExternalAppOpen(requestUrl);
     }
@@ -1267,7 +1302,7 @@ export default function BrowserScreen() {
             }
           }}
           onRenderProcessGone={(event) => recoverRenderer(Boolean(event.nativeEvent.didCrash))}
-          onShouldStartLoadWithRequest={(request) => shouldLoad(request.url)}
+          onShouldStartLoadWithRequest={(request) => shouldLoad(request.url, request.isTopFrame !== false)}
           onFileDownload={(event) => confirmPageDownload(event.nativeEvent.downloadUrl || '', mainDocumentUrl.current)}
           onMessage={onMessage}
         />

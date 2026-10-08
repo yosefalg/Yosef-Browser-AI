@@ -84,6 +84,14 @@ export async function addHistory(url:string,title?:string){
 export async function removeHistoryEntry(id:number){if(!Number.isInteger(id)||id<=0)return;const d=await db();await d.runAsync('DELETE FROM history WHERE id=?',id);}
 export async function clearHistory(){const d=await db();await d.execAsync('DELETE FROM history');}
 export async function getHistory(limit=100,offset=0){const d=await db();const safeLimit=Math.min(Math.max(1,Math.floor(limit)),500);const safeOffset=Math.max(0,Math.floor(offset));return d.getAllAsync<{id:number;url:string;title:string;visited_at:number}>('SELECT * FROM history ORDER BY visited_at DESC LIMIT ? OFFSET ?',safeLimit,safeOffset);}
+export async function searchHistory(query:string,limit=250){
+  const term=query.trim().slice(0,200);
+  if(!term)return [];
+  const escaped=term.replace(/[!%_]/g,'!$&');
+  const safeLimit=Math.min(Math.max(1,Math.floor(limit)),500);
+  const d=await db();
+  return d.getAllAsync<{id:number;url:string;title:string;visited_at:number}>("SELECT * FROM history WHERE (COALESCE(title,'') || ' ' || url) LIKE ? ESCAPE '!' ORDER BY visited_at DESC LIMIT ?",`%${escaped}%`,safeLimit);
+}
 export async function getRecentSites(limit=8){const d=await db();return d.getAllAsync<{url:string;title:string;visited_at:number}>('SELECT url,MAX(title) AS title,MAX(visited_at) AS visited_at FROM history GROUP BY url ORDER BY visited_at DESC LIMIT ?',limit);}
 export async function addBookmark(url:string,title?:string){const d=await db();await d.runAsync('INSERT OR REPLACE INTO bookmarks (url,title,created_at) VALUES (?,?,?)',url,title??'',Date.now());}
 export async function removeBookmark(url:string){const d=await db();await d.runAsync('DELETE FROM bookmarks WHERE url=?',url);}

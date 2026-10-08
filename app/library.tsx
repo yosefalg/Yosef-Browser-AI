@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { clearHistory, getBookmarks, getHistory, getSetting, removeBookmark, removeHistoryEntry } from '@/lib/db';
+import { clearHistory, getBookmarks, getHistory, getSetting, removeBookmark, removeHistoryEntry, searchHistory } from '@/lib/db';
 import { getTheme, isThemeName, ThemeName } from '@/lib/theme';
 
 type Bookmark = { id:number; url:string; title:string; created_at:number };
 type HistoryItem = { id:number; url:string; title:string; visited_at:number };
+type LibraryRow = { id:number; url:string; title:string };
 const HISTORY_PAGE_SIZE=100;
+const HISTORY_SEARCH_LIMIT=250;
 
 function host(url:string){try{return new URL(url).hostname.replace(/^www\./,'');}catch{return url;}}
 function open(url:string){router.push({ pathname:'/browser', params:{ url } });}
@@ -22,10 +24,14 @@ export default function LibraryScreen(){
   const [loading,setLoading]=useState(true);
   const [loadingMore,setLoadingMore]=useState(false);
   const [historyHasMore,setHistoryHasMore]=useState(false);
+  const [historySearchResults,setHistorySearchResults]=useState<HistoryItem[]>([]);
+  const [historySearchLoading,setHistorySearchLoading]=useState(false);
+  const [historySearchError,setHistorySearchError]=useState(false);
   const [refreshError,setRefreshError]=useState(false);
   const [query,setQuery]=useState('');
   const loadInFlight=useRef(false);
   const loadMoreInFlight=useRef(false);
+  const historySearchGeneration=useRef(0);
   const mutationInFlight=useRef(false);
   const [mutating,setMutating]=useState(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
@@ -104,7 +110,7 @@ export default function LibraryScreen(){
       {text:'إلغاء',style:'cancel'},
       {text:'مسح',style:'destructive',onPress:()=>void runMutation(
         clearHistory,
-        ()=>{setHistory([]);setHistoryHasMore(false);},
+        ()=>{setHistory([]);setHistorySearchResults([]);setHistoryHasMore(false);},
         'لم يتم مسح سجل التصفح. حاول مرة أخرى.',
       )},
     ]);
@@ -115,19 +121,47 @@ export default function LibraryScreen(){
       {text:'إلغاء',style:'cancel'},
       {text:'حذف',style:'destructive',onPress:()=>void runMutation(
         ()=>removeHistoryEntry(id),
-        ()=>setHistory(items=>items.filter(item=>item.id!==id)),
+        ()=>{setHistory(items=>items.filter(item=>item.id!==id));setHistorySearchResults(items=>items.filter(item=>item.id!==id));},
         'لم تُحذف الزيارة من السجل. حاول مرة أخرى.',
       )},
     ]);
   };
 
-  const searchTerm=query.trim().toLocaleLowerCase();
+  const searchTerm=query.trim();
+  useEffect(()=>{
+    const generation=historySearchGeneration.current+1;
+    historySearchGeneration.current=generation;
+    if(tab!=='history'||!searchTerm){
+      setHistorySearchResults([]);
+      setHistorySearchLoading(false);
+      setHistorySearchError(false);
+      return;
+    }
+    setHistorySearchLoading(true);
+    setHistorySearchError(false);
+    setHistorySearchResults([]);
+    const timer=setTimeout(()=>{
+      void searchHistory(searchTerm,HISTORY_SEARCH_LIMIT).then(items=>{
+        if(historySearchGeneration.current!==generation)return;
+        setHistorySearchResults(items);
+        setHistorySearchLoading(false);
+      }).catch(()=>{
+        if(historySearchGeneration.current!==generation)return;
+        setHistorySearchResults([]);
+        setHistorySearchLoading(false);
+        setHistorySearchError(true);
+      });
+    },180);
+    return()=>clearTimeout(timer);
+  },[searchTerm,tab]);
+
+  const foldedSearchTerm=searchTerm.toLocaleLowerCase();
   const sourceCount=tab==='bookmarks'?bookmarks.length:history.length;
-  const rows=useMemo(()=>{
-    const source=tab==='bookmarks'?bookmarks:history;
-    if(!searchTerm)return source;
-    return source.filter(item=>`${item.title} ${host(item.url)} ${item.url}`.toLocaleLowerCase().includes(searchTerm));
-  },[bookmarks,history,searchTerm,tab]);
+  const rows=useMemo<LibraryRow[]>(()=>{
+    if(tab==='history')return searchTerm?historySearchResults:history;
+    if(!foldedSearchTerm)return bookmarks;
+    return bookmarks.filter(item=>`${item.title} ${host(item.url)} ${item.url}`.toLocaleLowerCase().includes(foldedSearchTerm));
+  },[bookmarks,foldedSearchTerm,history,historySearchResults,searchTerm,tab]);
 
   return <SafeAreaView edges={['top','bottom','left','right']} style={[styles.root,{backgroundColor:theme.bg}]}>
     <View style={[styles.header,{borderBottomColor:theme.border}]}>
@@ -143,6 +177,7 @@ export default function LibraryScreen(){
 
     <View style={[styles.search,{backgroundColor:theme.surface,borderColor:theme.border}]}>
       <TextInput value={query} onChangeText={setQuery} maxLength={200} returnKeyType="done" autoCapitalize="none" autoCorrect={false} accessibilityLabel="بحث داخل المكتبة والسجل" placeholder={tab==='bookmarks'?'ابحث في المفضلة':'ابحث في سجل التصفح'} placeholderTextColor={theme.muted} style={[styles.searchInput,{color:theme.text}]}/>
+      {tab==='history'&&historySearchLoading&&<ActivityIndicator size="small" color={theme.accent}/>}
       {query.length>0&&<Pressable onPress={()=>setQuery('')} accessibilityRole="button" accessibilityLabel="مسح بحث المكتبة" hitSlop={8} style={[styles.searchClear,{backgroundColor:theme.surface2}]}><Text style={[styles.searchClearText,{color:theme.muted}]}>×</Text></Pressable>}
     </View>
 
@@ -164,8 +199,8 @@ export default function LibraryScreen(){
       maxToRenderPerBatch={12}
       windowSize={7}
       removeClippedSubviews
-      ListFooterComponent={tab==='history'&&historyHasMore?<Pressable disabled={loadingMore||mutating} onPress={()=>void loadMoreHistory()} accessibilityRole="button" accessibilityLabel="تحميل زيارات أقدم من السجل" accessibilityState={{disabled:loadingMore||mutating,busy:loadingMore}} style={[styles.loadMore,{backgroundColor:theme.surface,borderColor:theme.border},(loadingMore||mutating)&&styles.disabled]}>{loadingMore?<ActivityIndicator size="small" color={theme.accent}/>:<Text style={[styles.loadMoreText,{color:theme.accent}]}>تحميل سجل أقدم</Text>}</Pressable>:null}
-      ListEmptyComponent={loading&&sourceCount===0?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري تحميل المكتبة…</Text></View>:!refreshError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>{searchTerm?'لا توجد نتائج مطابقة':tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={[styles.emptyText,{color:theme.muted}]}>{searchTerm?'جرّب البحث بعنوان أقصر أو باسم الموقع.':tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:null}
+      ListFooterComponent={tab==='history'&&!searchTerm&&historyHasMore?<Pressable disabled={loadingMore||mutating} onPress={()=>void loadMoreHistory()} accessibilityRole="button" accessibilityLabel="تحميل زيارات أقدم من السجل" accessibilityState={{disabled:loadingMore||mutating,busy:loadingMore}} style={[styles.loadMore,{backgroundColor:theme.surface,borderColor:theme.border},(loadingMore||mutating)&&styles.disabled]}>{loadingMore?<ActivityIndicator size="small" color={theme.accent}/>:<Text style={[styles.loadMoreText,{color:theme.accent}]}>تحميل سجل أقدم</Text>}</Pressable>:null}
+      ListEmptyComponent={historySearchLoading?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري البحث في كامل السجل…</Text></View>:historySearchError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>تعذر البحث في السجل</Text><Text style={[styles.emptyText,{color:theme.muted}]}>عدّل عبارة البحث قليلًا للمحاولة مرة أخرى.</Text></View>:loading&&sourceCount===0?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري تحميل المكتبة…</Text></View>:!refreshError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>{searchTerm?'لا توجد نتائج مطابقة':tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={[styles.emptyText,{color:theme.muted}]}>{searchTerm?'جرّب البحث بعنوان أقصر أو باسم الموقع.':tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:null}
       renderItem={({item})=><Pressable disabled={mutating} accessibilityRole="button" accessibilityState={{disabled:mutating}} accessibilityLabel={`${item.title?.trim()||host(item.url)}، ${tab==='bookmarks'?'ضغط مطوّل للإزالة من المفضلة':'ضغط مطوّل للحذف من السجل'}`} onPress={()=>open(item.url)} onLongPress={()=>tab==='bookmarks'?deleteBookmark(item.url):deleteHistoryEntry(item.id)} style={[styles.row,{backgroundColor:theme.surface,borderColor:theme.border},mutating&&styles.disabled]}>
         <View style={[styles.badge,{backgroundColor:theme.surface2}]}><Text style={[styles.badgeText,{color:theme.accent}]}>{host(item.url).slice(0,1).toUpperCase()}</Text></View>
         <View style={styles.rowBody}>

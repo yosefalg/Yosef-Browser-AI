@@ -1093,6 +1093,7 @@ export default function BrowserScreen() {
   const insecureHttp = loadedUrl.startsWith('http://');
   const host = hostOf(loadedUrl);
   const addressValue = addressFocused ? input : host;
+  const navigationPolicy = useMemo(() => deriveBrowserPerformancePolicy(performanceSettings, url), [performanceSettings, url]);
   const visibleSuggestions = addressFocused && !privateMode ? historySuggestions.filter((item) => { const value=input.trim().toLowerCase(); return !value || `${item.title} ${item.url}`.toLowerCase().includes(value); }).slice(0,5) : [];
   const openHistorySuggestion = (item:{url:string}) => {
     if (addressBlurTimer.current) clearTimeout(addressBlurTimer.current);
@@ -1188,6 +1189,7 @@ export default function BrowserScreen() {
           javaScriptEnabled
           domStorageEnabled={!privateMode}
           cacheEnabled={!privateMode}
+          cacheMode={privateMode ? 'LOAD_NO_CACHE' : navigationPolicy.profile === 'low-data' ? 'LOAD_CACHE_ELSE_NETWORK' : 'LOAD_DEFAULT'}
           incognito={privateMode}
           sharedCookiesEnabled={!privateMode}
           thirdPartyCookiesEnabled={!privateMode && sitePrefs.thirdPartyCookies}

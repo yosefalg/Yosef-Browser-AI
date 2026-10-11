@@ -56,8 +56,11 @@ export default function FileViewerScreen(){
   const readerPositionReadyRef=useRef(false);
   const restoredReaderPositionRef=useRef(false);
   const readerOffsetRef=useRef(0);
+  const readerContentHeightRef=useRef(0);
+  const readerViewportHeightRef=useRef(0);
   const positionSaveTimerRef=useRef<ReturnType<typeof setTimeout>|null>(null);
   const [savedReaderPosition,setSavedReaderPosition]=useState(0);
+  const [readingProgress,setReadingProgress]=useState(0);
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const textLayout=useMemo(()=>readerTextStyle(name,content),[name,content]);
@@ -72,6 +75,15 @@ export default function FileViewerScreen(){
   const saveReaderPositionNow=()=>{
     if(positionSaveTimerRef.current){clearTimeout(positionSaveTimerRef.current);positionSaveTimerRef.current=null;}
     persistReaderPosition();
+  };
+
+  const refreshReadingProgress=()=>{
+    const contentHeight=readerContentHeightRef.current;
+    const viewportHeight=readerViewportHeightRef.current;
+    if(contentHeight<=0||viewportHeight<=0){setReadingProgress(0);return;}
+    const scrollableHeight=Math.max(0,contentHeight-viewportHeight);
+    const next=scrollableHeight<=1?100:Math.min(100,Math.max(0,Math.round(readerOffsetRef.current/scrollableHeight*100)));
+    setReadingProgress(current=>current===next?current:next);
   };
 
   useEffect(()=>{
@@ -91,7 +103,10 @@ export default function FileViewerScreen(){
     readerPositionReadyRef.current=false;
     restoredReaderPositionRef.current=false;
     readerOffsetRef.current=0;
+    readerContentHeightRef.current=0;
+    readerViewportHeightRef.current=0;
     setSavedReaderPosition(0);
+    setReadingProgress(0);
     setLoading(true);
     setError('');
     setName('ملف');
@@ -179,18 +194,28 @@ export default function FileViewerScreen(){
         {canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel={`فتح ${name} بتطبيق خارجي`} accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.small,{borderColor:theme.border,backgroundColor:theme.surface2,opacity:externalOpening?0.45:1}]}><Ionicons name="open-outline" size={19} color={theme.accent}/></Pressable>}
       </View>
     </View>
+    {textReady&&<View accessible accessibilityRole="progressbar" accessibilityLabel="تقدم قراءة الملف" accessibilityValue={{min:0,max:100,now:readingProgress}} style={[s.readingTrack,{backgroundColor:theme.surface2}]}><View style={[s.readingProgress,{backgroundColor:theme.accent,width:`${readingProgress}%`}]} /></View>}
     {loading?<View style={s.center}><ActivityIndicator color={theme.accent}/><Text style={{color:theme.muted}}>جاري تجهيز الملف…</Text></View>:error?<View style={s.center}><Ionicons name={imageUri?'image-outline':'document-text-outline'} size={44} color={theme.muted}/><Text accessibilityRole="alert" style={[s.error,{color:theme.text}]}>{error}</Text>{canOpenExternal&&<Pressable accessibilityRole="button" accessibilityLabel="فتح الملف بتطبيق خارجي" accessibilityState={{disabled:externalOpening,busy:externalOpening}} disabled={externalOpening} onPress={()=>void openExternal()} style={[s.external,{backgroundColor:theme.accent,opacity:externalOpening?0.6:1}]}>{externalOpening?<ActivityIndicator size="small" color="#fff"/>:<Ionicons name="open-outline" size={18} color="#fff"/>}<Text style={s.externalText}>{externalOpening?'جاري الفتح…':'فتح خارجي'}</Text></Pressable>}</View>:imageUri?<View style={[s.imageStage,{backgroundColor:theme.surface2}]}><Image source={{uri:imageUri}} resizeMode="contain" style={s.image} accessible accessibilityLabel={`صورة ${name}`} onError={()=>setError('تعذر عرض الصورة داخل RAID. يمكنك فتحها بتطبيق صور آخر.')}/></View>:<ScrollView
       ref={readerScrollRef}
       contentContainerStyle={s.reader}
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={250}
-      onContentSizeChange={()=>{
+      onLayout={(event)=>{
+        readerViewportHeightRef.current=event.nativeEvent.layout.height;
+        refreshReadingProgress();
+      }}
+      onContentSizeChange={(_width,height)=>{
+        readerContentHeightRef.current=height;
+        refreshReadingProgress();
         if(restoredReaderPositionRef.current||!readerPositionReadyRef.current)return;
         restoredReaderPositionRef.current=true;
         if(savedReaderPosition>0)readerScrollRef.current?.scrollTo({y:savedReaderPosition,animated:false});
       }}
       onScroll={(event)=>{
         readerOffsetRef.current=Math.max(0,event.nativeEvent.contentOffset.y);
+        readerContentHeightRef.current=event.nativeEvent.contentSize.height;
+        readerViewportHeightRef.current=event.nativeEvent.layoutMeasurement.height;
+        refreshReadingProgress();
         if(positionSaveTimerRef.current)clearTimeout(positionSaveTimerRef.current);
         positionSaveTimerRef.current=setTimeout(()=>{
           positionSaveTimerRef.current=null;
@@ -203,4 +228,4 @@ export default function FileViewerScreen(){
   </SafeAreaView>;
 }
 
-const s=StyleSheet.create({root:{flex:1},header:{minHeight:66,borderBottomWidth:1,flexDirection:'row',alignItems:'center',paddingHorizontal:12,gap:10},icon:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},heading:{flex:1,minWidth:0},title:{fontSize:15,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,marginTop:2,textAlign:'right'},controls:{flexDirection:'row',gap:5},small:{height:36,minWidth:38,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},reader:{paddingHorizontal:20,paddingTop:22,paddingBottom:70},imageStage:{flex:1,margin:12,borderRadius:20,overflow:'hidden'},image:{width:'100%',height:'100%'},center:{flex:1,alignItems:'center',justifyContent:'center',padding:28,gap:14},error:{fontSize:15,lineHeight:24,textAlign:'center'},external:{minHeight:44,borderRadius:14,paddingHorizontal:18,flexDirection:'row',alignItems:'center',gap:7},externalText:{color:'#fff',fontWeight:'900'}});
+const s=StyleSheet.create({root:{flex:1},header:{minHeight:66,borderBottomWidth:1,flexDirection:'row',alignItems:'center',paddingHorizontal:12,gap:10},icon:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},heading:{flex:1,minWidth:0},title:{fontSize:15,fontWeight:'900',textAlign:'right'},sub:{fontSize:10,marginTop:2,textAlign:'right'},controls:{flexDirection:'row',gap:5},small:{height:36,minWidth:38,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},readingTrack:{height:3,overflow:'hidden'},readingProgress:{height:'100%'},reader:{paddingHorizontal:20,paddingTop:22,paddingBottom:70},imageStage:{flex:1,margin:12,borderRadius:20,overflow:'hidden'},image:{width:'100%',height:'100%'},center:{flex:1,alignItems:'center',justifyContent:'center',padding:28,gap:14},error:{fontSize:15,lineHeight:24,textAlign:'center'},external:{minHeight:44,borderRadius:14,paddingHorizontal:18,flexDirection:'row',alignItems:'center',gap:7},externalText:{color:'#fff',fontWeight:'900'}});

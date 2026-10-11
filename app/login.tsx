@@ -17,6 +17,9 @@ export default function LoginScreen(){
   const [passwordVisible,setPasswordVisible]=useState(false);
   const [confirmVisible,setConfirmVisible]=useState(false);
   const busyRef=useRef(false);
+  const emailInputRef=useRef<TextInput>(null);
+  const passwordInputRef=useRef<TextInput>(null);
+  const confirmInputRef=useRef<TextInput>(null);
   const fade=useRef(new Animated.Value(0)).current;
   const lift=useRef(new Animated.Value(22)).current;
 
@@ -129,16 +132,16 @@ export default function LoginScreen(){
             </View>
 
             <View style={s.form}>
-              {mode==='signup'&&<TextInput value={name} onChangeText={setName} editable={!busy} placeholder="الاسم" placeholderTextColor="#64748B" style={s.input} textContentType="name"/>}
-              <TextInput value={email} onChangeText={setEmail} editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#64748B" style={s.input} textContentType="emailAddress"/>
+              {mode==='signup'&&<TextInput value={name} onChangeText={setName} editable={!busy} placeholder="الاسم" placeholderTextColor="#64748B" style={s.input} textContentType="name" autoComplete="name" returnKeyType="next" onSubmitEditing={()=>emailInputRef.current?.focus()} accessibilityLabel="الاسم"/>}
+              <TextInput ref={emailInputRef} value={email} onChangeText={setEmail} editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#64748B" style={s.input} textContentType="emailAddress" autoComplete="email" returnKeyType="next" onSubmitEditing={()=>passwordInputRef.current?.focus()} accessibilityLabel="البريد الإلكتروني"/>
               <View style={s.passwordField}>
-                <TextInput value={password} onChangeText={setPassword} editable={!busy} secureTextEntry={!passwordVisible} placeholder="كلمة المرور" placeholderTextColor="#64748B" style={[s.input,s.passwordInput]} textContentType={mode==='signup'?'newPassword':'password'}/>
+                <TextInput ref={passwordInputRef} value={password} onChangeText={setPassword} editable={!busy} secureTextEntry={!passwordVisible} placeholder="كلمة المرور" placeholderTextColor="#64748B" style={[s.input,s.passwordInput]} textContentType={mode==='signup'?'newPassword':'password'} autoComplete={mode==='signup'?'new-password':'current-password'} returnKeyType={mode==='signup'?'next':'done'} onSubmitEditing={()=>mode==='signup'?confirmInputRef.current?.focus():submit()} accessibilityLabel="كلمة المرور"/>
                 <Pressable disabled={busy} onPress={()=>setPasswordVisible(value=>!value)} accessibilityRole="button" accessibilityLabel={passwordVisible?'إخفاء كلمة المرور':'إظهار كلمة المرور'} accessibilityState={{disabled:busy}} hitSlop={6} style={({pressed})=>[s.visibilityButton,pressed&&s.visibilityPressed]}>
                   <Ionicons name={passwordVisible?'eye-off-outline':'eye-outline'} size={21} color="#94A3B8"/>
                 </Pressable>
               </View>
               {mode==='signup'&&<View style={s.passwordField}>
-                <TextInput value={confirm} onChangeText={setConfirm} editable={!busy} secureTextEntry={!confirmVisible} placeholder="تأكيد كلمة المرور" placeholderTextColor="#64748B" style={[s.input,s.passwordInput]} textContentType="newPassword"/>
+                <TextInput ref={confirmInputRef} value={confirm} onChangeText={setConfirm} editable={!busy} secureTextEntry={!confirmVisible} placeholder="تأكيد كلمة المرور" placeholderTextColor="#64748B" style={[s.input,s.passwordInput]} textContentType="newPassword" autoComplete="new-password" returnKeyType="done" onSubmitEditing={submit} accessibilityLabel="تأكيد كلمة المرور"/>
                 <Pressable disabled={busy} onPress={()=>setConfirmVisible(value=>!value)} accessibilityRole="button" accessibilityLabel={confirmVisible?'إخفاء تأكيد كلمة المرور':'إظهار تأكيد كلمة المرور'} accessibilityState={{disabled:busy}} hitSlop={6} style={({pressed})=>[s.visibilityButton,pressed&&s.visibilityPressed]}>
                   <Ionicons name={confirmVisible?'eye-off-outline':'eye-outline'} size={21} color="#94A3B8"/>
                 </Pressable>

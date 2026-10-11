@@ -82,6 +82,14 @@ export default function PerformanceScreen(){
   const choose=(profile:BrowsingProfile)=>void patch(PROFILE_PRESETS[profile]);
   const quickBoost=()=>void patch(PROFILE_PRESETS.boost);
   const applyIraqResilience=()=>void patch(IRAQ_RESILIENCE_PRESET);
+  const resetToDefaults=()=>Alert.alert(
+    'استعادة الإعدادات الافتراضية؟',
+    'سيعود RAID Performance إلى الوضع المتوازن وإعداداته الأصلية.',
+    [
+      {text:'إلغاء',style:'cancel'},
+      {text:'استعادة',style:'destructive',onPress:()=>void patch(DEFAULT_PERFORMANCE_SETTINGS)},
+    ],
+  );
 
   return <SafeAreaView style={[s.root,{backgroundColor:theme.bg}]} edges={['top','bottom','left','right']}>
     <View style={[s.head,{borderBottomColor:theme.border,backgroundColor:theme.surface,paddingHorizontal:compact?10:14}]}>
@@ -145,6 +153,11 @@ export default function PerformanceScreen(){
         <Toggle title="صور أخف للشبكة الضعيفة" hint="يقلل استهلاك البيانات داخل RAID ولا يغيّر سرعة مزود الخدمة." value={settings.lowBandwidthImages} disabled={saving} onChange={value=>void patch({lowBandwidthImages:value})} theme={theme}/>
         <Toggle title="إعادة محاولة ذكية" hint="يستخدم Retry متدرج بدل إعادة التحميل المتكرر الذي يضغط الاتصال." value={settings.aggressiveRetry} disabled={saving} onChange={value=>void patch({aggressiveRetry:value})} theme={theme} last/>
       </View></View>
+
+      <Pressable disabled={saving} onPress={resetToDefaults} style={({pressed})=>[s.resetAction,{backgroundColor:theme.surface,borderColor:theme.border},pressed&&s.pressed,saving&&s.disabled]} accessibilityRole="button" accessibilityState={{disabled:saving}} accessibilityLabel="استعادة إعدادات الأداء الافتراضية">
+        <Ionicons name="refresh-outline" size={19} color={theme.accent}/>
+        <View style={s.resetCopy}><Text style={[s.resetTitle,{color:theme.text}]}>استعادة الإعدادات الافتراضية</Text><Text style={[s.resetHint,{color:theme.muted}]}>العودة بأمان إلى الوضع المتوازن بعد التأكيد</Text></View>
+      </Pressable>
 
       <View style={[s.note,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="information-circle-outline" size={19} color={theme.accent}/><Text style={[s.noteText,{color:theme.muted}]}>Video يحافظ على جودة الصور ويقلل الخلفية، Reading يخفف التشتيت، Downloads يعطي أولوية للاستقرار، وLow Data يوفر البيانات. كل الإعدادات اختيارية ويمكن تغييرها فورًا.</Text></View>
     </ScrollView>
@@ -210,6 +223,10 @@ const s=StyleSheet.create({
   toggleCopy:{flex:1,alignItems:'flex-end'},
   toggleTitle:{fontSize:12.5,fontWeight:'900',textAlign:'right'},
   toggleHint:{fontSize:9.5,lineHeight:15,marginTop:3,textAlign:'right'},
+  resetAction:{minHeight:62,borderRadius:18,borderWidth:1,paddingHorizontal:13,paddingVertical:10,flexDirection:'row-reverse',alignItems:'center',gap:10},
+  resetCopy:{flex:1,alignItems:'flex-end'},
+  resetTitle:{fontSize:12.5,fontWeight:'900',textAlign:'right'},
+  resetHint:{fontSize:9.5,lineHeight:15,marginTop:3,textAlign:'right'},
   note:{borderRadius:19,borderWidth:1,padding:13,flexDirection:'row-reverse',alignItems:'flex-start',gap:9},
   noteText:{flex:1,fontSize:9.8,lineHeight:16,textAlign:'right'},
   disabled:{opacity:.58},

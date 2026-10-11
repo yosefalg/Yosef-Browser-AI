@@ -73,11 +73,20 @@ function editableDownloadName(fileName: string) {
   return extension ? fileName.slice(0, -extension.length) : fileName;
 }
 
+function normalizeDownloadSearch(value: string) {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('ar')
+    .replace(/[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+    .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627')
+    .replace(/\u0649/g, '\u064A');
+}
+
 function searchableDownloadText(item: DownloadItem) {
   const rawUrl = String(item.url || '');
   let decodedUrl = rawUrl;
   try { decodedUrl = decodeURIComponent(rawUrl); } catch {}
-  return `${item.file_name || ''} ${hostOf(rawUrl)} ${decodedUrl}`.toLocaleLowerCase('ar');
+  return normalizeDownloadSearch(`${item.file_name || ''} ${hostOf(rawUrl)} ${decodedUrl}`);
 }
 
 function stateText(item: DownloadItem) {
@@ -191,7 +200,7 @@ export default function DownloadsScreen() {
   }, [items]);
 
   const visible = useMemo(()=>{
-    const searchQuery=query.trim().toLocaleLowerCase('ar');
+    const searchQuery=normalizeDownloadSearch(query.trim());
     return items.filter(item=>{
       const stateMatches=filter==='active'?item.state==='downloading'||item.state==='paused'||item.state==='queued':filter==='completed'?item.state==='completed':filter==='failed'?item.state==='failed'||item.state==='cancelled':true;
       const typeMatches=kindFilter==='all'||downloadKind(item)===kindFilter;

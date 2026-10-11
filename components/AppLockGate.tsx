@@ -15,6 +15,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
   const [locked, setLocked] = useState(false);
   const [privacyShield, setPrivacyShield] = useState(false);
   const [message, setMessage] = useState('');
+  const [authenticationPending, setAuthenticationPending] = useState(false);
   const settingsRef = useRef<AppLockSettings | null>(null);
   const backgroundAt = useRef<number | null>(null);
   const authenticating = useRef(false);
@@ -28,6 +29,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
     }
     if (authenticating.current) return false;
     authenticating.current = true;
+    setAuthenticationPending(true);
     setMessage('');
     try {
       const result = await LocalAuthentication.authenticateAsync({
@@ -54,6 +56,7 @@ export function AppLockGate({ children }: PropsWithChildren) {
       return false;
     } finally {
       authenticating.current = false;
+      setAuthenticationPending(false);
     }
   }, []);
 
@@ -176,9 +179,9 @@ export function AppLockGate({ children }: PropsWithChildren) {
       <Text style={styles.title}>{locked ? 'المتصفح مقفول' : 'RAID محمي'}</Text>
       <Text style={styles.body}>{locked ? 'استخدم بصمة أو وجه الجهاز. إذا كان جهازك يسمح، يبقى رمز القفل كخيار احتياطي.' : 'تم إخفاء محتوى المتصفح أثناء وجود التطبيق في الخلفية لحماية خصوصيتك.'}</Text>
       {!!message && <Text style={styles.message} accessibilityRole="alert" accessibilityLiveRegion="polite">{message}</Text>}
-      {locked && <Pressable onPress={() => void authenticate(true)} style={({ pressed }) => [styles.button, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="فتح RAID Browser">
-        <Ionicons name="finger-print" size={22} color="#0B1018" />
-        <Text style={styles.buttonText}>فتح RAID</Text>
+      {locked && <Pressable disabled={authenticationPending} onPress={() => void authenticate(true)} style={({ pressed }) => [styles.button, authenticationPending&&styles.buttonDisabled,pressed&&!authenticationPending&&styles.pressed]} accessibilityRole="button" accessibilityLabel="فتح RAID Browser" accessibilityState={{disabled:authenticationPending,busy:authenticationPending}}>
+        {authenticationPending?<ActivityIndicator size="small" color="#0B1018"/>:<Ionicons name="finger-print" size={22} color="#0B1018" />}
+        <Text style={styles.buttonText}>{authenticationPending?'جاري التحقق…':'فتح RAID'}</Text>
       </Pressable>}
       <Text style={styles.note}>التحقق يتم بواسطة Android ولا يرسل RAID بصمتك أو وجهك لأي خادم.</Text>
     </View>
@@ -199,6 +202,7 @@ const styles = StyleSheet.create({
   message:{marginTop:12,fontSize:11,lineHeight:18,color:'#E0A16F',textAlign:'center'},
   button:{marginTop:20,minHeight:52,width:'100%',borderRadius:17,backgroundColor:'#E3C09E',flexDirection:'row-reverse',gap:9,alignItems:'center',justifyContent:'center'},
   buttonText:{color:'#0B1018',fontSize:15,fontWeight:'900'},
+  buttonDisabled:{opacity:.7},
   note:{marginTop:14,fontSize:9.5,lineHeight:16,color:'#728094',textAlign:'center'},
   pressed:{opacity:.8,transform:[{scale:.99}]},
 });

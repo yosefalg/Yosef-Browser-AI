@@ -16,6 +16,19 @@ import {
 } from '@/lib/db';
 
 function hostOf(value:string){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return value;}}
+function normalizeTabSearch(value:string){
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('ar')
+    .replace(/[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]/g,'')
+    .replace(/[\u0622\u0623\u0625\u0671]/g,'\u0627')
+    .replace(/\u0649/g,'\u064A');
+}
+function searchableTabText(tab:BrowserTab){
+  let decodedUrl=tab.url;
+  try{decodedUrl=decodeURIComponent(tab.url);}catch{}
+  return normalizeTabSearch(`${tab.title||''} ${hostOf(tab.url)} ${decodedUrl}`);
+}
 function isTabViewMode(value:unknown):value is TabViewMode{return value==='grid'||value==='list';}
 function isTabSortMode(value:unknown):value is TabSortMode{return value==='recent'||value==='oldest'||value==='domain'||value==='title';}
 function canonicalUrl(value:string){
@@ -87,8 +100,8 @@ export default function TabsScreen(){
   },[tabs,sortMode]);
 
   const visibleTabs=useMemo(()=>{
-    const value=query.trim().toLowerCase();
-    return value?orderedTabs.filter(tab=>`${tab.title||''} ${hostOf(tab.url)} ${tab.url}`.toLowerCase().includes(value)):orderedTabs;
+    const value=normalizeTabSearch(query.trim());
+    return value?orderedTabs.filter(tab=>searchableTabText(tab).includes(value)):orderedTabs;
   },[query,orderedTabs]);
   const selectedIdSet=useMemo(()=>new Set(selectedIds),[selectedIds]);
   const visibleSelectedCount=useMemo(()=>visibleTabs.reduce((count,tab)=>count+(selectedIdSet.has(tab.id)?1:0),0),[selectedIdSet,visibleTabs]);

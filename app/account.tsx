@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -100,6 +100,18 @@ export default function AccountScreen(){
     finally{endOperation('logout');}
   };
 
+  const confirmLogout=()=>{
+    if(actionBusy)return;
+    Alert.alert(
+      'تسجيل الخروج من RAID؟',
+      'ستتوقف مزامنة الحساب على هذا الجهاز، بينما سيبقى إعداد WireGuard المحلي محفوظًا.',
+      [
+        {text:'إلغاء',style:'cancel'},
+        {text:'تسجيل الخروج',style:'destructive',onPress:()=>void logout()},
+      ],
+    );
+  };
+
   const initial=(name||email||'R').slice(0,1).toUpperCase();
   const quick:QuickItem[]=[
     {title:'RAID AI',sub:'المساعد الذكي',icon:'creation',route:'/ai'},
@@ -142,7 +154,7 @@ export default function AccountScreen(){
 
       <View style={[s.localNote,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name="shield-lock-outline" size={21} color={theme.accent}/><Text style={[s.localNoteText,{color:theme.muted}]}>إعداد WireGuard المحلي خاص بهذا الجهاز ولا يُحذف عند تسجيل الخروج من حساب RAID.</Text></View>
       {!!msg&&<Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[s.msg,{color:theme.text}]}>{msg}</Text>}
-      <Pressable onPress={()=>void logout()} disabled={actionBusy} accessibilityRole="button" accessibilityState={{disabled:actionBusy,busy:operation==='logout'}} style={({pressed})=>[s.logout,{borderColor:'#8C5F56'},(actionBusy||pressed)&&s.pressed]}><MaterialCommunityIcons name="logout" size={20} color="#C98D80"/><Text style={s.logoutText}>{operation==='logout'?'جارٍ تسجيل الخروج...':'تسجيل الخروج'}</Text></Pressable>
+      <Pressable onPress={confirmLogout} disabled={actionBusy} accessibilityRole="button" accessibilityState={{disabled:actionBusy,busy:operation==='logout'}} style={({pressed})=>[s.logout,{borderColor:'#8C5F56'},(actionBusy||pressed)&&s.pressed]}><MaterialCommunityIcons name="logout" size={20} color="#C98D80"/><Text style={s.logoutText}>{operation==='logout'?'جارٍ تسجيل الخروج...':'تسجيل الخروج'}</Text></Pressable>
     </ScrollView>
   </SafeAreaView>;
 }

@@ -117,6 +117,7 @@ export default function DownloadsScreen() {
   const [renameValue,setRenameValue] = useState('');
   const [themeName,setThemeName] = useState<ThemeName>('cinematic');
   const [operationBusy,setOperationBusy] = useState(false);
+  const [manualRefreshing,setManualRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
   const operationInFlight = useRef(false);
   const hasRunningDownloads = useRef(false);
@@ -137,6 +138,13 @@ export default function DownloadsScreen() {
       setLoading(false);
     }
   }, []);
+
+  const manualRefresh = async () => {
+    if (refreshInFlight.current || manualRefreshing) return;
+    setManualRefreshing(true);
+    try { await refresh(); }
+    finally { setManualRefreshing(false); }
+  };
 
   useFocusEffect(useCallback(() => {
     let focused = true;
@@ -338,7 +346,7 @@ export default function DownloadsScreen() {
       <View style={[s.header,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="رجوع" style={[s.headerButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="chevron-forward" size={22} color={theme.text} /></Pressable>
         <View style={s.headerCopy}><Text style={[s.title,{color:theme.text}]}>التنزيلات</Text><Text style={[s.sub,{color:theme.muted}]}>استكمال ذكي • سرعة مباشرة • استعادة بعد الإغلاق</Text></View>
-        <Pressable onPress={() => void refresh()} accessibilityRole="button" accessibilityLabel="تحديث قائمة التنزيلات" style={[s.headerButton,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="refresh" size={20} color={theme.accent} /></Pressable>
+        <Pressable disabled={manualRefreshing} onPress={() => void manualRefresh()} accessibilityRole="button" accessibilityLabel={manualRefreshing?'جارٍ تحديث قائمة التنزيلات':'تحديث قائمة التنزيلات'} accessibilityState={{disabled:manualRefreshing,busy:manualRefreshing}} style={[s.headerButton,{backgroundColor:theme.surface2,borderColor:theme.border},manualRefreshing&&s.disabled]}>{manualRefreshing?<ActivityIndicator size="small" color={theme.accent}/>:<Ionicons name="refresh" size={20} color={theme.accent} />}</Pressable>
       </View>
 
       {loading ? <View style={s.center}><ActivityIndicator color={theme.accent} /></View> : (
@@ -346,7 +354,7 @@ export default function DownloadsScreen() {
           {refreshError && <View style={[s.refreshError,{backgroundColor:theme.surface,borderColor:theme.border}]}>
             <Ionicons name="warning-outline" size={22} color="#E1A091" />
             <View style={s.refreshErrorCopy}><Text style={[s.refreshErrorTitle,{color:theme.text}]}>تعذر تحديث قائمة التنزيلات</Text><Text style={[s.refreshErrorText,{color:theme.muted}]}>{items.length ? 'التنزيلات الظاهرة محفوظة، ويمكنك المحاولة مجددًا.' : 'لم يتمكن RAID من قراءة التنزيلات الآن.'}</Text></View>
-            <Pressable onPress={() => void refresh()} accessibilityRole="button" accessibilityLabel="إعادة محاولة تحديث التنزيلات" style={[s.retryRefresh,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="refresh" size={18} color={theme.accent} /></Pressable>
+            <Pressable disabled={manualRefreshing} onPress={() => void manualRefresh()} accessibilityRole="button" accessibilityLabel={manualRefreshing?'جارٍ إعادة محاولة التحديث':'إعادة محاولة تحديث التنزيلات'} accessibilityState={{disabled:manualRefreshing,busy:manualRefreshing}} style={[s.retryRefresh,{backgroundColor:theme.surface2,borderColor:theme.border},manualRefreshing&&s.disabled]}>{manualRefreshing?<ActivityIndicator size="small" color={theme.accent}/>:<Ionicons name="refresh" size={18} color={theme.accent} />}</Pressable>
           </View>}
           {summary.active > 0 && <View style={[s.livePanel,{backgroundColor:theme.surface,borderColor:theme.border}]}>
             <View style={s.liveTop}>

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -15,6 +15,7 @@ export default function SettingsScreen(){
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
   const [signedIn,setSignedIn]=useState(false);
   const [vpnConnected,setVpnConnected]=useState(false);
+  const [refreshing,setRefreshing]=useState(false);
   const themeSavingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
@@ -30,6 +31,11 @@ export default function SettingsScreen(){
   },[]);
 
   useFocusEffect(useCallback(()=>{void refresh();return()=>{};},[refresh]));
+  const refreshFromGesture=useCallback(async()=>{
+    setRefreshing(true);
+    try{await refresh();}
+    finally{setRefreshing(false);}
+  },[refresh]);
   const choose=async(t:ThemeName)=>{
     if(themeSavingRef.current||t===themeName)return;
     const previous=themeName;
@@ -73,7 +79,10 @@ export default function SettingsScreen(){
       <Pressable onPress={()=>router.push('/security')} style={({pressed})=>[s.iconButton,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]} accessibilityLabel="مركز الأمان"><MaterialCommunityIcons name="shield-lock-outline" size={21} color={theme.accent}/></Pressable>
     </View>
 
-    <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={s.content}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>void refreshFromGesture()} colors={[theme.accent]} tintColor={theme.accent}/>}>
       <View style={[s.hero,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={[s.heroIcon,{backgroundColor:theme.surface2,borderColor:theme.border}]}><MaterialCommunityIcons name="tune-variant" size={28} color={theme.accent}/></View>
         <View style={s.heroCopy}><Text style={[s.heroKicker,{color:theme.accent}]}>RAID Browser</Text><Text style={[s.heroTitle,{color:theme.text}]}>إعدادات مرتبة بدون ازدحام</Text><Text style={[s.heroText,{color:theme.muted}]}>التصفح، الحساب، الحماية، الأداء، الذكاء الاصطناعي والمظهر من مركز واحد.</Text></View>

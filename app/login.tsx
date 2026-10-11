@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { signIn, signUp } from '@/lib/auth';
 import { signInWithGoogle } from '@/lib/google-auth';
@@ -13,6 +14,8 @@ export default function LoginScreen(){
   const [mode,setMode]=useState<'signin'|'signup'>('signin');
   const [msg,setMsg]=useState('');
   const [busy,setBusy]=useState(false);
+  const [passwordVisible,setPasswordVisible]=useState(false);
+  const [confirmVisible,setConfirmVisible]=useState(false);
   const busyRef=useRef(false);
   const fade=useRef(new Animated.Value(0)).current;
   const lift=useRef(new Animated.Value(22)).current;
@@ -41,6 +44,8 @@ export default function LoginScreen(){
     if (busyRef.current) return;
     setMode(next);
     setMsg('');
+    setPasswordVisible(false);
+    setConfirmVisible(false);
   };
 
   const submit=async()=>{
@@ -126,8 +131,18 @@ export default function LoginScreen(){
             <View style={s.form}>
               {mode==='signup'&&<TextInput value={name} onChangeText={setName} editable={!busy} placeholder="الاسم" placeholderTextColor="#64748B" style={s.input} textContentType="name"/>}
               <TextInput value={email} onChangeText={setEmail} editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" placeholder="البريد الإلكتروني" placeholderTextColor="#64748B" style={s.input} textContentType="emailAddress"/>
-              <TextInput value={password} onChangeText={setPassword} editable={!busy} secureTextEntry placeholder="كلمة المرور" placeholderTextColor="#64748B" style={s.input} textContentType={mode==='signup'?'newPassword':'password'}/>
-              {mode==='signup'&&<TextInput value={confirm} onChangeText={setConfirm} editable={!busy} secureTextEntry placeholder="تأكيد كلمة المرور" placeholderTextColor="#64748B" style={s.input} textContentType="newPassword"/>}
+              <View style={s.passwordField}>
+                <TextInput value={password} onChangeText={setPassword} editable={!busy} secureTextEntry={!passwordVisible} placeholder="كلمة المرور" placeholderTextColor="#64748B" style={[s.input,s.passwordInput]} textContentType={mode==='signup'?'newPassword':'password'}/>
+                <Pressable disabled={busy} onPress={()=>setPasswordVisible(value=>!value)} accessibilityRole="button" accessibilityLabel={passwordVisible?'إخفاء كلمة المرور':'إظهار كلمة المرور'} accessibilityState={{disabled:busy}} hitSlop={6} style={({pressed})=>[s.visibilityButton,pressed&&s.visibilityPressed]}>
+                  <Ionicons name={passwordVisible?'eye-off-outline':'eye-outline'} size={21} color="#94A3B8"/>
+                </Pressable>
+              </View>
+              {mode==='signup'&&<View style={s.passwordField}>
+                <TextInput value={confirm} onChangeText={setConfirm} editable={!busy} secureTextEntry={!confirmVisible} placeholder="تأكيد كلمة المرور" placeholderTextColor="#64748B" style={[s.input,s.passwordInput]} textContentType="newPassword"/>
+                <Pressable disabled={busy} onPress={()=>setConfirmVisible(value=>!value)} accessibilityRole="button" accessibilityLabel={confirmVisible?'إخفاء تأكيد كلمة المرور':'إظهار تأكيد كلمة المرور'} accessibilityState={{disabled:busy}} hitSlop={6} style={({pressed})=>[s.visibilityButton,pressed&&s.visibilityPressed]}>
+                  <Ionicons name={confirmVisible?'eye-off-outline':'eye-outline'} size={21} color="#94A3B8"/>
+                </Pressable>
+              </View>}
             </View>
 
             <Pressable onPress={submit} disabled={busy} style={[s.primary,busy&&s.disabled]} accessibilityRole="button" accessibilityState={{disabled:busy,busy}}>
@@ -145,6 +160,6 @@ export default function LoginScreen(){
 const s=StyleSheet.create({
   fill:{flex:1},root:{flex:1},flex:{flex:1},content:{flexGrow:1,justifyContent:'center',padding:20},shell:{width:'100%',maxWidth:520,alignSelf:'center'},hero:{alignItems:'center',marginBottom:24},logo:{width:72,height:72,borderRadius:24,alignItems:'center',justifyContent:'center',shadowColor:'#7C3AED',shadowOpacity:.3,shadowRadius:20,shadowOffset:{width:0,height:8},elevation:8},logoText:{color:'#fff',fontSize:34,fontWeight:'900'},brand:{marginTop:18,fontSize:28,fontWeight:'900',color:'#F8FAFC',textAlign:'center'},desc:{marginTop:8,maxWidth:350,color:'#8B98AD',lineHeight:20,textAlign:'center'},
   google:{height:56,borderRadius:18,backgroundColor:'#fff',flexDirection:'row-reverse',alignItems:'center',justifyContent:'center',gap:12,paddingHorizontal:18},googleMark:{width:28,height:28,borderRadius:14,borderWidth:1,borderColor:'#D1D5DB',alignItems:'center',justifyContent:'center'},googleMarkText:{fontSize:17,fontWeight:'900',color:'#4285F4'},googleText:{color:'#111827',fontWeight:'900',fontSize:15},divider:{flexDirection:'row',alignItems:'center',gap:10,marginVertical:16},line:{flex:1,height:1,backgroundColor:'#263247'},or:{color:'#64748B',fontWeight:'800'},
-  tabs:{flexDirection:'row-reverse',gap:8,padding:5,borderRadius:18,backgroundColor:'rgba(15,23,42,.86)',borderWidth:1,borderColor:'#202B3D'},tab:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center'},tabOn:{backgroundColor:'#20283A'},tabText:{color:'#7C889C',fontWeight:'800'},tabTextOn:{color:'#fff'},form:{gap:11,marginTop:14},input:{height:54,borderRadius:17,backgroundColor:'rgba(15,23,42,.9)',borderWidth:1,borderColor:'#263247',paddingHorizontal:15,color:'#fff',textAlign:'right',fontSize:16},
+  tabs:{flexDirection:'row-reverse',gap:8,padding:5,borderRadius:18,backgroundColor:'rgba(15,23,42,.86)',borderWidth:1,borderColor:'#202B3D'},tab:{flex:1,minHeight:46,borderRadius:14,alignItems:'center',justifyContent:'center'},tabOn:{backgroundColor:'#20283A'},tabText:{color:'#7C889C',fontWeight:'800'},tabTextOn:{color:'#fff'},form:{gap:11,marginTop:14},input:{height:54,borderRadius:17,backgroundColor:'rgba(15,23,42,.9)',borderWidth:1,borderColor:'#263247',paddingHorizontal:15,color:'#fff',textAlign:'right',fontSize:16},passwordField:{position:'relative',justifyContent:'center'},passwordInput:{paddingLeft:54},visibilityButton:{position:'absolute',left:5,width:44,height:44,borderRadius:14,alignItems:'center',justifyContent:'center'},visibilityPressed:{backgroundColor:'rgba(148,163,184,.12)'},
   primary:{height:56,borderRadius:18,alignItems:'center',justifyContent:'center',backgroundColor:'#7C3AED',marginTop:16,shadowColor:'#7C3AED',shadowOpacity:.2,shadowRadius:16,shadowOffset:{width:0,height:6},elevation:5},disabled:{opacity:.5},primaryText:{color:'#fff',fontWeight:'900',fontSize:16},messageBox:{marginTop:12,padding:12,borderRadius:14,backgroundColor:'rgba(15,23,42,.8)',borderWidth:1,borderColor:'#263247'},msg:{color:'#CBD5E1',textAlign:'center',lineHeight:20},backButton:{height:44,alignItems:'center',justifyContent:'center',marginTop:6},back:{color:'#7C889C',fontWeight:'800'}
 });

@@ -83,7 +83,7 @@ export default function NotificationsScreen(){
 
   return <SafeAreaView edges={['top','bottom','left','right']} style={[s.root,{backgroundColor:theme.bg}]}>
     <View style={[s.head,{backgroundColor:theme.surface,borderBottomColor:theme.border}]}>
-      <Pressable onPress={()=>router.back()} style={[s.back,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Text style={[s.backText,{color:theme.text}]}>‹</Text></Pressable>
+      <Pressable onPress={()=>router.back()} accessibilityRole="button" accessibilityLabel="رجوع" style={[s.back,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Text style={[s.backText,{color:theme.text}]}>‹</Text></Pressable>
       <View style={s.headText}><Text style={[s.title,{color:theme.text}]}>حالة RAID</Text><Text style={[s.sub,{color:theme.muted}]}>الحساب واتصال WireGuard في مكان واحد</Text></View>
       <View style={{width:42}}/>
     </View>
@@ -92,7 +92,7 @@ export default function NotificationsScreen(){
         <View style={s.summaryTop}><Text style={[s.version,{color:theme.accent}]}>RAID {version}</Text><View style={[s.liveDot,{backgroundColor:theme.muted},(state.signedIn||state.vpnConnected)&&s.liveDotOn]}/></View>
         <Text style={[s.summaryTitle,{color:theme.text}]}>مركز الحالة</Text>
         <Text style={[s.summaryText,{color:theme.muted}]}>الحالة تُحدّث من جلسة الحساب الفعلية وWireGuard، وليس من قيمة مخزنة قديمة.</Text>
-        <Text style={[s.checked,{color:theme.muted}]}>{lastChecked?`آخر تحقق ناجح: ${lastChecked.toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'})}`:busy?'جارٍ التحقق…':'لم ينجح التحقق بعد'}</Text>
+        <Text accessibilityLiveRegion="polite" style={[s.checked,{color:theme.muted}]}>{lastChecked?`آخر تحقق ناجح: ${lastChecked.toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'})}`:busy?'جارٍ التحقق…':'لم ينجح التحقق بعد'}</Text>
       </View>
 
       <View style={s.grid}>
@@ -103,17 +103,17 @@ export default function NotificationsScreen(){
       </View>
 
       {!!refreshError&&<View style={[s.error,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="alert" accessibilityLiveRegion="polite"><Text style={[s.errorText,{color:theme.text}]}>{refreshError}</Text></View>}
-      <Pressable disabled={busy} onPress={refresh} style={({pressed})=>[s.refresh,{backgroundColor:theme.accent},(busy||pressed)&&s.pressed]} accessibilityRole="button" accessibilityState={{disabled:busy,busy}}>
+      <Pressable disabled={busy} onPress={refresh} style={({pressed})=>[s.refresh,{backgroundColor:theme.accent},(busy||pressed)&&s.pressed]} accessibilityRole="button" accessibilityLabel="تحديث حالة الحساب وVPN" accessibilityState={{disabled:busy,busy}}>
         {busy?<View style={s.loadingRow}><ActivityIndicator size="small" color="#fff"/><Text style={s.refreshText}>جارٍ التحقق…</Text></View>:<Text style={s.refreshText}>تحديث الحالة</Text>}
       </Pressable>
-      {!state.vpnReady?<Pressable onPress={()=>router.push('/vpn-provider')} style={s.provider}><Text style={s.providerText}>اختيار مزود VPN مجاني</Text></Pressable>:null}
-      <Pressable onPress={()=>router.push('/vpn')} style={({pressed})=>[s.secondary,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]}><Text style={[s.secondaryText,{color:theme.text}]}>فتح RAID VPN</Text></Pressable>
+      {!state.vpnReady?<Pressable onPress={()=>router.push('/vpn-provider')} accessibilityRole="button" accessibilityLabel="اختيار مزود VPN" style={s.provider}><Text style={s.providerText}>اختيار مزود VPN مجاني</Text></Pressable>:null}
+      <Pressable onPress={()=>router.push('/vpn')} accessibilityRole="button" accessibilityLabel="فتح RAID VPN" style={({pressed})=>[s.secondary,{backgroundColor:theme.surface2,borderColor:theme.border},pressed&&s.pressed]}><Text style={[s.secondaryText,{color:theme.text}]}>فتح RAID VPN</Text></Pressable>
     </ScrollView>
   </SafeAreaView>;
 }
 
 function sourceLabel(value:string){if(value==='service')return 'RAID Server';if(value==='cache')return 'محفوظ محليًا';if(value==='local')return 'مزود محلي';return 'غير مهيأ';}
-function StatusCard({title,value,ok,theme}:{title:string;value:string;ok:boolean;theme:ReturnType<typeof getTheme>}){return <View style={[s.card,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.cardHead}><View style={[s.dot,{backgroundColor:theme.muted},ok&&s.dotOn]}/><Text style={[s.cardTitle,{color:theme.text}]} numberOfLines={1}>{title}</Text></View><Text style={[s.cardValue,{color:theme.muted}]} numberOfLines={2}>{value}</Text></View>}
+function StatusCard({title,value,ok,theme}:{title:string;value:string;ok:boolean;theme:ReturnType<typeof getTheme>}){return <View accessible accessibilityLabel={`${title}: ${value}`} style={[s.card,{backgroundColor:theme.surface,borderColor:theme.border}]}><View style={s.cardHead}><View style={[s.dot,{backgroundColor:theme.muted},ok&&s.dotOn]}/><Text style={[s.cardTitle,{color:theme.text}]} numberOfLines={1}>{title}</Text></View><Text style={[s.cardValue,{color:theme.muted}]} numberOfLines={2}>{value}</Text></View>}
 
 const s=StyleSheet.create({
   root:{flex:1},head:{minHeight:64,flexDirection:'row',alignItems:'center',paddingHorizontal:16,paddingVertical:6,borderBottomWidth:1},back:{width:42,height:42,borderRadius:15,alignItems:'center',justifyContent:'center',borderWidth:1},backText:{fontSize:31,marginTop:-3},headText:{flex:1,alignItems:'center'},title:{fontSize:19,fontWeight:'900'},sub:{fontSize:10,marginTop:2},

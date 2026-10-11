@@ -137,8 +137,8 @@ export default function HomeScreen(){
         </View>
 
         <View style={[s.search,{backgroundColor:lightSurface?'rgba(255,255,255,.82)':'rgba(4,10,18,.34)',borderColor:lightSurface?'rgba(25,70,75,.13)':'rgba(255,255,255,.13)'}]}>
-          <View style={[s.searchIcon,{backgroundColor:lightSurface?'rgba(27,85,86,.08)':'rgba(255,255,255,.07)'}]}><Ionicons name="search-outline" size={20} color={theme.accent}/></View>
-          <TextInput ref={searchInputRef} value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="ابحث أو اكتب موقعًا" placeholderTextColor={heroMuted} style={[s.input,{color:heroText}]} autoCapitalize="none" autoCorrect={false}/>
+          {query?<Pressable onPress={()=>{setQuery('');requestAnimationFrame(()=>searchInputRef.current?.focus())}} accessibilityRole="button" accessibilityLabel="مسح البحث" style={({pressed})=>[s.searchIcon,{backgroundColor:lightSurface?'rgba(27,85,86,.08)':'rgba(255,255,255,.07)'},pressed&&s.press]}><Ionicons name="close" size={20} color={theme.accent}/></Pressable>:<View style={[s.searchIcon,{backgroundColor:lightSurface?'rgba(27,85,86,.08)':'rgba(255,255,255,.07)'}]}><Ionicons name="search-outline" size={20} color={theme.accent}/></View>}
+          <TextInput ref={searchInputRef} value={query} onChangeText={setQuery} onSubmitEditing={submit} returnKeyType="go" placeholder="ابحث أو اكتب موقعًا" placeholderTextColor={heroMuted} style={[s.input,{color:heroText}]} autoCapitalize="none" autoCorrect={false} accessibilityLabel="بحث أو عنوان موقع"/>
           <Pressable accessibilityRole="button" accessibilityLabel="اسأل RAID AI" onPress={askAI} style={({pressed})=>[s.aiQuick,{backgroundColor:lightSurface?'rgba(255,255,255,.68)':'rgba(255,255,255,.07)',borderColor:lightSurface?'rgba(25,70,75,.12)':'rgba(255,255,255,.11)'},pressed&&s.press]}><Ionicons name="sparkles" size={17} color={theme.accent}/></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="روح" onPress={submit} style={({pressed})=>[s.go,{backgroundColor:theme.accent},pressed&&s.press]}><Ionicons name="arrow-back" size={19} color="#fff"/></Pressable>
         </View>

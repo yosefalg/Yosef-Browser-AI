@@ -177,7 +177,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     }
   };
 
-  const cancelCurrent = async () => {
+  const performCancel = async () => {
     if (busy || terminalOnly) return;
     setBusy(true);
     try {
@@ -189,6 +189,18 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const confirmCancel = () => {
+    if (busy || terminalOnly) return;
+    Alert.alert(
+      'إلغاء التنزيل؟',
+      `سيتم إلغاء «${item.file_name}». يمكنك بدء تنزيل جديد لاحقًا.`,
+      [
+        { text: 'متابعة التنزيل', style: 'cancel' },
+        { text: 'إلغاء التنزيل', style: 'destructive', onPress: () => { void performCancel(); } },
+      ],
+    );
   };
 
   const canControl = (terminalOnly && item.state === 'failed') || (!terminalOnly && (item.state === 'downloading' || item.state === 'paused'));
@@ -256,7 +268,7 @@ export function DownloadShelf({ visible }: { visible: boolean }) {
           accessibilityRole="button"
           accessibilityLabel="إلغاء التنزيل"
           accessibilityState={{ disabled: busy, busy }}
-          onPress={(event) => { event.stopPropagation(); void cancelCurrent(); }}
+          onPress={(event) => { event.stopPropagation(); confirmCancel(); }}
           style={({ pressed }) => [styles.cancel, compact && styles.controlCompact, busy && styles.disabled, pressed && styles.controlPressed]}
         >
           <Ionicons name="close" size={17} color="#F8FAFC" />

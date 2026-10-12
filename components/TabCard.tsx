@@ -42,6 +42,8 @@ function TabCardView({tab,viewMode,theme,busy,selected,selectionMode,recent,onOp
   const path=pathOf(tab.url);
   const stale=!recent && Date.now()-tab.updated_at>=STALE_TAB_MS;
   const activityLabel=recent?'آخر نشاط • ':stale?'تبويب قديم • ':'';
+  const relativeTime=ago(tab.updated_at);
+  const accessibilityDescription=`${activityLabel}${tab.title||hostOf(tab.url)}، الموقع ${hostOf(tab.url)}، ${secure?'اتصال HTTPS آمن':'اتصال HTTP غير مشفّر'}، ${relativeTime}${selected?'، محدد':''}`;
   const singleColumn=width<390;
   const compactPhone=width<520;
   const narrowList=width<410;
@@ -57,7 +59,7 @@ function TabCardView({tab,viewMode,theme,busy,selected,selectionMode,recent,onOp
     {backgroundColor:selected?theme.surface2:theme.surface,borderColor:selected||recent?theme.accent:theme.border},
     pressed&&s.press,
     busy&&s.disabled,
-  ]} accessibilityRole="button" accessibilityState={{selected,disabled:busy}} accessibilityLabel={`${activityLabel}${tab.title||hostOf(tab.url)}${selected?'، محدد':''}`} accessibilityHint={selectionMode?'اضغط أو اضغط مطولًا لتبديل تحديد هذا التبويب':'اضغط للفتح، واضغط مطولًا لبدء التحديد المتعدد'}>
+  ]} accessibilityRole="button" accessibilityState={{selected,disabled:busy}} accessibilityLabel={accessibilityDescription} accessibilityHint={selectionMode?'اضغط أو اضغط مطولًا لتبديل تحديد هذا التبويب':'اضغط للفتح، واضغط مطولًا لبدء التحديد المتعدد'}>
     {(selected||recent)&&<View style={[s.accentRail,{backgroundColor:theme.accent}]}/>} 
     {selected&&<View style={[s.selectedBadge,{backgroundColor:theme.accent}]}><Ionicons name="checkmark" size={14} color="#fff"/></View>}
     {grid?<>
@@ -74,7 +76,7 @@ function TabCardView({tab,viewMode,theme,busy,selected,selectionMode,recent,onOp
         {!!path&&<Text numberOfLines={1} style={[s.path,{color:theme.muted}]}>{path}</Text>}
       </View>
       <View style={s.footer}>
-        <View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>
+        <View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{relativeTime}</Text></View>
         {recent?<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="pulse-outline" size={11} color={theme.accent}/><Text style={[s.recentText,{color:theme.accent}]}>آخر نشاط</Text></View>:stale?<View style={[s.recentBadge,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="archive-outline" size={11} color={theme.muted}/><Text style={[s.recentText,{color:theme.muted}]}>قديم</Text></View>:null}
       </View>
     </>:<>
@@ -82,7 +84,7 @@ function TabCardView({tab,viewMode,theme,busy,selected,selectionMode,recent,onOp
       <View style={s.copy}>
         <View style={s.listTitleRow}><Text numberOfLines={1} style={[s.title,narrowList&&s.titleCompact,{color:theme.text}]}>{tab.title||hostOf(tab.url)}</Text>{recent&&!narrowList?<View style={[s.activityPill,{backgroundColor:theme.surface2,borderColor:theme.border}]}><View style={[s.recentDot,{backgroundColor:theme.accent}]}/><Text style={[s.activityText,{color:theme.accent}]}>آخر نشاط</Text></View>:stale&&!narrowList?<View style={[s.activityPill,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="archive-outline" size={10} color={theme.muted}/><Text style={[s.activityText,{color:theme.muted}]}>قديم</Text></View>:null}</View>
         <View style={s.domainRow}><Ionicons name={secure?'lock-closed-outline':'globe-outline'} size={11} color={secure?theme.accent:theme.muted}/><Text numberOfLines={1} style={[s.host,{color:theme.muted}]}>{hostOf(tab.url)}</Text>{recent&&narrowList?<Text style={[s.compactRecent,{color:theme.accent}]}>• آخر نشاط</Text>:stale&&narrowList?<Text style={[s.compactRecent,{color:theme.muted}]}>• قديم</Text>:null}</View>
-        <View style={s.listMetaRow}><View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{ago(tab.updated_at)}</Text></View>{!!path&&!narrowList&&<Text numberOfLines={1} style={[s.listPath,{color:theme.muted}]}>{path}</Text>}</View>
+        <View style={s.listMetaRow}><View style={s.meta}><Ionicons name="time-outline" size={12} color={theme.muted}/><Text style={[s.time,{color:theme.muted}]}>{relativeTime}</Text></View>{!!path&&!narrowList&&<Text numberOfLines={1} style={[s.listPath,{color:theme.muted}]}>{path}</Text>}</View>
       </View>
       {!selectionMode&&<View style={[s.actions,narrowList&&s.actionsCompactList]}>
         <Pressable onPress={event=>{event.stopPropagation();onMenu();}} hitSlop={12} style={[s.action,narrowList&&s.actionCompact,{backgroundColor:theme.surface2,borderColor:theme.border}]} accessibilityRole="button" accessibilityLabel="خيارات التبويب"><Ionicons name="ellipsis-horizontal" size={19} color={theme.muted}/></Pressable>

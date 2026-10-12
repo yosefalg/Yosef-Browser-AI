@@ -48,6 +48,7 @@ export default function AIScreen() {
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
   const lastAutoPrompt=useRef('');
   const requestInFlight=useRef(false);
+  const activeRequest=useRef<AbortController|null>(null);
   const listRef=useRef<FlatList<AgentMessage>>(null);
 
   const refreshState=useCallback(async()=>{
@@ -73,7 +74,9 @@ export default function AIScreen() {
   const sendValue=useCallback(async(raw:string)=>{
     const value=raw.trim();
     if(!value||requestInFlight.current)return;
+    const request=new AbortController();
     requestInFlight.current=true;
+    activeRequest.current=request;
     const next=[...messages,{role:'user',content:value} as AgentMessage];
     setMessages(next);setText('');setLastFailedText('');setBusy(true);
     try{
@@ -96,13 +99,20 @@ export default function AIScreen() {
       const memoryText=memories.length?`ذاكرة محلية مفيدة:\n${memories.map(m=>`- ${m.kind}: ${m.value}`).join('\n')}`.slice(0,1500):'';
       const pageText=page?`${memoryText?`${memoryText}\n\n`:''}الصفحة الحالية: ${page.title}\nالرابط: ${page.url}\n\n${page.text.slice(0,6500)}`:memoryText||undefined;
       const aiMessages=local.aiPrompt?[...messages.slice(-8),{role:'user',content:local.aiPrompt} as AgentMessage]:next.slice(-9);
-      const answer=await askAgent(aiMessages,pageText);
+      const answer=await askAgent(aiMessages,pageText,request.signal);
       setMessages([...next,{role:'assistant',content:answer}]);
     }catch(error){
+      if(request.signal.aborted){
+        setMessages([...next,{role:'assistant',content:'تم إيقاف الطلب.'}]);
+        return;
+      }
       setLastFailedText(value);
       setMessages([...next,{role:'assistant',content:error instanceof Error?error.message:'صار خلل بتشغيل RAID AI هسه.'}]);
       void refreshState();
-    }finally{requestInFlight.current=false;setBusy(false);}
+    }finally{
+      if(activeRequest.current===request)activeRequest.current=null;
+      requestInFlight.current=false;setBusy(false);
+    }
   },[messages,params.url,refreshState]);
 
   useEffect(()=>{
@@ -114,6 +124,7 @@ export default function AIScreen() {
   },[params.prompt,sendValue]);
 
   const send=()=>void sendValue(text);
+  const cancelRequest=()=>activeRequest.current?.abort();
   const hasContext=Boolean(params.title||params.url);
   const contextProtected=Boolean(params.url&&normalizedContextUrl(params.url)?.sensitive);
 
@@ -137,7 +148,7 @@ export default function AIScreen() {
         {!!lastFailedText&&!busy&&signedIn!==false&&<Pressable onPress={()=>void sendValue(lastFailedText)} style={[s.retryButton,{backgroundColor:theme.surface,borderColor:theme.border}]}><Ionicons name="refresh" size={17} color={theme.accent}/><Text style={[s.retryText,{color:theme.text}]}>عيد آخر طلب</Text></Pressable>}
         <View style={[s.composer,{backgroundColor:theme.surface,borderColor:theme.border}]}>
           <TextInput value={text} onChangeText={setText} onFocus={()=>setTimeout(()=>listRef.current?.scrollToEnd({animated:true}),70)} onSubmitEditing={send} placeholder="كلي شتريد أسويلك داخل RAID..." placeholderTextColor={theme.muted} style={[s.input,{color:theme.text}]} multiline textAlign="right" maxLength={4000} accessibilityLabel="رسالة RAID AI"/>
-          <Pressable onPress={send} disabled={busy||!text.trim()} style={[s.send,{backgroundColor:theme.accent},(busy||!text.trim())&&s.sendDisabled]} accessibilityLabel="إرسال إلى RAID AI"><Ionicons name={busy?'hourglass-outline':'arrow-up'} size={20} color="#fff"/></Pressable>
+          <Pressable onPress={busy?cancelRequest:send} disabled={!busy&&!text.trim()} style={[s.send,{backgroundColor:busy?'#D97D6C':theme.accent},(!busy&&!text.trim())&&s.sendDisabled]} accessibilityRole="button" accessibilityLabel={busy?'إيقاف طلب RAID AI':'إرسال إلى RAID AI'}><Ionicons name={busy?'stop':'arrow-up'} size={20} color="#fff"/></Pressable>
         </View>
         <View style={s.privacyLine}><Ionicons name="shield-checkmark-outline" size={13} color={contextProtected?'#D8A56F':theme.muted}/><Text style={[s.privacyText,{color:contextProtected?'#D8A56F':theme.muted}]}>{contextProtected?'هذه صفحة حساسة؛ RAID AI لن يرسل محتوى الصفحة.':'أوامر التطبيق محلية. سياق الصفحة ينرسل فقط إذا طابق الصفحة الحالية وما كانت صفحة تسجيل دخول أو دفع حساسة.'}</Text></View>
       </View>

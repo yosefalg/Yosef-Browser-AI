@@ -73,7 +73,7 @@ async function getFunctionErrorMessage(error: FunctionErrorLike) {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function askAgent(messages: AgentMessage[], pageText?: string) {
+export async function askAgent(messages: AgentMessage[], pageText?: string, signal?: AbortSignal) {
   const supabase = getSupabase();
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
@@ -99,6 +99,7 @@ export async function askAgent(messages: AgentMessage[], pageText?: string) {
   const invoke = (accessToken: string) => supabase.functions.invoke('raid-ai', {
     body,
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal,
     timeout: AI_REQUEST_TIMEOUT_MS,
   });
 

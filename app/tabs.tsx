@@ -74,7 +74,9 @@ export default function TabsScreen(){
 
   useFocusEffect(useCallback(()=>{
     void refresh();
-    void getSetting<ThemeName>('theme','cinematic').then(value=>setThemeName(isThemeName(value)?value:'cinematic'));
+    void getSetting<ThemeName>('theme','cinematic')
+      .then(value=>setThemeName(isThemeName(value)?value:'cinematic'))
+      .catch(()=>setThemeName('cinematic'));
     return()=>{};
   },[refresh]));
 
@@ -87,6 +89,9 @@ export default function TabsScreen(){
       const stored=layout&&typeof layout==='object'?layout as {viewMode?:unknown;sortMode?:unknown}:null;
       setViewMode(isTabViewMode(stored?.viewMode)?stored.viewMode:isTabViewMode(legacyView)?legacyView:'grid');
       setSortMode(isTabSortMode(stored?.sortMode)?stored.sortMode:isTabSortMode(legacySort)?legacySort:'recent');
+    }).catch(()=>{
+      setViewMode('grid');
+      setSortMode('recent');
     });
   },[]);
 

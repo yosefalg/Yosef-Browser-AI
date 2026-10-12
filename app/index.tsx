@@ -34,13 +34,21 @@ export default function HomeScreen(){
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   useFocusEffect(useCallback(()=>{let alive=true;Promise.all([
-    listDownloads(12).catch(()=>[] as DownloadItem[]),
-    getBrowserTabs().catch(()=>[]),
-    getRecentSites(6).catch(()=>[] as RecentSite[]),
-    getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
-    isVpnConnected().catch(()=>false),
-    getSetting<boolean>('raid_2_11_welcome_seen',false).catch(()=>false),
-  ]).then(([items,tabs,recent,saved,connected,welcomeSeen])=>{if(!alive)return;setDownloads(items);setTabsCount(tabs.length);setRecentSites(recent);setThemeName(isThemeName(saved)?saved:'cinematic');setVpnConnected(Boolean(connected));setWelcomeOpen(!welcomeSeen);});return()=>{alive=false};},[]));
+    listDownloads(12).then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+    getBrowserTabs().then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+    getRecentSites(6).then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+    getSetting<ThemeName>('theme','cinematic').then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+    isVpnConnected().then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+    getSetting<boolean>('raid_2_11_welcome_seen',false).then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+  ]).then(([items,tabs,recent,saved,connected,welcomeSeen])=>{
+    if(!alive)return;
+    if(items.ok)setDownloads(items.value);
+    if(tabs.ok)setTabsCount(tabs.value.length);
+    if(recent.ok)setRecentSites(recent.value);
+    if(saved.ok)setThemeName(isThemeName(saved.value)?saved.value:'cinematic');
+    if(connected.ok)setVpnConnected(Boolean(connected.value));
+    if(welcomeSeen.ok)setWelcomeOpen(!welcomeSeen.value);
+  });return()=>{alive=false};},[]));
 
   const openUrl=(value:string)=>{
     const clean=value.trim();

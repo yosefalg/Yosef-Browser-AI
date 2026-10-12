@@ -95,6 +95,10 @@ export default function FileViewerScreen(){
       if(!active)return;
       setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
       if(Number.isFinite(savedFontSize))setFontSize(Math.min(MAX_FONT_SIZE,Math.max(MIN_FONT_SIZE,Math.round(savedFontSize))));
+    }).catch(()=>{
+      if(!active)return;
+      setThemeName('cinematic');
+      setFontSize(DEFAULT_FONT_SIZE);
     });
     return()=>{active=false;};
   },[]);
@@ -118,7 +122,7 @@ export default function FileViewerScreen(){
         if(!Number.isInteger(id)||id<=0)throw new Error('معرّف الملف غير صالح.');
         const [item,storedPosition]=await Promise.all([
           getDownload(id),
-          getSetting<number>(positionSettingKey,0),
+          getSetting<number>(positionSettingKey,0).catch(()=>0),
         ]);
         if(!item?.local_uri||item.state!=='completed')throw new Error('الملف غير جاهز للقراءة.');
         const info=await FileSystem.getInfoAsync(item.local_uri);

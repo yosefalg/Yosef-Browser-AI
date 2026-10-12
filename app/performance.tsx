@@ -102,7 +102,7 @@ export default function PerformanceScreen(){
       <View style={[s.hero,{backgroundColor:theme.surface,borderColor:theme.border,padding:compact?12:15}]}>
         <View style={[s.heroIcon,{backgroundColor:settings.enabled?`${activeAccent}20`:theme.surface2,borderColor:theme.border,width:compact?50:60,height:compact?50:60,borderRadius:compact?16:20}]}><Ionicons name="speedometer-outline" size={compact?27:32} color={settings.enabled?activeAccent:theme.accent}/></View>
         <View style={s.heroCopy}><Text style={[s.kicker,{color:activeAccent}]}>INTERNET / APP BOOST</Text><Text style={[s.heroTitle,{color:theme.text,fontSize:compact?16:18}]}>{settings.enabled?'وضع التحسين شغال':'الوضع الطبيعي'}</Text><Text style={[s.heroText,{color:theme.muted}]}>RAID يخفف المنافسة داخل التطبيق، يركز على التبويب النشط، ويقلل العمل الخلفي. لا يغيّر سرعة مزود الإنترنت نفسها.</Text></View>
-        <Switch value={settings.enabled} disabled={saving} onValueChange={value=>void patch({enabled:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
+        <Switch value={settings.enabled} disabled={saving} onValueChange={value=>void patch({enabled:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8" accessibilityLabel="تشغيل تحسين موارد RAID" accessibilityHint="يقلل العمل الخلفي ويركز الموارد على التبويب النشط" accessibilityState={{disabled:saving,checked:settings.enabled}}/>
       </View>
 
       <View style={s.quickRow}>
@@ -130,14 +130,14 @@ export default function PerformanceScreen(){
       <View style={[s.adaptiveCard,{backgroundColor:theme.surface,borderColor:theme.border}]}>
         <View style={[s.adaptiveIcon,{backgroundColor:theme.surface2,borderColor:theme.border}]}><Ionicons name="git-network-outline" size={22} color={theme.accent}/></View>
         <View style={s.adaptiveCopy}><Text style={[s.adaptiveTitle,{color:theme.text}]}>Adaptive Browsing</Text><Text style={[s.adaptiveHint,{color:theme.muted}]}>في الوضع المتوازن يكتشف RAID سياق الصفحة ويحوّل السياسة تلقائيًا إلى Video أو Reading أو Downloads أو Low Data عند الحاجة.</Text></View>
-        <Switch value={settings.adaptiveMode} disabled={saving} onValueChange={value=>void patch({adaptiveMode:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/>
+        <Switch value={settings.adaptiveMode} disabled={saving} onValueChange={value=>void patch({adaptiveMode:value})} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8" accessibilityLabel="تشغيل التصفح التكيفي" accessibilityHint="يختار سياسة الأداء الملائمة حسب نوع الصفحة" accessibilityState={{disabled:saving,checked:settings.adaptiveMode}}/>
       </View>
 
       <View style={s.section}>
         <Text style={[s.sectionTitle,{color:theme.accent}]}>الأوضاع التكيفية</Text>
         <View style={s.grid}>{PROFILES.map(item=>{
           const active=settings.profile===item.id;
-          return <Pressable key={item.id} disabled={saving} onPress={()=>choose(item.id)} accessibilityState={{disabled:saving,selected:active}} style={({pressed})=>[s.profile,{width:compact?'100%':'48.5%',backgroundColor:theme.surface,borderColor:active?item.accent:theme.border},active&&s.profileActive,pressed&&s.pressed,saving&&s.disabled]}>
+          return <Pressable key={item.id} disabled={saving} onPress={()=>choose(item.id)} accessibilityRole="radio" accessibilityLabel={`وضع ${item.title}`} accessibilityHint={`${item.hint}. ${profileDescription(item.id)}`} accessibilityState={{disabled:saving,selected:active,checked:active}} style={({pressed})=>[s.profile,{width:compact?'100%':'48.5%',backgroundColor:theme.surface,borderColor:active?item.accent:theme.border},active&&s.profileActive,pressed&&s.pressed,saving&&s.disabled]}>
             <View style={s.profileTop}><View style={[s.profileIcon,{backgroundColor:active?`${item.accent}1F`:theme.surface2,borderColor:active?item.accent:theme.border}]}><Ionicons name={item.icon} size={22} color={active?item.accent:theme.text}/></View><Text style={[s.profileTitle,{color:active?item.accent:theme.text}]}>{item.title}</Text></View>
             <Text style={[s.profileHint,{color:theme.muted}]}>{item.hint}</Text>
             <Text numberOfLines={2} style={[s.profileDesc,{color:theme.muted}]}>{profileDescription(item.id)}</Text>
@@ -169,7 +169,7 @@ function Chip({label,on,theme}:{label:string;on:boolean;theme:ReturnType<typeof 
 }
 
 function Toggle({title,hint,value,disabled,onChange,theme,last=false}:{title:string;hint:string;value:boolean;disabled:boolean;onChange:(v:boolean)=>void;theme:ReturnType<typeof getTheme>;last?:boolean}){
-  return <View style={[s.toggle,!last&&{borderBottomWidth:1,borderBottomColor:theme.border},disabled&&s.disabled]}><View style={s.toggleCopy}><Text style={[s.toggleTitle,{color:theme.text}]}>{title}</Text><Text style={[s.toggleHint,{color:theme.muted}]}>{hint}</Text></View><Switch value={value} disabled={disabled} onValueChange={onChange} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8"/></View>;
+  return <View style={[s.toggle,!last&&{borderBottomWidth:1,borderBottomColor:theme.border},disabled&&s.disabled]}><View style={s.toggleCopy}><Text style={[s.toggleTitle,{color:theme.text}]}>{title}</Text><Text style={[s.toggleHint,{color:theme.muted}]}>{hint}</Text></View><Switch value={value} disabled={disabled} onValueChange={onChange} trackColor={{false:'#39434C',true:'#2B765E'}} thumbColor="#F4F7F8" accessibilityLabel={title} accessibilityHint={hint} accessibilityState={{disabled,checked:value}}/></View>;
 }
 
 const s=StyleSheet.create({

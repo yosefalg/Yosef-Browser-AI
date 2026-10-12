@@ -17,19 +17,28 @@ export default function SettingsScreen(){
   const [vpnConnected,setVpnConnected]=useState<boolean|null>(null);
   const [statusError,setStatusError]=useState('');
   const [refreshing,setRefreshing]=useState(false);
+  const refreshInFlightRef=useRef<Promise<void>|null>(null);
   const themeSavingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
-  const refresh=useCallback(async()=>{
-    const [savedTheme,sessionResult,vpnResult]=await Promise.all([
+  const refresh=useCallback(()=>{
+    if(refreshInFlightRef.current)return refreshInFlightRef.current;
+    const request=Promise.all([
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
       getCurrentSession().then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
       isVpnConnected().then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
-    ]);
-    setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
-    if(sessionResult.ok)setSignedIn(Boolean(sessionResult.value?.user));
-    if(vpnResult.ok)setVpnConnected(vpnResult.value);
-    setStatusError(sessionResult.ok&&vpnResult.ok?'':'تعذر تحديث بعض الحالات الآن؛ بقيت آخر نتيجة موثوقة ظاهرة.');
+    ]).then(([savedTheme,sessionResult,vpnResult])=>{
+      setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
+      if(sessionResult.ok)setSignedIn(Boolean(sessionResult.value?.user));
+      if(vpnResult.ok)setVpnConnected(vpnResult.value);
+      setStatusError(sessionResult.ok&&vpnResult.ok?'':'تعذر تحديث بعض الحالات الآن؛ بقيت آخر نتيجة موثوقة ظاهرة.');
+    });
+    refreshInFlightRef.current=request;
+    void request.then(
+      ()=>{if(refreshInFlightRef.current===request)refreshInFlightRef.current=null;},
+      ()=>{if(refreshInFlightRef.current===request)refreshInFlightRef.current=null;},
+    );
+    return request;
   },[]);
 
   useFocusEffect(useCallback(()=>{void refresh();return()=>{};},[refresh]));

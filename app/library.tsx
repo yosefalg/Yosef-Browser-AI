@@ -28,6 +28,7 @@ export default function LibraryScreen(){
   const [historySearchResults,setHistorySearchResults]=useState<HistoryItem[]>([]);
   const [historySearchLoading,setHistorySearchLoading]=useState(false);
   const [historySearchError,setHistorySearchError]=useState(false);
+  const [historySearchRetry,setHistorySearchRetry]=useState(0);
   const [refreshError,setRefreshError]=useState(false);
   const [query,setQuery]=useState('');
   const loadInFlight=useRef(false);
@@ -154,7 +155,7 @@ export default function LibraryScreen(){
       });
     },180);
     return()=>clearTimeout(timer);
-  },[searchTerm,tab]);
+  },[historySearchRetry,searchTerm,tab]);
 
   const foldedSearchTerm=searchTerm.toLocaleLowerCase();
   const sourceCount=tab==='bookmarks'?bookmarks.length:history.length;
@@ -201,7 +202,7 @@ export default function LibraryScreen(){
       windowSize={7}
       removeClippedSubviews
       ListFooterComponent={tab==='history'&&!searchTerm&&historyHasMore?<Pressable disabled={loadingMore||mutating} onPress={()=>void loadMoreHistory()} accessibilityRole="button" accessibilityLabel="تحميل زيارات أقدم من السجل" accessibilityState={{disabled:loadingMore||mutating,busy:loadingMore}} style={[styles.loadMore,{backgroundColor:theme.surface,borderColor:theme.border},(loadingMore||mutating)&&styles.disabled]}>{loadingMore?<ActivityIndicator size="small" color={theme.accent}/>:<Text style={[styles.loadMoreText,{color:theme.accent}]}>تحميل سجل أقدم</Text>}</Pressable>:null}
-      ListEmptyComponent={historySearchLoading?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري البحث في كامل السجل…</Text></View>:historySearchError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>تعذر البحث في السجل</Text><Text style={[styles.emptyText,{color:theme.muted}]}>عدّل عبارة البحث قليلًا للمحاولة مرة أخرى.</Text></View>:loading&&sourceCount===0?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري تحميل المكتبة…</Text></View>:!refreshError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>{searchTerm?'لا توجد نتائج مطابقة':tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={[styles.emptyText,{color:theme.muted}]}>{searchTerm?'جرّب البحث بعنوان أقصر أو باسم الموقع.':tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:null}
+      ListEmptyComponent={historySearchLoading?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري البحث في كامل السجل…</Text></View>:historySearchError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>تعذر البحث في السجل</Text><Text style={[styles.emptyText,{color:theme.muted}]}>تعذر إكمال البحث الآن. يمكنك إعادة المحاولة بنفس العبارة.</Text><Pressable onPress={()=>setHistorySearchRetry(value=>value+1)} accessibilityRole="button" accessibilityLabel="إعادة البحث في سجل التصفح" style={[styles.retry,{marginTop:12,backgroundColor:theme.surface,borderColor:theme.border}]}><Text style={[styles.retryText,{color:theme.accent}]}>إعادة البحث</Text></Pressable></View>:loading&&sourceCount===0?<View style={styles.empty}><ActivityIndicator color={theme.accent}/><Text style={[styles.emptyText,{color:theme.muted}]}>جاري تحميل المكتبة…</Text></View>:!refreshError?<View style={styles.empty}><Text style={[styles.emptyTitle,{color:theme.text}]}>{searchTerm?'لا توجد نتائج مطابقة':tab==='bookmarks'?'لا توجد مواقع محفوظة':'السجل فارغ'}</Text><Text style={[styles.emptyText,{color:theme.muted}]}>{searchTerm?'جرّب البحث بعنوان أقصر أو باسم الموقع.':tab==='bookmarks'?'احفظ أي صفحة من زر النجمة داخل المتصفح.':'المواقع التي تزورها في الوضع العادي ستظهر هنا.'}</Text></View>:null}
       renderItem={({item})=><View style={[styles.row,{backgroundColor:theme.surface,borderColor:theme.border},mutating&&styles.disabled]}>
         <Pressable disabled={mutating} accessibilityRole="button" accessibilityState={{disabled:mutating}} accessibilityLabel={`فتح ${item.title?.trim()||host(item.url)}`} onPress={()=>open(item.url)} onLongPress={()=>tab==='bookmarks'?deleteBookmark(item.url):deleteHistoryEntry(item.id)} style={styles.rowMain}>
           <View style={[styles.badge,{backgroundColor:theme.surface2}]}><Text style={[styles.badgeText,{color:theme.accent}]}>{host(item.url).slice(0,1).toUpperCase()}</Text></View>

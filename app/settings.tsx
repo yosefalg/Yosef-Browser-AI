@@ -13,21 +13,23 @@ type SettingsRow={title:string;hint:string;icon:string;route:string;badge?:strin
 
 export default function SettingsScreen(){
   const [themeName,setThemeName]=useState<ThemeName>('cinematic');
-  const [signedIn,setSignedIn]=useState(false);
-  const [vpnConnected,setVpnConnected]=useState(false);
+  const [signedIn,setSignedIn]=useState<boolean|null>(null);
+  const [vpnConnected,setVpnConnected]=useState<boolean|null>(null);
+  const [statusError,setStatusError]=useState('');
   const [refreshing,setRefreshing]=useState(false);
   const themeSavingRef=useRef(false);
   const theme=useMemo(()=>getTheme(themeName),[themeName]);
 
   const refresh=useCallback(async()=>{
-    const [savedTheme,session,vpn]=await Promise.all([
+    const [savedTheme,sessionResult,vpnResult]=await Promise.all([
       getSetting<ThemeName>('theme','cinematic').catch(()=>'cinematic' as ThemeName),
-      getCurrentSession().catch(()=>null),
-      isVpnConnected().catch(()=>false),
+      getCurrentSession().then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
+      isVpnConnected().then(value=>({ok:true,value} as const)).catch(()=>({ok:false} as const)),
     ]);
     setThemeName(isThemeName(savedTheme)?savedTheme:'cinematic');
-    setSignedIn(Boolean(session?.user));
-    setVpnConnected(vpn);
+    if(sessionResult.ok)setSignedIn(Boolean(sessionResult.value?.user));
+    if(vpnResult.ok)setVpnConnected(vpnResult.value);
+    setStatusError(sessionResult.ok&&vpnResult.ok?'':'تعذر تحديث بعض الحالات الآن؛ بقيت آخر نتيجة موثوقة ظاهرة.');
   },[]);
 
   useFocusEffect(useCallback(()=>{void refresh();return()=>{};},[refresh]));
@@ -58,11 +60,11 @@ export default function SettingsScreen(){
     {title:'التبويبات',hint:'إدارة جلسات التصفح واستعادتها',icon:'tab-multiple',route:'/tabs'},
   ];
   const services:SettingsRow[]=[
-    {title:'حساب RAID',hint:signedIn?'الحساب متصل ويمكن مزامنته':'غير مسجل الدخول',icon:signedIn?'account-check-outline':'account-outline',route:'/account',badge:signedIn?'متصل':'غير مسجل'},
+    {title:'حساب RAID',hint:signedIn===null?'حالة الحساب غير متاحة الآن':signedIn?'الحساب متصل ويمكن مزامنته':'غير مسجل الدخول',icon:signedIn?'account-check-outline':'account-outline',route:'/account',badge:signedIn===null?'غير متاح':signedIn?'متصل':'غير مسجل'},
     {title:'قفل RAID',hint:'قفل اختياري ببصمة أو وجه الجهاز',icon:'shield-lock-outline',route:'/app-lock',badge:'حماية'},
     {title:'RAID Security Center',hint:'فحص الروابط وكشف مؤشرات التمويه قبل الفتح',icon:'shield-lock-outline',route:'/security',badge:'جديد'},
     {title:'RAID AI',hint:'المساعد الذكي وسياق الصفحة',icon:'creation',route:'/ai'},
-    {title:'RAID VPN',hint:vpnConnected?'النفق متصل فعليًا':'إدارة WireGuard والاتصال',icon:vpnConnected?'shield-check':'shield-outline',route:'/vpn',badge:vpnConnected?'متصل':'غير متصل'},
+    {title:'RAID VPN',hint:vpnConnected===null?'حالة النفق غير متاحة الآن':vpnConnected?'النفق متصل فعليًا':'إدارة WireGuard والاتصال',icon:vpnConnected?'shield-check':'shield-outline',route:'/vpn',badge:vpnConnected===null?'غير متاح':vpnConnected?'متصل':'غير متصل'},
     {title:'مركز الخصوصية',hint:'الحماية والبيانات المحلية',icon:'shield-lock-outline',route:'/privacy'},
     {title:'مدير كلمات المرور',hint:'بيانات الدخول المحفوظة',icon:'key-chain-variant',route:'/passwords'},
   ];
@@ -89,6 +91,7 @@ export default function SettingsScreen(){
       </View>
 
       <StatusStrip theme={theme} signedIn={signedIn} vpnConnected={vpnConnected}/>
+      {!!statusError&&<Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[s.statusError,{color:theme.text,backgroundColor:theme.surface2,borderColor:theme.border}]}>{statusError}</Text>}
       <Section title="التصفح والأداء والبيانات" rows={browsing} theme={theme}/>
       <Section title="الحساب والخدمات" rows={services} theme={theme}/>
 
@@ -102,10 +105,10 @@ export default function SettingsScreen(){
   </SafeAreaView>
 }
 
-function StatusStrip({theme,signedIn,vpnConnected}:{theme:ReturnType<typeof getTheme>;signedIn:boolean;vpnConnected:boolean}){
+function StatusStrip({theme,signedIn,vpnConnected}:{theme:ReturnType<typeof getTheme>;signedIn:boolean|null;vpnConnected:boolean|null}){
   return <View style={s.statusStrip}>
-    <View style={[s.statusItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name={signedIn?'account-check-outline':'account-outline'} size={20} color={signedIn?'#4CB884':theme.muted}/><Text style={[s.statusLabel,{color:theme.text}]}>الحساب</Text><Text style={[s.statusValue,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn?'متصل':'غير مسجل'}</Text></View>
-    <View style={[s.statusItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name={vpnConnected?'shield-check':'shield-outline'} size={20} color={vpnConnected?'#4CB884':theme.muted}/><Text style={[s.statusLabel,{color:theme.text}]}>VPN</Text><Text style={[s.statusValue,{color:vpnConnected?'#4CB884':theme.muted}]}>{vpnConnected?'متصل':'غير متصل'}</Text></View>
+    <View style={[s.statusItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name={signedIn?'account-check-outline':'account-outline'} size={20} color={signedIn?'#4CB884':theme.muted}/><Text style={[s.statusLabel,{color:theme.text}]}>الحساب</Text><Text style={[s.statusValue,{color:signedIn?'#4CB884':theme.muted}]}>{signedIn===null?'غير متاح':signedIn?'متصل':'غير مسجل'}</Text></View>
+    <View style={[s.statusItem,{backgroundColor:theme.surface,borderColor:theme.border}]}><MaterialCommunityIcons name={vpnConnected?'shield-check':'shield-outline'} size={20} color={vpnConnected?'#4CB884':theme.muted}/><Text style={[s.statusLabel,{color:theme.text}]}>VPN</Text><Text style={[s.statusValue,{color:vpnConnected?'#4CB884':theme.muted}]}>{vpnConnected===null?'غير متاح':vpnConnected?'متصل':'غير متصل'}</Text></View>
   </View>
 }
 
@@ -115,5 +118,5 @@ function Section({title,rows,theme}:{title:string;rows:SettingsRow[];theme:Retur
 
 const s=StyleSheet.create({
   root:{flex:1},head:{minHeight:66,flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between',paddingHorizontal:14,paddingVertical:7,borderBottomWidth:1},iconButton:{width:42,height:42,borderRadius:14,borderWidth:1,alignItems:'center',justifyContent:'center'},headText:{alignItems:'center'},title:{fontSize:18,fontWeight:'900'},subtitle:{marginTop:1,fontSize:9,letterSpacing:.6},content:{padding:16,gap:16,paddingBottom:42},hero:{padding:17,borderRadius:24,borderWidth:1,flexDirection:'row-reverse',alignItems:'center',gap:13},heroIcon:{width:54,height:54,borderRadius:18,borderWidth:1,alignItems:'center',justifyContent:'center'},heroCopy:{flex:1,alignItems:'flex-end'},heroKicker:{fontSize:9,fontWeight:'900',letterSpacing:.7},heroTitle:{fontSize:20,fontWeight:'900',textAlign:'right',marginTop:3},heroText:{marginTop:6,lineHeight:18,textAlign:'right',fontSize:11},
-  statusStrip:{flexDirection:'row-reverse',gap:10},statusItem:{flex:1,minHeight:82,borderRadius:20,borderWidth:1,padding:12,alignItems:'flex-end',justifyContent:'center'},statusLabel:{fontSize:12,fontWeight:'900',marginTop:6},statusValue:{fontSize:10,fontWeight:'800',marginTop:3},sectionWrap:{gap:9},sectionHead:{flexDirection:'row-reverse',alignItems:'center',gap:8,paddingHorizontal:3},sectionDot:{width:7,height:7,borderRadius:4},sectionTitle:{fontWeight:'900',textAlign:'right'},group:{borderRadius:22,borderWidth:1,overflow:'hidden'},row:{minHeight:70,paddingHorizontal:12,paddingVertical:10,flexDirection:'row-reverse',alignItems:'center',gap:11},rowIcon:{width:44,height:44,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center'},rowCopy:{flex:1,alignItems:'flex-end'},rowTitleLine:{flexDirection:'row-reverse',alignItems:'center',gap:7},rowText:{fontWeight:'900',textAlign:'right'},rowHint:{marginTop:4,fontSize:10,textAlign:'right'},badge:{height:23,paddingHorizontal:8,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},badgeText:{fontSize:9,fontWeight:'800'},themeCard:{padding:12,borderRadius:22,borderWidth:1,gap:10},themeNote:{fontSize:10,lineHeight:17,textAlign:'right',paddingHorizontal:3},pressed:{opacity:.72,transform:[{scale:.99}]}
+  statusStrip:{flexDirection:'row-reverse',gap:10},statusItem:{flex:1,minHeight:82,borderRadius:20,borderWidth:1,padding:12,alignItems:'flex-end',justifyContent:'center'},statusLabel:{fontSize:12,fontWeight:'900',marginTop:6},statusValue:{fontSize:10,fontWeight:'800',marginTop:3},statusError:{borderWidth:1,borderRadius:16,padding:11,fontSize:10.5,lineHeight:17,textAlign:'right'},sectionWrap:{gap:9},sectionHead:{flexDirection:'row-reverse',alignItems:'center',gap:8,paddingHorizontal:3},sectionDot:{width:7,height:7,borderRadius:4},sectionTitle:{fontWeight:'900',textAlign:'right'},group:{borderRadius:22,borderWidth:1,overflow:'hidden'},row:{minHeight:70,paddingHorizontal:12,paddingVertical:10,flexDirection:'row-reverse',alignItems:'center',gap:11},rowIcon:{width:44,height:44,borderRadius:15,borderWidth:1,alignItems:'center',justifyContent:'center'},rowCopy:{flex:1,alignItems:'flex-end'},rowTitleLine:{flexDirection:'row-reverse',alignItems:'center',gap:7},rowText:{fontWeight:'900',textAlign:'right'},rowHint:{marginTop:4,fontSize:10,textAlign:'right'},badge:{height:23,paddingHorizontal:8,borderRadius:11,borderWidth:1,alignItems:'center',justifyContent:'center'},badgeText:{fontSize:9,fontWeight:'800'},themeCard:{padding:12,borderRadius:22,borderWidth:1,gap:10},themeNote:{fontSize:10,lineHeight:17,textAlign:'right',paddingHorizontal:3},pressed:{opacity:.72,transform:[{scale:.99}]}
 });

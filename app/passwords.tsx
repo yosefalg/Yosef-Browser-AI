@@ -83,11 +83,11 @@ export default function PasswordsScreen() {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') {
+      if (state === 'background') {
         clearSensitiveView();
         return;
       }
-      if (focused.current) void unlock(true);
+      if (state === 'active' && focused.current) void unlock(true);
     });
     return () => sub.remove();
   }, [clearSensitiveView, unlock]);

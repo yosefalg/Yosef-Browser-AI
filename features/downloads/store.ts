@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import type { DownloadItem, DownloadState } from './types';
 
 let promise: Promise<SQLite.SQLiteDatabase> | null = null;
+let initialization: Promise<SQLite.SQLiteDatabase> | null = null;
 let migrated = false;
 const downloadListeners = new Set<() => void>();
 
@@ -33,35 +34,50 @@ async function db() {
     promise = SQLite.openDatabaseAsync('raid-downloads.db').catch((error) => {
       // Let the next operation recover after a transient storage/open failure.
       promise = null;
+      initialization = null;
       migrated = false;
       throw error;
     });
   }
+
   const value = await promise;
-  await value.execAsync(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS downloads (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      url TEXT NOT NULL,
-      file_name TEXT NOT NULL,
-      mime_type TEXT,
-      local_uri TEXT,
-      referer TEXT,
-      state TEXT NOT NULL,
-      progress REAL NOT NULL DEFAULT 0,
-      total_bytes INTEGER,
-      written_bytes INTEGER NOT NULL DEFAULT 0,
-      speed_bps REAL NOT NULL DEFAULT 0,
-      eta_seconds INTEGER,
-      resume_data TEXT,
-      error TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_downloads_updated_at ON downloads(updated_at DESC);
-  `);
-  await migrate(value);
-  return value;
+  if (!initialization) {
+    // Schema setup and migrations are needed once per opened connection, not
+    // for every progress update. Share one promise across concurrent callers.
+    initialization = (async () => {
+      await value.execAsync(`
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE IF NOT EXISTS downloads (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          url TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          mime_type TEXT,
+          local_uri TEXT,
+          referer TEXT,
+          state TEXT NOT NULL,
+          progress REAL NOT NULL DEFAULT 0,
+          total_bytes INTEGER,
+          written_bytes INTEGER NOT NULL DEFAULT 0,
+          speed_bps REAL NOT NULL DEFAULT 0,
+          eta_seconds INTEGER,
+          resume_data TEXT,
+          error TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_downloads_updated_at ON downloads(updated_at DESC);
+      `);
+      await migrate(value);
+      return value;
+    })().catch((error) => {
+      // The schema and column checks are idempotent, so a later call can retry.
+      initialization = null;
+      migrated = false;
+      throw error;
+    });
+  }
+
+  return initialization;
 }
 
 export async function createDownload(url: string, fileName: string, localUri: string, referer: string | null = null) {
